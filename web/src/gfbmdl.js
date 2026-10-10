@@ -18,7 +18,7 @@ const MAX_MESHES = 10_000;
 const MAX_VERTICES = 5_000_000;
 const MAX_TRIANGLES = 10_000_000;
 
-class FlatModelReader {
+export class FlatModelReader {
   constructor(bytes) {
     if (!(bytes instanceof ArrayBuffer)) throw new GFBMDLError('Model data must be an ArrayBuffer');
     if (bytes.byteLength < 8 || bytes.byteLength > MAX_BYTES)
