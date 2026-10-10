@@ -30,7 +30,8 @@ function stem(s) { return basename(s).replace(/\.[^.]+$/, ''); }
 
 function findResource(project, ref, basePath, suffix, required = true) {
   const list = project.items ?? [];
-  const sourceRef = normalized(ref || '');
+  const rawRef = String(ref || '').replaceAll('\\', '/');
+  const sourceRef = normalized(rawRef);
   const filename = basename(sourceRef);
   const expected = suffix || (filename.includes('.') ? ext(filename) : '');
   let candidates = list.filter(item => expected ? ext(item.path) === expected : true);
@@ -39,7 +40,7 @@ function findResource(project, ref, basePath, suffix, required = true) {
     return null;
   }
   const baseDir = dirname(basePath);
-  const normalizedRef = normalized(baseDir + '/' + sourceRef);
+  const normalizedRef = normalized(baseDir + rawRef);
   const exact = candidates.filter(item =>
     normalized(item.path) === normalizedRef || normalized(item.path) === sourceRef);
   if (exact.length === 1) return exact[0];
@@ -152,13 +153,13 @@ function makeMesh(part, material, skeletonInfo) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices.position, 3));
   if (vertices.normal) geometry.setAttribute('normal', new THREE.BufferAttribute(vertices.normal, 3));
-  else geometry.computeVertexNormals();
   if (vertices.uv) geometry.setAttribute('uv', new THREE.BufferAttribute(vertices.uv, 2));
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
     material.vertexColors = true;
   }
   geometry.setIndex(new THREE.BufferAttribute(part.indices, 1));
+  if (!vertices.normal) geometry.computeVertexNormals();
   const skel = skeletonInfo?.rig;
   if (skel && vertices.joints && vertices.weights &&
       vertices.joints.length === vertices.count * 4 &&
