@@ -277,8 +277,21 @@ async function loadArchive(file) {
 
 function usableArchiveModels() {
   if (!state.archive) return [];
-  return state.archive.resources.filter(resource =>
-    (resolvedName(resource, state.dictionary) || '').toLowerCase().endsWith('.gfbmdl'));
+  const nativeMeshes = new Set(['.gfbmdl', '.trmdl', '.trmsh']);
+  const names = state.archive.resources.map(resource => ({
+    resource, name: resolvedName(resource, state.dictionary) || ''
+  }));
+  const dirsWithTrmdl = new Set(names.filter(row => row.name.toLowerCase().endsWith('.trmdl'))
+    .map(row => row.name.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase()));
+  return names.filter(row => {
+    const suffix = extension(row.name);
+    if (!nativeMeshes.has(suffix)) return false;
+    if (suffix === '.trmsh') {
+      const dir = row.name.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase();
+      if (dirsWithTrmdl.has(dir)) return false;
+    }
+    return true;
+  }).map(row => row.resource);
 }
 
 function updateArchiveModelButton() {
@@ -286,33 +299,44 @@ function updateArchiveModelButton() {
   const selected = state.resource;
   const preview = el('previewArchiveModel');
   preview.disabled = !candidates.length;
-  if (selected && candidates.includes(selected)) {
-    preview.textContent = '◈ PREVIEW SELECTED 3D MESH';
-  } else {
-    preview.textContent = '◈ PREVIEW 3D MESH (' + candidates.length + ')';
-  }
+  preview.textContent = selected && candidates.includes(selected)
+    ? '◈ PREVIEW SELECTED 3D MESH'
+    : '◈ PREVIEW NATIVE 3D MESH (' + candidates.length + ')';
 }
 
 async function previewGfbmdlInArchive() {
   if (!state.archive || state.busy) return;
   const models = usableArchiveModels();
-  const source = models.includes(state.resource) ? state.resource : models[0];
-  if (!source) {
-    log('Load a matching hash dictionary that identifies a .gfbmdl model within the archive.', 'error');
+  const selectedResource = models.includes(state.resource) ? state.resource : models[0];
+  if (!selectedResource) {
+    log('Load a matching hash dictionary identifying .gfbmdl or .trmdl resources inside the GFPAK.', 'error');
     return;
   }
-  const name = resolvedName(source, state.dictionary);
-  busy(true, 'Decoding archive model', 'Extracting model resources locally…');
+  const name = resolvedName(selectedResource, state.dictionary);
+  const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
+    '.png', '.jpg', '.jpeg', '.webp']);
+  // Deferred extraction avoids decompressing unrelated resources. Every
+  // associated file is resolved by its original path/hash dictionary entry.
+  const resources = state.archive.resources
+    .map(resource => ({resource, name: resolvedName(resource, state.dictionary)}))
+    .filter(item => item.name && allowed.has(extension(item.name)));
+  const project = {
+    label: state.archive.filename,
+    items: resources.map(({resource, name: path}) => ({
+      path,
+      size: resource.size,
+      getBytes: async () => {
+        const raw = extractResource(state.archive, resource);
+        return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+      }
+    }))
+  };
+  busy(true, 'Decoding archive model', 'Resolving companion model resources locally…');
   try {
-    const raw = extractResource(state.archive, source);
-    const data = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
-    const project = {label: state.archive.filename, items: [{
-      path: name, getBytes: async () => data,
-    }]};
-    const result = await loadGfbmdl(project, name, message => log(message));
-    setModel(result, '.gfbmdl', state.archive.filename);
+    const result = await loadModel(project, name, message => log(message));
+    setModel(result, extension(name), state.archive.filename);
     showTab('viewer');
-    log('GFBMDL model extracted and rendered entirely in the browser.', 'success');
+    log(name + ' decoded into real meshes inside this browser.', 'success');
   } catch (error) {
     errorMessage(error);
   } finally {
