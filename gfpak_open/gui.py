@@ -79,7 +79,8 @@ class Studio(tk.Tk):
         choices = ttk.Frame(source)
         choices.pack(fill="x")
         ttk.Button(choices, text="Open .gfpak…", command=self.open_archive).pack(side="left", padx=(0, 8))
-        ttk.Button(choices, text="Open extracted model folder…", command=self.open_folder).pack(side="left", padx=(0, 8))
+        ttk.Button(choices, text="Open .trmdl / .gfbmdl…", command=self.open_native).pack(side="left", padx=(0, 8))
+        ttk.Button(choices, text="Open model folder…", command=self.open_folder).pack(side="left", padx=(0, 8))
         ttk.Button(choices, text="Batch .gfpak…", command=self.open_batch).pack(side="left")
         self.summary = ttk.Label(source, text="No model selected")
         self.summary.pack(fill="x", pady=(8, 0))
@@ -157,8 +158,20 @@ class Studio(tk.Tk):
         if path:
             self.set_inputs([Path(path)])
 
+    def open_native(self):
+        path = filedialog.askopenfilename(
+            title="Open Pokémon native 3D mesh",
+            filetypes=[
+                ("Pokémon Switch model", "*.trmdl *.gfbmdl"),
+                ("Trinity model (PLA / SV / Z-A)", "*.trmdl"),
+                ("GFBMDL model (Let's Go / SWSH)", "*.gfbmdl"),
+                ("All files", "*.*"),
+            ])
+        if path:
+            self.set_inputs([Path(path)])
+
     def open_folder(self):
-        path = filedialog.askdirectory(title="Choose decoded TRMDL folder")
+        path = filedialog.askdirectory(title="Choose decoded Pokémon model folder")
         if path:
             self.set_inputs([Path(path)])
 
