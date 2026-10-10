@@ -88,6 +88,12 @@
           <button id="frameModel" class="text-button full" type="button">◎ Center camera on model</button>
         </section>
 
+        <section id="desktopTools" class="side-section" hidden>
+          <div class="section-heading"><span class="step-number">04</span><h2>DESKTOP TOOLS</h2><span class="section-line"></span></div>
+          <p>Batch conversion, Blender import, advanced archive settings, and native exports.</p>
+          <button id="openDesktopConverter" class="button button-primary" type="button">Open Blender converter ↗</button>
+          <p id="desktopBlenderStatus" class="helper-copy"></p>
+        </section>
         <div class="sidebar-footer">GFPAK OPEN <span>V0.3 / WEB</span><br />NO UPLOADS • NO GAME FILES BUNDLED</div>
       </aside>
 
@@ -192,5 +198,25 @@
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>
+  <script>
+    window.addEventListener("pywebviewready", async () => {
+      const tools = document.getElementById("desktopTools");
+      if (!tools || !window.pywebview?.api) return;
+      tools.hidden = false;
+      document.querySelector(".top-context").textContent = "POKÉMON 3D / DESKTOP STUDIO";
+      document.getElementById("openDesktopConverter").addEventListener("click", async () => {
+        try { await window.pywebview.api.open_converter(); }
+        catch (error) { document.getElementById("desktopBlenderStatus").textContent = String(error); }
+      });
+      try {
+        const blender = await window.pywebview.api.find_blender();
+        document.getElementById("desktopBlenderStatus").textContent = blender
+          ? "Blender detected: " + blender
+          : "Blender not found — install it, then open the converter to refresh detection.";
+      } catch (error) {
+        document.getElementById("desktopBlenderStatus").textContent = "Blender detection unavailable.";
+      }
+    });
+  </script>
 </body>
 </html>
