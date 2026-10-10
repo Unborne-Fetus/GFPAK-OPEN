@@ -251,6 +251,7 @@ export function decodeGfbmdl(bytes) {
     name: reader.string(table, 0) || 'bone_' + i,
     type: reader.uint(table, 1),
     parent: reader.integer(table, 2, -1),
+    rigid: !!reader.field(table, 10),
     scale: reader.vector3(table, 5, [1, 1, 1]),
     rotation: reader.vector3(table, 6, [0, 0, 0]),
     translation: reader.vector3(table, 7, [0, 0, 0])
