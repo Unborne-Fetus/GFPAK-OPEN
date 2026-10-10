@@ -1,0 +1,19 @@
+{
+  "name": "gfpak-open-web",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test web/tests/*.test.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^6.3.6"
+  }
+}
