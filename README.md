@@ -1,60 +1,69 @@
-# GFPAK Open — 3D Model Converter
+# GFPAK OPEN — 3D Model Converter
 
-A local Windows tool to convert compatible Pokemon Switch Trinity model assets from GFPAK / TRMDL into genuine GLB models for Pokedex 3D Max.
+Two ways to work with Pokémon model assets: a Windows converter and a GitHub Pages web studio.
 
-## Features
+## Web studio (GitHub Pages)
 
-- Read and index GFLXPACK archives and inspect compressed resource hashes.
-- Restore original model resource names from a compatible GFPAK text filename dictionary or explicit JSON hash mapping.
-- Decompress stored, LZ4 or Oodle resources. Oodle requires a compatible runtime DLL legitimately provided by the user.
-- Import TRMDL geometry and its associated resources with Blender and the independently maintained Pokemon Switch Blender addon, then export as a real GLB.
-- Reject missing/empty/invalid GLB results rather than labeling them as complete.
-- Convert many archives at once, import compatible animations on request, supply already-decoded PNG textures, and save converter settings.
-- Work with an already extracted and named TRMDL folder without any Oodle decoder or hash dictionary.
+Website (once GitHub Pages is enabled and deployed): https://unborne-fetus.github.io/GFPAK-OPEN/
 
-## Windows build
+The web version is a local-browser 3D converter built with Three.js. It supports:
 
-Open the Actions tab of this repository, select Build Windows Model Converter, download the GFPAK-OPEN-Windows artifact from a successful run, and launch GFPAK-OPEN.exe.
+- Drag-and-drop FBX, OBJ + MTL, Collada DAE, glTF and GLB models.
+- ZIP packages containing multiple models and nearby textures. Select the model you want from a filterable list.
+- Orbitable 3D previews with zoom, pan, automatic camera framing, grid/axes, and animation playback when clips are supported.
+- Mesh / vertex / triangle / material / skeleton / animation counts.
+- Export to real GLB with compatible geometry, materials, textures, and animations.
+- Read GFLXPACK / .gfpak archive indexes, resolve hashes with optional filename dictionaries, export JSON and stored/LZ4 resource data. Oodle blocks can be downloaded as compressed bytes only.
+- All game/model files are processed locally in your browser, without a server upload.
 
-The Windows app does not include Blender, a Pokemon model importer, game assets, filename dictionaries, console keys, or proprietary runtime DLLs.
+**Important limitation:** A raw Legends: Arceus .gfpak typically contains Oodle-compressed Trinity model resources. GitHub Pages cannot run a Windows Oodle DLL or Blender, and the web app cannot yet decode these compressed TRMDL meshes into GLB. To convert them, use the Windows converter and its required external decoder/importer, or import an already-extracted FBX, OBJ, DAE or glTF model into the web page.
 
-## One-time setup for raw GFPAK to GLB
+No site or program in this repository distributes game data, proprietary libraries, keys, or third-party addons.
 
-1. Install Blender from https://www.blender.org/download/ and select blender.exe.
-2. Obtain the Pokemon Switch V3 Blender importer from https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender and follow its setup instructions (including Blender Python's flatbuffers dependency). In the converter, select the addon folder containing __init__.py.
-3. For raw GFPAK archives, select a matching GFPAK filename dictionary in gfpak.txt format or JSON format, so the converter can identify TRMDL, TRMSH, TRMBF, TRMTR, TRSKL etc. For already extracted TRMDL folders, no dictionary is necessary.
-4. If your archive uses Oodle compression (compression type 3 for the supplied Legends: Arceus sample), select a compatible legitimately obtained Oodle DLL, which is not bundled.
-5. Optionally select a folder containing already decoded PNG textures, and tick supported animation import.
-6. Open the GFPAK, click Convert to GLB, choose the output location. Review the conversion log.
+### Enable GitHub Pages
 
-## CLI examples
+The build and deploy workflow is in .github/workflows/deploy-pages.yml.
 
-Direct GFPAK:
+If the first run fails because GitHub Pages has not been initialized, open **Settings → Pages → Build and deployment → Source: GitHub Actions**. Then go to **Actions → Deploy GFPAK Open Web → Run workflow**.
 
-    python -m gfpak_open.cli "C:\Pokemon\pm0025_00_00.gfpak" --convert-glb pikachu.glb --blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --addon "C:\Tools\Pokemon-Switch-Model-Importer-Blender" --hashes "C:\Tools\gfpak.txt" --oodle "C:\Tools\oo2core_8_win64.dll"
+The published URL will be https://unborne-fetus.github.io/GFPAK-OPEN/
 
-Already extracted and decoded model folder:
+### Local web development
 
-    python -m gfpak_open.cli "C:\Pokemon\PikachuExtracted" --convert-glb pikachu.glb --blender "C:\path\to\blender.exe" --addon "C:\path\to\Pokemon-Switch-Model-Importer-Blender"
+Requires Node.js 22 or later:
 
-Optional arguments: --textures, --animations, --model, --keep-extracted.
+    npm install
+    npm test
+    npm run dev
 
-Archive diagnostics: --list, --report, --extract, --packed.
+Open the local URL printed by Vite. To generate the deployable static website, run npm run build. Output goes to dist-web/.
 
-A plain text hash list may contain a folder line ending in slash followed by one filename per line, as in Switch Toolbox GFPAK hash lists.
+## Windows converter
 
-An explicit JSON dictionary maps hexadecimal resource hashes to safe relative filenames. A sample (NOT a real Pikachu hash):
+Get the Windows EXE from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml).
 
-    {"0123456789abcdef": "bin/pokemon/pm0025/pm0025_00_00/mdl/pm0025_00_00.trmdl"}
+The Windows version can hand off real decoded TRMDL resources to Blender and the open-source [Pokémon Switch V3 Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender) and export GLB. It can parse GFLXPACK. Raw GFPAK conversion requires a matching filename dictionary and a compatible legally obtained Oodle runtime. Nothing proprietary is included.
 
-## Status and limitations
+For local Python use:
 
-The supplied Pikachu archive from Legends: Arceus has been verified as a readable GFLXPACK index with 180 internal resources in four folders, all compression type 3. Parser and GLB orchestration tests have passed using an emulated Blender process.
+    python launch.py
 
-However, complete Pikachu-to-GLB conversion with correct textures has NOT been verified: the actual matching filename dictionary, compatible Oodle decoder and configured external Blender importer have not yet been used together in this test environment.
+For CLI help:
 
-The app is a real conversion frontend; it will report missing conversion requirements instead of creating a fake successful model. Independent BNTX-to-PNG decoding, GFBMDL support, built-in 3D preview, and model fidelity verification are future work.
+    python -m gfpak_open.cli --help
 
-Run automated tests with: python -m unittest discover -s tests -v
+Python tests:
 
-GFPAK Open does not distribute Nintendo game data, console keys, proprietary runtime DLLs or third-party Blender add-ons.
+    python -m unittest discover -s tests -v
+
+## Status
+
+- [x] Windows GFLXPACK archive parser and TRMDL-to-Blender conversion pipeline.
+- [x] GitHub Pages browser project with WebGL preview and GLB exporter for FBX/OBJ/DAE/glTF/GLB.
+- [x] Browser GFPAK archive inspection, stored/LZ4 resource decoding, and Oodle packed-resource export.
+- [x] ZIP models and texture-file import.
+- [ ] Full browser-native Oodle + Trinity/TRMDL decoder directly from raw Legends: Arceus GFPAK.
+- [ ] Extensive fidelity tests for textures and animations across all Switch games.
+- [ ] Offline-first web caching and bulk web exports.
+
+Only operate on assets you have rights to use.
