@@ -1,0 +1,101 @@
+import json
+import struct
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from gfpak_open.converter import (
+    ConversionError, ConversionOptions, HashDictionary, convert_model,
+    find_models, fnv1a64, safe_path, validate_glb,
+)
+
+
+def make_glb(path, meshes=True):
+    document = {
+        "asset": {"version": "2.0"},
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}] if meshes else [],
+    }
+    payload = json.dumps(document).encode("utf-8")
+    payload += b" " * (-len(payload) % 4)
+    data = b"glTF" + struct.pack("<II", 2, 20 + len(payload))
+    data += struct.pack("<II", len(payload), 0x4E4F534A) + payload
+    path.write_bytes(data)
+
+
+class ConverterTests(unittest.TestCase):
+    def test_fnv_known_value(self):
+        self.assertEqual(fnv1a64("hello"), "a430d84680aabd0b")
+
+    def test_hash_dictionary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            txt = Path(tmp) / "gfpak.txt"
+            txt.write_text("bin/field/model/pack/\nmodel.trmdl\nmodel.trmsh\n")
+            dictionary = HashDictionary(txt)
+            self.assertEqual(dictionary.mapping[fnv1a64("model.trmdl")],
+                             "bin/field/model/pack/model.trmdl")
+            js = Path(tmp) / "map.json"
+            js.write_text(json.dumps({"0123456789abcdef": "pokemon/model.trmdl"}))
+            self.assertEqual(HashDictionary(js).mapping["0123456789abcdef"], "pokemon/model.trmdl")
+
+    def test_safe_names(self):
+        for name in ("../file.trmdl", "/tmp/file.trmdl", "C:/file.trmdl", "abc\\def", "x/../../oops"):
+            with self.subTest(name=name), self.assertRaises(ConversionError):
+                safe_path(name)
+        self.assertEqual(safe_path("foo/bar.trmdl"), Path("foo/bar.trmdl"))
+
+    def test_prefer_base_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "pokemon_lod2.trmdl").write_bytes(b"x")
+            Path(tmp, "pokemon.trmdl").write_bytes(b"x")
+            self.assertEqual(find_models(Path(tmp))[0].name, "pokemon.trmdl")
+
+    def test_glb_validation_requires_mesh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "model.glb"
+            make_glb(output)
+            validate_glb(output)
+            make_glb(output, meshes=False)
+            with self.assertRaisesRegex(ConversionError, "no 3D meshes"):
+                validate_glb(output)
+
+    def test_decoded_folder_blender_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "decoded"
+            source.mkdir()
+            (source / "pm0025_00_00.trmdl").write_bytes(b"synthetic test data")
+            (root / "blender.exe").write_bytes(b"fake")
+            addon = root / "addon"
+            addon.mkdir()
+            (addon / "__init__.py").write_text("")
+            target = root / "pikachu.glb"
+            def fake_blender(cmd, **_kwargs):
+                self.assertIn("--background", cmd)
+                self.assertIn("--model", cmd)
+                self.assertEqual(cmd[cmd.index("--output") + 1], str(target))
+                make_glb(target)
+                return type("Result", (), {"returncode": 0, "stdout": "success", "stderr": ""})()
+            with patch("gfpak_open.converter.subprocess.run", side_effect=fake_blender):
+                result = convert_model(ConversionOptions(source, target, root / "blender.exe", addon))
+            self.assertEqual(result, target)
+            validate_glb(target)
+
+    def test_archive_without_dictionary_fails_cleanly(self):
+        sample = Path("/mnt/data/pm0025_00_00.gfpak")
+        if not sample.is_file():
+            self.skipTest("User Pikachu sample is not in the public repository")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "blender.exe").write_bytes(b"fake")
+            addon = root / "addon"
+            addon.mkdir()
+            (addon / "__init__.py").write_text("")
+            target = root / "out.glb"
+            with self.assertRaisesRegex(ConversionError, "filenames were resolved"):
+                convert_model(ConversionOptions(sample, target, root / "blender.exe", addon))
+            self.assertFalse(target.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

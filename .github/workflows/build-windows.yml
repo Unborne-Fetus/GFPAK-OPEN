@@ -1,4 +1,4 @@
-name: Build Windows App
+name: Build Windows Model Converter
 on:
   push:
     branches: [main]
@@ -11,12 +11,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run tests
+      - name: Test archive reader and model converter
         run: python -m unittest discover -s tests -v
-      - name: Build standalone EXE
+      - name: Build Windows GUI EXE
         run: |
           python -m pip install pyinstaller
-          python -m PyInstaller --onefile --windowed --name GFPAK-OPEN launch.py
+          python -m PyInstaller --onefile --windowed --name GFPAK-OPEN --add-data "gfpak_open/blender_worker.py;gfpak_open" launch.py
       - uses: actions/upload-artifact@v4
         with:
           name: GFPAK-OPEN-Windows
