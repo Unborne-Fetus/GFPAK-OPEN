@@ -98,30 +98,52 @@ function createMaterials(materials) {
 }
 
 async function applyDecodedTextures(project, lookup, modelPath, report, created) {
+  const channels = [
+    { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
+    { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false },
+    { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false },
+    { names: /^metallicmap\d*$/i, property: 'metalnessMap', srgb: false },
+    { names: /^aomap$/i, property: 'aoMap', srgb: false },
+    { names: /^(emissivemap|emissionmap)$/i, property: 'emissiveMap', srgb: true },
+  ];
+  const imageCache = new Map();
   for (const [materialName, definition] of lookup.entries()) {
     const textures = definition.textures ?? [];
-    const map = textures.find(t => /^(basecolormap|diffusemap|basemap|albedomap)$/i.test(t.name))
-      ?? (textures.length === 1 ? textures[0] : null);
-    if (!map) continue;
-    const textureItem = findOptionalTexture(project, map.file, modelPath);
-    if (!textureItem) {
-      report('No decoded PNG/JPG for ' + map.file + ' (' + materialName + ')');
-      continue;
-    }
-    try {
-      const image = await createImageBitmap(new Blob([await textureItem.getBytes()]));
-      const texture = new THREE.Texture(image);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = true;
-      texture.needsUpdate = true;
-      definition.material.color.setRGB(1, 1, 1);
-      definition.material.map = texture;
-      definition.material.needsUpdate = true;
-      created.push(texture);
-    } catch (error) {
-      report('Could not decode texture ' + textureItem.path + ': ' + error.message);
+    if (!textures.length) continue;
+    for (const channel of channels) {
+      const reference = textures.find(t => channel.names.test(t.name));
+      const selected = reference || (channel.property === 'map' && textures.length === 1 ? textures[0] : null);
+      if (!selected) continue;
+      const textureItem = findOptionalTexture(project, selected.file, modelPath);
+      if (!textureItem) {
+        report('No decoded image for ' + selected.file + ' (' + materialName + ')');
+        continue;
+      }
+      try {
+        let bitmap = imageCache.get(textureItem.path);
+        if (!bitmap) {
+          bitmap = await createImageBitmap(new Blob([await textureItem.getBytes()]));
+          imageCache.set(textureItem.path, bitmap);
+        }
+        const texture = new THREE.Texture(bitmap);
+        texture.name = selected.name || channel.property;
+        texture.colorSpace = channel.srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        texture.flipY = true;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.needsUpdate = true;
+        const material = definition.material;
+        material[channel.property] = texture;
+        if (channel.property === 'map') material.color.setRGB(1, 1, 1);
+        if (channel.property === 'emissiveMap') material.emissive.setRGB(1, 1, 1);
+        material.needsUpdate = true;
+        created.push(texture);
+      } catch (error) {
+        report('Could not decode texture ' + textureItem.path + ': ' + error.message);
+      }
     }
   }
+  return Array.from(imageCache.values());
 }
 
 function buildBones(trskl, sceneRoot) {
@@ -245,7 +267,7 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
   }
   const lookup = createMaterials(materialDefs);
   const created = [];
-  await applyDecodedTextures(project, lookup, selected, report, created);
+  const sourceImages = await applyDecodedTextures(project, lookup, selected, report, created);
   const scene = new THREE.Group();
   scene.name = basename(selected);
   const rig = buildBones(skeleton, scene);
@@ -272,7 +294,8 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
     sourceFormat: 'TRMDL',
     sourceStats: { meshParts: parts.length, vertices: vCount, bones: rig?.bones.length ?? 0 },
     disposeAssets: () => {
-      for (const texture of created) { texture.image?.close?.(); texture.dispose(); }
+      for (const texture of created) texture.dispose();
+      for (const image of sourceImages) image.close?.();
     }
   };
 }
