@@ -186,10 +186,12 @@ function vec(reader, pos, format, usage) {
         : [reader.f32(pos), reader.f32(pos + 4), reader.f32(pos + 8), reader.f32(pos + 12)];
     case 43: return Array.from({ length: 4 }, (_, i) => float16(reader.u16(pos + i * 2)));
     case 39: {
-      const values = Array.from({ length: 4 }, (_, i) => reader.u16(pos + i * 2));
-      return values.map(v => (usage === 2 || usage === 3 || usage === 4)
-        ? Math.max(-1, reader.view.getInt16(pos + values.indexOf(v) * 2, true) / 32767)
-        : v / 65535);
+      return Array.from({ length: 4 }, (_, i) => {
+        const value = reader.u16(pos + i * 2);
+        return (usage === 2 || usage === 3 || usage === 4)
+          ? Math.max(-1, (value >= 0x8000 ? value - 0x10000 : value) / 32767)
+          : value / 65535;
+      });
     }
     case 20:
       return Array.from({ length: 4 }, (_, i) => {
@@ -224,12 +226,13 @@ function decodeVertices(descriptor, vertexStreams) {
   };
   const channels = new Set();
   const readerCache = vertexStreams.map(stream => {
-    if (stream.byteLength < 8) return null;
-    return { view: new DataView(stream.buffer, stream.byteOffset, stream.byteLength),
-      u8: p => stream[p],
-      u16: p => new DataView(stream.buffer, stream.byteOffset, stream.byteLength).getUint16(p, true),
-      u32: p => new DataView(stream.buffer, stream.byteOffset, stream.byteLength).getUint32(p, true),
-      f32: p => new DataView(stream.buffer, stream.byteOffset, stream.byteLength).getFloat32(p, true)
+    if (!stream || stream.byteLength < 4) return null;
+    const view = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+    return { view,
+      u8: pos => view.getUint8(pos),
+      u16: pos => view.getUint16(pos, true),
+      u32: pos => view.getUint32(pos, true),
+      f32: pos => view.getFloat32(pos, true)
     };
   });
   // UV channels beyond layer 0 and additional skin streams need separate
