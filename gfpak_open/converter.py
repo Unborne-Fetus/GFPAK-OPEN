@@ -1,4 +1,4 @@
-"""Convert GFLXPACK Pokémon TRMDL resources into genuine GLB using Blender.
+"""Convert Pokémon Switch native TRMDL/GFBMDL resources into GLB using Blender.
 
 Game assets, external Blender importers and proprietary decompressors are not bundled.
 """
@@ -139,7 +139,7 @@ def select_model(models: list[Path], preference: str | None,
                  archive_name: str | None = None) -> Path:
     if not models:
         raise ConversionError(
-            "No .trmdl model file was identified. Provide a filename hash dictionary "
+            "No .trmdl or .gfbmdl model file was identified. Provide a filename hash dictionary "
             "(--hashes) that resolves the model, mesh, material and skeleton resources."
         )
     if preference:
@@ -195,7 +195,7 @@ class ConversionOptions:
 
 def convert_model(options: ConversionOptions,
                   progress: Callable[[str], None] | None = None) -> Path:
-    """Convert extracted .trmdl resources or direct GFPAK to genuine 3D GLB."""
+    """Convert native GFBMDL/TRMDL assets or a GFPAK to genuine 3D GLB."""
     def log(msg: str) -> None:
         if progress:
             progress(msg)
@@ -208,8 +208,8 @@ def convert_model(options: ConversionOptions,
         raise ConversionError("Blender executable not found. Select blender.exe in Converter Settings.")
     if not addon.is_dir() or not (addon / "__init__.py").is_file():
         raise ConversionError("Choose the folder containing __init__.py from the Pokémon Switch Blender add-on.")
-    if src.is_file() and src.suffix.lower() != ".gfpak":
-        raise ConversionError("Choose a .gfpak archive or a folder of decoded .trmdl resources")
+    if src.is_file() and src.suffix.lower() not in {".gfpak", ".trmdl", ".gfbmdl"}:
+        raise ConversionError("Choose a .gfpak, .trmdl, .gfbmdl or folder of decoded model resources")
     if options.texture_folder and not Path(options.texture_folder).is_dir():
         raise ConversionError("Texture folder does not exist")
     if output.suffix.lower() != ".glb":
@@ -223,6 +223,18 @@ def convert_model(options: ConversionOptions,
         if src.is_dir():
             log("Preparing decoded model folder…")
             shutil.copytree(src, workspace, dirs_exist_ok=True)
+        elif src.suffix.lower() in MODEL_SUFFIXES:
+            log("Collecting adjacent native model resources…")
+            # A single .trmdl usually references sibling skeleton/mesh/material files.
+            # Copy relevant siblings, without changing or deleting the originals.
+            related = {".trmdl", ".gfbmdl", ".trmsh", ".trmbf", ".trskl",
+                       ".trmtr", ".tranm", ".gfbanm", ".png", ".tga",
+                       ".jpg", ".jpeg", ".dds", ".bntx", ".trmmt", ".trmms", ".trmmo"}
+            for sibling in src.parent.iterdir():
+                if sibling.is_file() and sibling.suffix.lower() in related:
+                    shutil.copy2(sibling, workspace / sibling.name)
+            if not (workspace / src.name).is_file():
+                raise ConversionError("Failed to stage native model for conversion")
         else:
             archive = GFPak(src)
             mapping = HashDictionary(options.dictionary)
@@ -247,9 +259,7 @@ def convert_model(options: ConversionOptions,
                     shutil.copy2(texture, target)
         models = find_models(workspace)
         model = select_model(models, options.preferred_model, src.stem)
-        if model.suffix.lower() != ".trmdl":
-            raise ConversionError("This converter currently supports TRMDL. GFBMDL conversion is not enabled.")
-        log(f"Importing {model.name} into Blender…")
+        log(f"Importing {model.name} ({model.suffix.upper()}) into Blender…")
         output.parent.mkdir(parents=True, exist_ok=True)
         worker = Path(__file__).with_name("blender_worker.py")
         command = [str(blender), "--background", "--factory-startup", "--python", str(worker), "--",
