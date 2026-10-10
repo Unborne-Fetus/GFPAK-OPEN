@@ -89,7 +89,9 @@ function resetInspector() {
 
 function setModel(result, format, packageName) {
   if (!state.stage) throw new Error('WebGL is not available in this browser');
+  const previous = state.loaded;
   state.stage.setModel(result.root, result.animations);
+  previous?.disposeAssets?.();
   state.loaded = result;
   const info = modelStats(result.root, result.animations);
   const mapping = [
@@ -194,6 +196,7 @@ async function loadArchive(file) {
   state.archive = archive;
   state.project = null;
   state.resource = null;
+  state.loaded?.disposeAssets?.();
   state.loaded = null;
   state.stage?.clear();
   el('modelChoice').hidden = true;
@@ -401,7 +404,10 @@ function start() {
     el('exportButton').disabled = true;
     el('emptyState').querySelector('p').textContent = 'This browser or device does not currently support WebGL. You can still inspect GFPak archives.';
   }
-  window.addEventListener('beforeunload', () => state.stage?.dispose());
+  window.addEventListener('beforeunload', () => {
+    state.loaded?.disposeAssets?.();
+    state.stage?.dispose();
+  });
 }
 
 start();
