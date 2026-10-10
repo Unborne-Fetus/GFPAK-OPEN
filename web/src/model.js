@@ -52,7 +52,15 @@ export function projectFromFiles(files) {
 function finishProject(entries, label) {
   const items = entries.filter(e => e.path && !e.path.endsWith('/'));
   if (items.length > MAX_FILES) throw new Error('Too many files in project');
-  const models = items.filter(e => SUPPORTED.includes(extension(e.path)));
+  const trmdlDirectories = new Set(items.filter(e => extension(e.path) === '.trmdl')
+    .map(e => e.path.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase()));
+  const models = items.filter(e => {
+    if (!SUPPORTED.includes(extension(e.path))) return false;
+    if (extension(e.path) !== '.trmsh') return true;
+    const directory = e.path.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase();
+    // TRMSH is a dependent mesh resource when TRMDL lives beside it.
+    return !trmdlDirectories.has(directory);
+  });
   const formats = identifyFormat(items.map(item => item.path));
   return { label, items, models, native: formats.native, formats };
 }
