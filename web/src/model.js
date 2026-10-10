@@ -14,8 +14,9 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
 import { identifyFormat } from './game-support.js';
+import { loadGfbmdl } from './gfbmdl-model.js';
 
-export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds'];
+export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds', '.gfbmdl'];
 const TEXTURES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga', '.dds', '.ktx2', '.bin']);
 const MAX_FILES = 20000;
 const MAX_RESOURCE_BYTES = 400 * 1024 * 1024;
@@ -147,6 +148,7 @@ export async function loadModel(project, selected, report = () => {}) {
   if (!entry) throw new Error('Selected model no longer exists');
   const suffix = extension(entry.path);
   if (!SUPPORTED.includes(suffix)) throw new Error('Unsupported format ' + suffix);
+  if (suffix === '.gfbmdl') return loadGfbmdl(project, selected, report);
 
   const dependencyFiles = assetFilesForModel(project, entry.path);
   // There may be many textures in a game dump. Only load nearby files.
