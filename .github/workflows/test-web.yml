@@ -1,0 +1,39 @@
+name: Test Browser Converter
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'package.json'
+      - 'vite.config.js'
+      - 'playwright.config.js'
+      - '.github/workflows/test-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Test 3D demo, OBJ ZIP import and GFPAK archive
+        run: npx playwright test
+      - name: Upload failure screenshots if any
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-smoke-failures
+          path: test-results/
+          if-no-files-found: ignore
