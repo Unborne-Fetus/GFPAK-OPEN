@@ -229,7 +229,7 @@ function normalizeBoneName(name) {
   return String(name).split(/[/:|\\]/).at(-1).toLowerCase().trim();
 }
 
-function animationTracks(source, bones) {
+export function animationTracks(source, bones) {
   const lookup = new Map(bones.map(bone => [normalizeBoneName(bone.name), bone]));
   const frameRate = source.frameRate > 0 ? source.frameRate : 30;
   const tracks = [];
