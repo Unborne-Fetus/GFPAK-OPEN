@@ -13,7 +13,7 @@ from pathlib import Path
 def _assets() -> Path:
     if hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "web_dist"
-    return Path(__file__).resolve().parent.parent / "dist"
+    return Path(__file__).resolve().parent.parent / "dist-desktop"
 
 
 class _Server(http.server.SimpleHTTPRequestHandler):
