@@ -1,0 +1,276 @@
+"""Convert GFLXPACK Pokémon TRMDL resources into genuine GLB using Blender.
+
+Game assets, external Blender importers and proprietary decompressors are not bundled.
+"""
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import struct
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Callable
+
+from .core import GFPak, GFPakError, Resource
+
+
+class ConversionError(GFPakError):
+    """Model conversion cannot complete accurately."""
+
+
+HEX_HASH = re.compile(r"^(?:0x)?[0-9a-fA-F]{16}$")
+MODEL_SUFFIXES = {".trmdl", ".gfbmdl"}
+
+
+def fnv1a64(name: str) -> str:
+    value = 0xCBF29CE484222325
+    for c in name.encode("utf-8"):
+        value = (value ^ c) * 0x100000001B3 & 0xFFFFFFFFFFFFFFFF
+    return f"{value:016x}"
+
+
+def safe_path(name: str) -> Path:
+    if not name or "\x00" in name or "\\" in name or ":" in name:
+        raise ConversionError(f"Unsafe resource path: {name!r}")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in (".", "..", "") for part in name.split("/")):
+        raise ConversionError(f"Unsafe resource path: {name!r}")
+    return Path(*path.parts)
+
+
+class HashDictionary:
+    """Read gfpak.txt or JSON mapping known hash IDs to original filenames."""
+
+    def __init__(self, file: str | Path | None = None):
+        self.mapping: dict[str, str] = {}
+        self.names: set[str] = set()
+        if file is not None:
+            self.load(file)
+
+    def add(self, name: str) -> None:
+        name = name.strip().replace("\\", "/")
+        if not name or name.startswith("#"):
+            return
+        name = safe_path(name).as_posix()
+        self.names.add(name)
+        for item in {name, PurePosixPath(name).name, name.lower()}:
+            self.mapping.setdefault(fnv1a64(item), name)
+
+    def load(self, file: str | Path) -> None:
+        file = Path(file)
+        if not file.is_file():
+            raise ConversionError(f"Filename dictionary not found: {file}")
+        contents = file.read_text(encoding="utf-8-sig")
+        if file.suffix.lower() == ".json":
+            data = json.loads(contents)
+            if not isinstance(data, dict):
+                raise ConversionError("JSON dictionary must map hashes to paths")
+            for key, name in data.items():
+                if not isinstance(name, str):
+                    raise ConversionError("Every hash mapping must point to a filename")
+                safe = safe_path(name).as_posix()
+                if not HEX_HASH.fullmatch(key):
+                    raise ConversionError(f"Invalid 64-bit hash: {key}")
+                self.mapping[key.removeprefix("0x").lower()] = safe
+                self.add(safe)
+            return
+        current_folder = ""
+        for line in contents.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("//"):
+                continue
+            if line.endswith("/"):
+                current_folder = line
+                continue
+            name = line if "/" in line else current_folder + line
+            self.add(name)
+
+    def lookup(self, resource: Resource) -> str | None:
+        for key in (resource.path_hash, resource.file_hash):
+            result = self.mapping.get(key)
+            if result:
+                return result
+        return None
+
+
+def read_resource_names(archive: GFPak, mapping: HashDictionary) -> dict[int, str]:
+    names: dict[int, str] = {}
+    used: set[str] = set()
+    for r in archive.resources:
+        name = mapping.lookup(r)
+        if name:
+            if name in used:
+                raise ConversionError(f"Multiple resources resolved to {name}; fix the hash dictionary")
+            used.add(name)
+            names[r.index] = name
+    return names
+
+
+def unpack_named(archive: GFPak, destination: Path, names: dict[int, str],
+                 *, oodle: str | Path | None = None,
+                 progress: Callable[[str], None] | None = None) -> list[Path]:
+    output = []
+    destination = destination.resolve()
+    for i, r in enumerate(archive.resources):
+        name = names.get(r.index)
+        if name is None:
+            continue
+        target = destination / safe_path(name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = archive.read_resource(r, oodle_dll=oodle)
+        target.write_bytes(data)
+        output.append(target)
+        if progress and (i % 20 == 0 or i == len(archive.resources) - 1):
+            progress(f"Decoded {i+1}/{len(archive.resources)} resources")
+    return output
+
+
+def find_models(root: Path) -> list[Path]:
+    return sorted((p for p in root.rglob("*") if p.is_file()
+                   and p.suffix.lower() in MODEL_SUFFIXES),
+                  key=lambda p: (p.suffix.lower() != ".trmdl",
+                                 "_lod" in p.stem.lower(), len(str(p)), str(p)))
+
+
+def select_model(models: list[Path], preference: str | None,
+                 archive_name: str | None = None) -> Path:
+    if not models:
+        raise ConversionError(
+            "No .trmdl model file was identified. Provide a filename hash dictionary "
+            "(--hashes) that resolves the model, mesh, material and skeleton resources."
+        )
+    if preference:
+        matches = [p for p in models if p.stem.lower() == Path(preference).stem.lower()
+                   or p.name.lower() == preference.lower()]
+        if len(matches) != 1:
+            raise ConversionError(f"Model {preference!r} not uniquely found. Choices: "
+                                  + ", ".join(p.name for p in models[:15]))
+        return matches[0]
+    if archive_name:
+        exact = [p for p in models if p.stem.lower() == Path(archive_name).stem.lower()]
+        if len(exact) == 1:
+            return exact[0]
+    candidates = [p for p in models if "_lod" not in p.stem.lower()]
+    return candidates[0] if candidates else models[0]
+
+
+def validate_glb(file: Path) -> None:
+    if not file.is_file():
+        raise ConversionError("Blender did not produce the requested GLB file")
+    with file.open("rb") as stream:
+        head = stream.read(20)
+        if len(head) < 20:
+            raise ConversionError("Generated GLB is truncated")
+        magic, version, length, chunk_length, chunk_type = struct.unpack("<4sIIII", head)
+        if magic != b"glTF" or version != 2 or length != file.stat().st_size or chunk_type != 0x4E4F534A:
+            raise ConversionError("Blender did not produce a valid glTF 2.0 GLB container")
+        if chunk_length > 16 * 1024 * 1024 or chunk_length > length - 20:
+            raise ConversionError("GLB JSON chunk has invalid size")
+        try:
+            document = json.loads(stream.read(chunk_length))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ConversionError("GLB scene metadata could not be read") from exc
+    if not document.get("meshes"):
+        raise ConversionError("GLB has no 3D meshes; conversion failed")
+    if not any(mesh.get("primitives") for mesh in document["meshes"]):
+        raise ConversionError("GLB meshes contain no primitives")
+
+
+@dataclass
+class ConversionOptions:
+    source: Path
+    output: Path
+    blender: Path
+    addon: Path
+    dictionary: Path | None = None
+    oodle: Path | None = None
+    texture_folder: Path | None = None
+    preferred_model: str | None = None
+    animations: bool = False
+    keep_extracted: Path | None = None
+
+
+def convert_model(options: ConversionOptions,
+                  progress: Callable[[str], None] | None = None) -> Path:
+    """Convert extracted .trmdl resources or direct GFPAK to genuine 3D GLB."""
+    def log(msg: str) -> None:
+        if progress:
+            progress(msg)
+
+    src, blender, addon, output = (Path(options.source), Path(options.blender),
+                                   Path(options.addon), Path(options.output))
+    if not src.exists():
+        raise ConversionError(f"Source not found: {src}")
+    if not blender.is_file():
+        raise ConversionError("Blender executable not found. Select blender.exe in Converter Settings.")
+    if not addon.is_dir() or not (addon / "__init__.py").is_file():
+        raise ConversionError("Choose the folder containing __init__.py from the Pokémon Switch Blender add-on.")
+    if src.is_file() and src.suffix.lower() != ".gfpak":
+        raise ConversionError("Choose a .gfpak archive or a folder of decoded .trmdl resources")
+    if options.texture_folder and not Path(options.texture_folder).is_dir():
+        raise ConversionError("Texture folder does not exist")
+    if output.suffix.lower() != ".glb":
+        raise ConversionError("Output file must end in .glb")
+    if output.exists():
+        raise ConversionError(f"Output already exists: {output}. Choose another name to prevent overwriting.")
+
+    with tempfile.TemporaryDirectory(prefix="gfpak-converter-") as tmp:
+        workspace = Path(tmp) / "resources"
+        workspace.mkdir()
+        if src.is_dir():
+            log("Preparing decoded model folder…")
+            shutil.copytree(src, workspace, dirs_exist_ok=True)
+        else:
+            archive = GFPak(src)
+            mapping = HashDictionary(options.dictionary)
+            found = read_resource_names(archive, mapping)
+            model_names = [name for name in found.values()
+                           if Path(name).suffix.lower() in MODEL_SUFFIXES]
+            if not model_names:
+                raise ConversionError(
+                    f"Opened {len(archive.resources)} archive entries, but no TRMDL/GFBMDL "
+                    "filenames were resolved. Select a compatible GFPAK filename dictionary "
+                    "(gfpak.txt or JSON). Hashed blocks cannot be safely guessed into a model."
+                )
+            log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
+            unpack_named(archive, workspace, found, oodle=options.oodle, progress=log)
+        if options.texture_folder:
+            source_textures = Path(options.texture_folder)
+            for texture in source_textures.rglob("*"):
+                if texture.is_file() and texture.suffix.lower() in {".png", ".dds", ".tga", ".jpg", ".jpeg"}:
+                    relative = texture.relative_to(source_textures)
+                    target = workspace / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(texture, target)
+        models = find_models(workspace)
+        model = select_model(models, options.preferred_model, src.stem)
+        if model.suffix.lower() != ".trmdl":
+            raise ConversionError("This converter currently supports TRMDL. GFBMDL conversion is not enabled.")
+        log(f"Importing {model.name} into Blender…")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        worker = Path(__file__).with_name("blender_worker.py")
+        command = [str(blender), "--background", "--factory-startup", "--python", str(worker), "--",
+                   "--model", str(model), "--output", str(output), "--addon", str(addon)]
+        if options.animations:
+            command += ["--animations"]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    errors="replace", timeout=900, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise ConversionError("Blender conversion exceeded 15 minutes") from exc
+        except OSError as exc:
+            raise ConversionError(f"Unable to launch Blender: {exc}") from exc
+        if result.returncode:
+            snippet = (result.stdout + "\n" + result.stderr)[-4000:]
+            raise ConversionError(f"Blender model import/export failed (code {result.returncode}):\n{snippet}")
+        validate_glb(output)
+        if options.keep_extracted:
+            destination = Path(options.keep_extracted)
+            if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+                raise ConversionError("Extracted-resources destination must be an empty directory")
+            shutil.copytree(workspace, destination, dirs_exist_ok=True)
+        log(f"Exported {output.name} ({output.stat().st_size:,} bytes)")
+        return output
