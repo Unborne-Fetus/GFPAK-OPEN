@@ -10,6 +10,41 @@ import threading
 from pathlib import Path
 
 
+def _prepare_assets() -> Path:
+    """Build browser assets on first source checkout run, without touching packaged builds."""
+    assets = _assets()
+    if (assets / "index.html").is_file():
+        return assets
+    if getattr(sys, "frozen", False):
+        raise RuntimeError("The packaged desktop application is missing its bundled viewer files.")
+    root = Path(__file__).resolve().parent.parent
+    npm = "npm.cmd" if os.name == "nt" else "npm"
+    if not (root / "package.json").is_file():
+        raise RuntimeError("Cannot locate the web studio project files.")
+    print("Preparing the GFPAK Open desktop viewer for the first launch...", flush=True)
+    env = os.environ.copy()
+    env["GFPAK_DESKTOP"] = "1"
+    try:
+        if not (root / "node_modules" / "vite").exists():
+            print("Installing the web viewer dependencies...", flush=True)
+            subprocess.run([npm, "install", "--no-audit", "--no-fund"], cwd=root,
+                           env=env, check=True)
+        print("Building the offline desktop viewer...", flush=True)
+        subprocess.run([npm, "run", "build"], cwd=root, env=env, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Node.js/npm is required for the first desktop launch. "
+            "Install Node.js LTS, then open run.bat again."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "The automatic desktop viewer build failed. Review the npm errors above."
+        ) from exc
+    if not (assets / "index.html").is_file():
+        raise RuntimeError("The web viewer build finished without creating dist-desktop/index.html.")
+    return assets
+
+
 def _assets() -> Path:
     if hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "web_dist"
@@ -40,9 +75,7 @@ class DesktopAPI:
 
 
 def main():
-    assets = _assets()
-    if not (assets / "index.html").is_file():
-        raise RuntimeError("Web studio assets missing. Run npm install and npm run build first.")
+    assets = _prepare_assets()
     try:
         import webview
     except ImportError as exc:
