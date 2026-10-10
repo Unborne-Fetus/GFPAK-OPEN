@@ -17,13 +17,13 @@ export const GAMES = Object.freeze([
     short:'Unity models and textures',hint:'Use AssetRipper or AssetStudio to export FBX and textures. The web viewer can load the exported models.' },
   { id:'pla', name:'Legends: Arceus', year:'2022', engine:'Game Freak Trinity',
     native:['.gfpak','.trmdl','.trmsh','.trmbf','.trskl','.tranm','.bntx'],tags:['legends_arceus','arceus','pla','la_poke'],
-    short:'Trinity meshes and often Oodle-compressed archives',hint:'Decompress, recover filenames and use Trinity Blender importer or GFTool to export GLB.' },
+    short:'Trinity meshes and often Oodle-compressed archives',hint:'Extract a complete TRMDL/TRMSH/TRMBF package to preview actual geometry in the browser. Compressed Oodle GFPAK, BNTX textures, native animation tracks and accurate shaders still need further work.' },
   { id:'sv', name:'Scarlet / Violet + DLC', year:'2022–2024', engine:'Game Freak Trinity',
     native:['.gfpak','.trmdl','.trmsh','.trmbf','.trskl','.tranm','.bntx'],tags:['scarlet','violet','sv_poke','sv-poke','teal_mask','indigo_disk','hidden_treasure'],
-    short:'Includes both expansions and epilogue',hint:'Export Trinity resources as glTF/GLB with a compatible Trinity viewer or Blender add-on.' },
+    short:'Includes both expansions and epilogue',hint:'Import a decoded TRMDL with matching TRMSH/TRMBF for native browser preview and GLB export. Game-specific shader/texture variations and animation tracks still need validation.' },
   { id:'za', name:'Legends: Z-A + Mega Dimension', year:'2025–2026', engine:'Game Freak Trinity (revised)',
     native:['.gfpak','.trmdl','.trmsh','.trmbf','.trskl','.tranm','.bntx'],tags:['legends_za','legends-z-a','mega_dimension','megadimension','za_poke','pza'],
-    short:'Newer Trinity model revisions',hint:'Z-A support is evolving: use a recent Trinity Model Viewer/GFTool to export glTF; older Blender importers may not decode every model.' },
+    short:'Newer Trinity model revisions',hint:'The experimental browser Trinity decoder can read compatible decoded TRMDL/TRMSH/TRMBF data. Z-A revisions, materials and Mega Dimension animations need actual-model validation; use GFTool when a format is unsupported.' },
   { id:'other', name:'Other Pokémon Switch games', year:'2018–2026', engine:'Various engines',
     native:['.assets','.bundle','.unity3d','.nusrcmdlb','.gfbmdl','.trmdl','.gfpak'],
     tags:['rescue_team_dx','detective_pikachu','pokemon_unite','pokemon_quest','pokemon_home','cafe_remix'],
@@ -54,12 +54,12 @@ export function describeSource(gameId,names){
  const f=identifyFormat(names);const game=gameById(gameId);
  if(f.converted.length)return {kind:'renderable',title:String(f.converted.length)+' renderable 3D model(s)',
    message:'Load a model to preview and export GLB. Original game shaders may not survive conversion.'};
- if(f.hasGfpak)return {kind:'native',title:'GFPak archive detected',
-   message:'GFPak contains resource blocks, not a renderable mesh. Inspect the archive, then decode and convert model resources with a compatible local tool.'};
+ if(f.hasGfpak)return {kind:'native',title:'GFPak model archive detected',
+   message:'Use the Archive Inspector and a matching filename-hash dictionary to preview stored/LZ4 GFBMDL or TRMDL resources. Compressed Oodle files still need a compatible decoder.'};
  if(f.hasGfbmdl)return {kind:'native',title:'Native GFBMDL model available',
    message:'GFBMDL geometry can now be decoded and rendered directly in the browser, including GLB export. Game-specific shaders, BNTX textures, skeleton rigging and animations remain incomplete.'};
- if(f.hasTrmdl)return {kind:'native',title:'TRMDL source model',
-   message:game.id!=='auto'?game.hint:'Trinity TRMDL meshes still require a compatible model exporter before browser preview.'};
+ if(f.hasTrmdl||f.extensions.has('.trmsh'))return {kind:'native',title:'Native Trinity model ready for inspection',
+   message:game.id!=='auto'?game.hint:'Native TRMDL/TRMSH can now render mesh geometry in-browser when matching TRMBF buffers are supplied. Shaders, BNTX and full animation decoding are still incomplete.'};
  if(f.hasUnity)return {kind:'native',title:'Unity source assets',
    message:'Unity asset bundles cannot be rendered directly in GitHub Pages. Export FBX/OBJ/GLB and textures with a Unity asset tool first.'};
  if(f.hasSnap)return {kind:'native',title:'New Pokémon Snap source model',
