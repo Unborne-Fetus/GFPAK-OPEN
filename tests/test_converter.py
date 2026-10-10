@@ -81,6 +81,55 @@ class ConverterTests(unittest.TestCase):
             self.assertEqual(result, target)
             validate_glb(target)
 
+    def test_gfbmdl_and_trmdl_direct_file_handoff(self):
+        for suffix in (".gfbmdl", ".trmdl"):
+            with self.subTest(format=suffix), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                src_folder = root / "source"
+                src_folder.mkdir()
+                source = src_folder / ("pm0025_00_00" + suffix)
+                source.write_bytes(b"synthetic test model")
+                neighbor = src_folder / "body.png"
+                neighbor.write_bytes(b"not an actual PNG: tests staging only")
+                blender = root / "blender.exe"
+                blender.write_bytes(b"fake")
+                addon = root / "addon"
+                addon.mkdir()
+                (addon / "__init__.py").write_text("")
+                target = root / "result.glb"
+
+                def fake_blender(cmd, **_kwargs):
+                    model = Path(cmd[cmd.index("--model") + 1])
+                    self.assertEqual(model.suffix.lower(), suffix)
+                    self.assertTrue(model.with_name("body.png").exists())
+                    self.assertEqual(cmd[cmd.index("--output") + 1], str(target))
+                    make_glb(target)
+                    return type("Result", (), {
+                        "returncode": 0, "stdout": "success", "stderr": "",
+                    })()
+
+                with patch("gfpak_open.converter.subprocess.run", side_effect=fake_blender):
+                    result = convert_model(ConversionOptions(source, target, blender, addon))
+                self.assertEqual(result, target)
+                validate_glb(target)
+                self.assertEqual(source.read_bytes(), b"synthetic test model")
+
+    def test_native_source_does_not_overwrite_existing_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "pokemon.gfbmdl"
+            source.write_bytes(b"test")
+            blender = root / "blender.exe"
+            blender.write_bytes(b"")
+            addon = root / "addon"
+            addon.mkdir()
+            (addon / "__init__.py").write_text("")
+            output = root / "already.glb"
+            output.write_bytes(b"preserve original")
+            with self.assertRaisesRegex(ConversionError, "already exists"):
+                convert_model(ConversionOptions(source, output, blender, addon))
+            self.assertEqual(output.read_bytes(), b"preserve original")
+
     def test_archive_without_dictionary_fails_cleanly(self):
         sample = Path("/mnt/data/pm0025_00_00.gfpak")
         if not sample.is_file():
