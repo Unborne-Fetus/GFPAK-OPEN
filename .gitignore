@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.spec
+*.gfpak
+*.nsp
+*.nca
+*.xci
+*.dll
+*.glb
+*.fbx
+*.obj
