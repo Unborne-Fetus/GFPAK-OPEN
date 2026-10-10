@@ -10,8 +10,12 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
+import { identifyFormat } from './game-support.js';
 
-export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae'];
+export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds'];
 const TEXTURES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga', '.dds', '.ktx2', '.bin']);
 const MAX_FILES = 20000;
 const MAX_RESOURCE_BYTES = 400 * 1024 * 1024;
@@ -47,7 +51,8 @@ function finishProject(entries, label) {
   const items = entries.filter(e => e.path && !e.path.endsWith('/'));
   if (items.length > MAX_FILES) throw new Error('Too many files in project');
   const models = items.filter(e => SUPPORTED.includes(extension(e.path)));
-  return { label, items, models };
+  const formats = identifyFormat(items.map(item => item.path));
+  return { label, items, models, native: formats.native, formats };
 }
 
 export async function projectFromZip(file, progress = () => {}) {
@@ -156,8 +161,8 @@ export async function loadModel(project, selected, report = () => {}) {
     const manager = resolver.manager();
     let root;
     let animations = [];
-    const data = suffix === '.glb' || suffix === '.fbx' ?
-      await entry.getBytes() : await entry.getText();
+    const binaryFormats = new Set(['.glb', '.fbx', '.stl', '.ply', '.3ds']);
+    const data = binaryFormats.has(suffix) ? await entry.getBytes() : await entry.getText();
     report('Decoding ' + suffix.toUpperCase() + ' model…');
     if (suffix === '.glb' || suffix === '.gltf') {
       const asset = await new GLTFLoader(manager).parseAsync(data, '');
@@ -178,6 +183,19 @@ export async function loadModel(project, selected, report = () => {}) {
       const asset = new ColladaLoader(manager).parse(data, '');
       root = asset.scene;
       animations = asset.animations ?? [];
+    } else if (suffix === '.stl' || suffix === '.ply') {
+      const geometry = suffix === '.stl' ? new STLLoader(manager).parse(data) : new PLYLoader(manager).parse(data);
+      geometry.computeBoundingBox();
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const colored = !!geometry.getAttribute('color');
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+        color: 0xe8eef2, roughness: 0.8, metalness: 0.05,
+        vertexColors: colored, side: THREE.DoubleSide
+      }));
+      root = new THREE.Group();
+      root.add(mesh);
+    } else if (suffix === '.3ds') {
+      root = new TDSLoader(manager).parse(data, '');
     }
     if (!root) throw new Error('No 3D scene was returned by the model decoder');
     let meshes = 0;
