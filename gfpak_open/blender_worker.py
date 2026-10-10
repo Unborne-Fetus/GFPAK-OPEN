@@ -1,4 +1,4 @@
-"""Blender-side TRMDL import and GLB export. Invoked with blender --background."""
+"""Blender-side TRMDL and GFBMDL import; export actual 3D geometry to GLB."""
 import argparse
 import importlib.util
 import sys
@@ -28,13 +28,26 @@ def main():
 
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    imported = bpy.ops.import_scene.trmdl(filepath=str(Path(opts.model).resolve()),
-                                           loadlods=False, multiple=False, multiplesubs=False)
-    if "FINISHED" not in imported:
-        raise RuntimeError("TRMDL import cancelled; check the Blender flatbuffers dependency")
+    source = Path(opts.model).resolve()
+    if source.suffix.lower() == ".trmdl":
+        imported = bpy.ops.import_scene.trmdl(filepath=str(source),
+                                               loadlods=False, multiple=False, multiplesubs=False)
+        if "FINISHED" not in imported:
+            raise RuntimeError("TRMDL import cancelled; check Blender flatbuffers installation")
+    elif source.suffix.lower() == ".gfbmdl":
+        # The legacy Blender operator reads its 'files' collection, not 'filepath',
+        # which is empty in background mode. Call the import function directly.
+        # This importer supports Let's Go / Sword-Shield geometry but does not
+        # reconstruct their original proprietary materials/textures.
+        from pokemon_switch_importer.gfbmdl_import import LoadModel
+        LoadModel(bytearray(source.read_bytes()), source.name)
+    else:
+        raise RuntimeError("Unsupported native mesh extension: " + source.suffix)
+    print("GFPAK_NATIVE_IMPORT", source.suffix.lower())
+
     meshes = [obj for obj in bpy.data.objects if obj.type == "MESH" and len(obj.data.vertices) > 0]
     if not meshes:
-        raise RuntimeError("TRMDL importer produced no geometry; refusing empty GLB")
+        raise RuntimeError("Native model importer produced no geometry; refusing empty GLB")
 
     if opts.animations:
         armatures = [obj for obj in bpy.data.objects if obj.type == "ARMATURE"]
