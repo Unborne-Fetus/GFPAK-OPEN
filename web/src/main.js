@@ -1,6 +1,7 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
 import { ModelStage } from './stage.js';
+import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import {
   projectFromFiles, projectFromZip, loadModel, modelStats, exportGlb,
   downloadBlob, demoModel, extension
@@ -19,6 +20,48 @@ const state = {
   resource: null,
   busy: false,
 };
+
+function currentGame() { return gameById(el('gameSource').value); }
+
+function updateGameProfile() {
+  const game = currentGame();
+  el('gameEngine').textContent = game.engine.toUpperCase();
+  el('gameYear').textContent = game.year || 'ALL GAMES';
+  el('gameHint').textContent = game.hint;
+  el('activeGame').textContent = game.id === 'auto' ? 'Auto' : game.name;
+  if (state.project) displayNativeGuidance(state.project.items.map(item => item.path));
+  else if (state.archive) displayNativeGuidance([state.archive.filename]);
+}
+
+function suggestGame(names) {
+  if (el('gameSource').value !== 'auto') return;
+  const auto = detectGameFromNames(names);
+  if (auto.id !== 'auto') {
+    el('gameSource').value = auto.id;
+    log('Detected ' + auto.name + ' from filenames (you can change this selection).');
+  }
+  updateGameProfile();
+}
+
+function displayNativeGuidance(names) {
+  const description = describeSource(currentGame().id, names);
+  const hasNative = identifyFormat(names).native.length > 0;
+  const panel = el('nativeGuide');
+  panel.hidden = !hasNative;
+  if (!hasNative) return;
+  el('nativeTitle').textContent = description.title;
+  el('nativeExplanation').textContent = description.message;
+  const archiveInZip = state.project?.items.some(item => item.path.toLowerCase().endsWith('.gfpak'));
+  el('inspectPackagedArchive').hidden = !archiveInZip;
+}
+
+function initGameOptions() {
+  const picker = el('gameSource');
+  picker.replaceChildren(...GAMES.map(game => new Option(game.name, game.id)));
+  picker.value = 'auto';
+  updateGameProfile();
+}
+
 
 function updateStatus(status) {
   el('footerStatus').textContent = status.toUpperCase();
@@ -105,9 +148,10 @@ function setModel(result, format, packageName) {
   el('objectSubtitle').textContent = info.meshes + ' mesh(es) ready for GLB export';
   el('originalFormat').textContent = format.replace('.', '').toUpperCase();
   el('packageName').textContent = packageName;
+  el('activeGame').textContent = currentGame().name;
   el('emptyState').hidden = true;
   el('exportButton').disabled = false;
-  const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae)$/i, '') || 'model';
+  const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
   const clips = el('clipSelect');
@@ -167,15 +211,22 @@ async function chooseProject(files) {
     }
     const project = only && extension(only.name) === '.zip' ?
       await projectFromZip(only, message => log(message)) : projectFromFiles(files);
+    state.loaded?.disposeAssets?.();
+    state.loaded = null;
+    state.stage?.clear();
+    resetInspector();
     state.project = project;
     state.archive = null;
-    updateSource(project.label + ' · ' + project.models.length + ' model(s)');
+    suggestGame([project.label, ...project.items.map(item => item.path)]);
+    displayNativeGuidance(project.items.map(item => item.path));
+    updateSource(project.label + ' · ' + project.models.length + ' renderable model(s)' + (project.native?.length ? ' · ' + project.native.length + ' original resource(s)' : ''));
     el('modelChoice').hidden = !project.models.length;
     el('modelFilter').value = '';
     filterModels();
     log('Imported ' + project.items.length + ' files, found ' + project.models.length + ' supported model(s).', 'success');
     if (!project.models.length) {
-      log('No compatible mesh found. Supported for 3D conversion: FBX, OBJ, DAE, glTF, GLB.', 'error');
+      const notice = describeSource(currentGame().id, project.items.map(item => item.path));
+      log(notice.title + ': ' + notice.message, notice.kind === 'native' ? 'info' : 'error');
       showTab('viewer');
     } else if (project.models.length === 1) {
       // Open on the next frame, once the loading overlay has closed.
@@ -195,6 +246,8 @@ async function loadArchive(file) {
   const archive = parseGfpak(await file.arrayBuffer(), file.name);
   state.archive = archive;
   state.project = null;
+  suggestGame([file.name]);
+  displayNativeGuidance([file.name]);
   state.resource = null;
   state.loaded?.disposeAssets?.();
   state.loaded = null;
@@ -317,6 +370,7 @@ function addDemo() {
   state.project = null;
   state.archive = null;
   el('modelChoice').hidden = true;
+  el('nativeGuide').hidden = true;
   updateSource('Built-in geometric demo model');
   setModel(demoModel(), '.glb', 'Built-in demo');
   el('outputName').value = 'gfpak-demo';
@@ -324,6 +378,15 @@ function addDemo() {
 }
 
 function attachEvents() {
+  el('gameSource').addEventListener('change', updateGameProfile);
+  el('inspectPackagedArchive').addEventListener('click', async () => {
+    const item = state.project?.items.find(entry => entry.path.toLowerCase().endsWith('.gfpak'));
+    if (!item) return;
+    try {
+      const buffer = await item.getBytes();
+      await loadArchive({name: item.path.split('/').pop(), arrayBuffer: async () => buffer});
+    } catch (error) { errorMessage(error); }
+  });
   el('chooseFiles').addEventListener('click', event => { event.stopPropagation(); el('fileInput').click(); });
   el('dropZone').addEventListener('click', event => {
     if (event.target.closest('button')) return;
@@ -393,6 +456,7 @@ function attachEvents() {
 }
 
 function start() {
+  initGameOptions();
   attachEvents();
   resetInspector();
   try {
