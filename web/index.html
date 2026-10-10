@@ -3,14 +3,176 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#08111e" />
-  <meta name="description" content="GFPAK Open is a local-first, browser-based 3D Pokémon asset inspector and model converter. Preview FBX, OBJ, DAE, GLTF, GLB and ZIP assets, export GLB, inspect GFPak archives." />
+  <meta name="theme-color" content="#08121f" />
+  <meta name="description" content="GFPAK Open Web Studio: inspect GFPAK archives locally; import ZIP, FBX, OBJ, DAE, glTF and GLB models, preview them in 3D, and export GLB directly in your browser." />
   <title>GFPAK OPEN | 3D Model Studio</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a1726'/%3E%3Cpath d='M32 10 52 21v22L32 54 12 43V21Z' stroke='%235ce6bc' stroke-width='4' fill='none'/%3E%3Cpath d='m12 21 20 12 20-12M32 33v21' stroke='%235ce6bc' stroke-width='3' fill='none'/%3E%3C/svg%3E">
 </head>
 <body>
   <div id="app">
-    <div class="loading-screen"><div class="loading-glyph">◇</div><strong>GFPAK OPEN</strong><span>Initializing 3D studio…</span></div>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="GFPAK OPEN Home">
+        <span class="brand-icon">◇</span>
+        <span class="brand-name"><strong>GFPAK<span> OPEN</span></strong><small>3D MODEL STUDIO</small></span>
+      </a>
+      <span class="top-divider"></span>
+      <span class="top-context">POKÉDEX 3D MAX <span class="context-slash">/</span> WEB TOOLS</span>
+      <div class="top-spacer"></div>
+      <span class="privacy-tag"><span class="pulse-dot"></span> LOCAL PROCESSING</span>
+      <a class="github-link" href="https://github.com/Unborne-Fetus/GFPAK-OPEN" target="_blank" rel="noopener noreferrer">GITHUB <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <div class="page">
+      <aside class="sidebar">
+        <div class="pane-head">
+          <span class="eyebrow">WORKSPACE / 01</span>
+          <h1>Model converter<span class="title-dot">.</span></h1>
+          <p>Load an asset package. Inspect the geometry. Export a clean GLB.</p>
+        </div>
+
+        <section class="side-section">
+          <div class="section-heading"><span class="step-number">01</span><h2>IMPORT SOURCE</h2><span class="section-line"></span></div>
+          <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Choose or drop a model or GFPAK file">
+            <span class="drop-icon">⬡</span>
+            <strong>Drop model files here</strong>
+            <span>FBX, OBJ, DAE, GLB, GLTF, ZIP, GFPAK</span>
+            <button id="chooseFiles" class="button button-outline" type="button">BROWSE FILES <span>↗</span></button>
+          </div>
+          <div class="secondary-actions">
+            <button id="chooseFolder" class="text-button" type="button">＋ Import a folder</button>
+            <button id="demoButton" class="text-button" type="button">◇ Try demo model</button>
+          </div>
+          <input id="fileInput" type="file" accept=".zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
+          <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
+          <input id="hashInput" type="file" accept=".txt,.json" hidden />
+          <div id="sourceSummary" class="source-summary" aria-live="polite">
+            <span class="tiny-led"></span><span>No source loaded</span>
+          </div>
+          <div id="modelChoice" class="model-choice" hidden>
+            <label for="modelFilter">MODEL FILES <span id="modelCount"></span></label>
+            <input id="modelFilter" class="field" type="search" placeholder="Filter by name or number..." />
+            <select id="modelSelect" class="field" size="5" aria-label="Choose model from imported package"></select>
+            <button id="loadSelected" type="button" class="button button-secondary">LOAD SELECTED MODEL <span>→</span></button>
+          </div>
+        </section>
+
+        <section class="side-section export-section">
+          <div class="section-heading"><span class="step-number">02</span><h2>EXPORT MODEL</h2><span class="section-line"></span></div>
+          <div class="format-preview"><span class="format-icon">⬡</span><div><strong>glTF Binary</strong><span>.GLB • Web-ready 3D model</span></div><span class="format-check">✓</span></div>
+          <label for="outputName" class="input-label">FILE NAME</label>
+          <div class="filename-row"><input id="outputName" class="field" value="converted-model" spellcheck="false" aria-label="GLB export filename" /><span>.glb</span></div>
+          <button id="exportButton" class="button button-primary" type="button" disabled>EXPORT GLB <span class="button-arrow">↗</span></button>
+          <p class="helper-copy">Exports actual 3D geometry from compatible model files. Does not invent missing textures or animations.</p>
+        </section>
+
+        <section class="side-section small-section">
+          <div class="section-heading"><span class="step-number">03</span><h2>VIEW SETTINGS</h2><span class="section-line"></span></div>
+          <label class="toggle-row"><input id="gridToggle" type="checkbox" checked /><span>Show floor grid</span></label>
+          <label class="toggle-row"><input id="spinToggle" type="checkbox" /><span>Auto-rotate preview</span></label>
+          <label class="toggle-row"><input id="axesToggle" type="checkbox" /><span>Show axis helper</span></label>
+          <button id="frameModel" class="text-button full" type="button">◎ Center camera on model</button>
+        </section>
+
+        <div class="sidebar-footer">GFPAK OPEN <span>V0.2 / WEB</span><br />NO UPLOADS • NO GAME FILES BUNDLED</div>
+      </aside>
+
+      <main class="workspace">
+        <div class="workspace-bar">
+          <div class="mode-tabs" role="tablist" aria-label="Workspace mode">
+            <button id="tabViewer" type="button" class="mode-tab active" role="tab" aria-selected="true" aria-controls="viewerPanel">◈ &nbsp; 3D VIEWPORT</button>
+            <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
+          </div>
+          <div id="currentModelTag" class="current-file">NO MODEL LOADED</div>
+        </div>
+
+        <div id="viewerPanel" class="viewer-panel" role="tabpanel" aria-labelledby="tabViewer">
+          <div id="viewer" class="viewport">
+            <div id="canvasHost" class="canvas-host"></div>
+            <div class="viewport-top">
+              <span class="view-label"><span class="live-dot"></span> REAL-TIME MODEL PREVIEW</span>
+              <div class="view-top-actions">
+                <button id="viewReset" type="button" class="icon-button" title="Reset camera" aria-label="Reset camera">⟲</button>
+              </div>
+            </div>
+            <div id="emptyState" class="empty-state">
+              <div class="empty-graphic"><div class="wirecube">⬡</div><span class="orbit o1"></span><span class="orbit o2"></span></div>
+              <span class="eyebrow">3D VIEWPORT / READY</span>
+              <h2>Your model starts here.</h2>
+              <p>Drop a supported model or ZIP to preview it in 3D. Load a demo to try the exporter.</p>
+              <button id="emptyDemo" type="button" class="button button-secondary">LOAD DEMO GEOMETRY <span>→</span></button>
+            </div>
+            <div id="busyOverlay" class="busy-overlay" hidden>
+              <div class="spinner"></div><strong id="busyTitle">Processing assets</strong><span id="busyMessage">Preparing model…</span>
+            </div>
+            <div class="viewport-bottom">
+              <div class="canvas-hint"><span class="hint-icon">↻</span> DRAG TO ROTATE <span class="hint-separator">·</span> SCROLL TO ZOOM <span class="hint-separator">·</span> RIGHT DRAG TO PAN</div>
+              <div class="view-badge">WEBGL <span>●</span></div>
+            </div>
+          </div>
+          <div class="inspector">
+            <div class="inspector-header"><span class="eyebrow">OBJECT INSPECTOR</span><span class="inspector-state" id="inspectorState">IDLE</span></div>
+            <h3 id="objectName">No active object</h3>
+            <p id="objectSubtitle">Load a 3D model to inspect its details.</p>
+            <div class="stat-grid">
+              <div class="stat-item"><span>MESHES</span><strong id="statMeshes">—</strong></div>
+              <div class="stat-item"><span>VERTICES</span><strong id="statVertices">—</strong></div>
+              <div class="stat-item"><span>TRIANGLES</span><strong id="statTriangles">—</strong></div>
+              <div class="stat-item"><span>MATERIALS</span><strong id="statMaterials">—</strong></div>
+              <div class="stat-item"><span>BONES</span><strong id="statBones">—</strong></div>
+              <div class="stat-item"><span>ANIMATIONS</span><strong id="statClips">—</strong></div>
+            </div>
+            <div class="inspector-separator"></div>
+            <label for="clipSelect" class="input-label">ANIMATION</label>
+            <select id="clipSelect" class="field" disabled><option value="">No animations available</option></select>
+            <button id="toggleAnimation" type="button" class="button button-secondary mini" disabled>▶ PLAY ANIMATION</button>
+            <div class="inspector-separator"></div>
+            <label class="input-label">SOURCE DETAILS</label>
+            <div class="detail-pair"><span>Original format</span><strong id="originalFormat">—</strong></div>
+            <div class="detail-pair"><span>Asset package</span><strong id="packageName">—</strong></div>
+            <div class="detail-pair"><span>Export format</span><strong>GLB 2.0</strong></div>
+            <div class="inspector-note"><span>ⓘ</span> Models and textures are processed in this browser tab. No files are sent to our servers.</div>
+          </div>
+        </div>
+
+        <section id="archivePanel" class="archive-panel" role="tabpanel" aria-labelledby="tabArchive" hidden>
+          <div class="archive-header">
+            <span class="eyebrow">GAME FREAK / ARCHIVE ANALYZER</span>
+            <h2>GFLXPACK resource explorer</h2>
+            <p>Browse resource hashes and extract readable data. Oodle-compressed Trinity model resources still require the Windows converter.</p>
+          </div>
+          <div class="archive-metrics">
+            <div><span>RESOURCES</span><strong id="archiveResources">—</strong></div>
+            <div><span>FOLDERS</span><strong id="archiveFolders">—</strong></div>
+            <div><span>PACKED SIZE</span><strong id="archiveBytes">—</strong></div>
+            <div><span>CODEC</span><strong id="archiveCodec">—</strong></div>
+          </div>
+          <div class="archive-actions">
+            <input id="archiveSearch" type="search" class="field" placeholder="Search hash, index, filename..." aria-label="Search archive" />
+            <button id="chooseHashes" class="button button-secondary" type="button">＋ LOAD HASH LIST</button>
+            <button id="downloadIndex" class="button button-secondary" type="button" disabled>↓ JSON INDEX</button>
+            <button id="downloadResource" class="button button-primary" type="button" disabled>↓ RESOURCE</button>
+          </div>
+          <p id="hashStatus" class="archive-hint">No hash dictionary loaded. Hashed names can be identified using a matching gfpak.txt or JSON dictionary.</p>
+          <div class="archive-table-wrap">
+            <table class="archive-table">
+              <thead><tr><th>INDEX</th><th>FOLDER</th><th>RESOURCE HASH / NAME</th><th>COMPRESSION</th><th>PACKED</th><th>UNPACKED</th></tr></thead>
+              <tbody id="archiveTableBody"><tr><td colspan="6" class="table-empty">Open a .gfpak to inspect the archive.</td></tr></tbody>
+            </table>
+          </div>
+          <div class="archive-bottom">
+            <span id="archiveRowCount">0 resources shown</span>
+            <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
+          </div>
+          <div class="archive-warning"><strong>About direct .gfpak conversion:</strong> Legends: Arceus often uses Oodle compression and proprietary Trinity model resources. A static website cannot execute Blender or a Windows decoder DLL. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for that path, or import already converted FBX / OBJ / DAE here.</div>
+        </section>
+
+        <div class="log-panel">
+          <div class="log-heading"><span><span class="log-led"></span> ACTIVITY LOG</span><button id="clearLog" type="button">CLEAR LOG</button></div>
+          <div id="logBody" class="log-body" role="log" aria-live="polite"><div><span>[READY]</span> Import a 3D model, model ZIP, or GFPak archive to get started.</div></div>
+        </div>
+        <footer class="workspace-footer"><span>GFPAK OPEN <span class="dim">/</span> WEB MODEL STUDIO</span><span id="footerStatus">SYSTEM READY</span></footer>
+      </main>
+    </div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>
