@@ -79,6 +79,7 @@ function rankCandidate(row, modelPath) {
   const path = normalizePath(row.path);
   const model = normalizePath(modelPath);
   const parent = model.slice(0, model.lastIndexOf('/') + 1);
+  if (!parent) return path.includes('/') ? 0 : 100;
   if (path.startsWith(parent)) return 100;
   let score = 0;
   const folderTokens = parent.split('/').filter(Boolean);
@@ -184,11 +185,12 @@ export async function loadModel(project, selected, report = () => {}) {
     if (!meshes) throw new Error('The file decoded but contained no renderable mesh geometry');
     root.name ||= entry.path.split('/').pop();
     report('Model loaded: ' + meshes + ' mesh(es).');
-    return { root, animations, selected: entry.path };
-  } finally {
-    // Three.js finishes texture dependencies before loader.parseAsync resolves.
-    // Converted material textures are decoded and retained on THREE.Texture.
+    // Retain blob URLs until the model is replaced, since FBX and OBJ texture
+    // requests can remain in flight even after mesh parsing has completed.
+    return { root, animations, selected: entry.path, disposeAssets: () => resolver.release() };
+  } catch (error) {
     resolver.release();
+    throw error;
   }
 }
 
