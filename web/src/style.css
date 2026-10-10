@@ -6,3 +6,20 @@
 @media(max-width:900px){.page{display:flex;flex-direction:column}.sidebar{min-height:unset;gap:15px;border-right:0;border-bottom:1px solid #263a49;padding:18px}.pane-head h1{font-size:20px}.drop-zone{min-height:125px}.drop-icon{font-size:24px}.sidebar-footer{display:none}.workspace{padding:15px;gap:12px}.viewer-panel{min-height:470px;grid-template-columns:minmax(0,1fr) 200px}.inspector{padding:14px}.stat-item{padding:9px}.stat-item strong{font-size:16px}.archive-panel{padding:15px}}
 @media(max-width:640px){.topbar{height:60px;padding:0 15px;gap:10px}.top-context,.top-divider,.privacy-tag{display:none}.brand-icon{font-size:29px}.brand-name strong{font-size:15px}.brand-name small{font-size:8px}.github-link{padding:8px;font-size:9px}.pane-head p{max-width:none}.workspace-bar{display:block}.mode-tabs{justify-content:center}.mode-tab{font-size:9px;flex:1;padding:12px 5px}.viewer-panel{display:flex;flex-direction:column}.viewport{height:410px;min-height:410px}.inspector{width:100%}.stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.canvas-hint{font-size:7px}.view-badge{display:none}.archive-metrics{grid-template-columns:1fr 1fr}.archive-metrics>div:nth-child(2){border-right:none}.archive-metrics>div:nth-child(-n+2){border-bottom:1px solid #345263}.archive-actions{display:grid;grid-template-columns:1fr 1fr}.archive-actions .field{grid-column:1/-1}.archive-actions .button{white-space:normal}.archive-bottom{flex-direction:column;align-items:flex-start}.empty-state h2{font-size:22px}.empty-graphic{height:105px}.wirecube{font-size:72px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Game-specific importer controls and transparent native-format status */
+.game-profile{background:linear-gradient(145deg,#122b35,#122335);border:1px solid #365463;border-radius:10px;padding:14px 12px;display:flex;flex-direction:column;gap:10px}
+.game-profile .field{background:#0d1b2c;color:#e4eee9;min-height:38px}
+.game-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#66d4b7;font:700 9px "Space Grotesk",sans-serif;letter-spacing:.09em}
+.game-meta>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.game-meta>span:last-child{white-space:nowrap;color:#8faaba}
+.game-profile p{margin:0;font-size:11px;line-height:1.65;color:#b1c2ca}
+.native-guide{background:#263021;border:1px solid #6e6843;padding:13px;border-radius:8px;display:flex;flex-direction:column;gap:9px}
+.native-guide>strong{font:700 12px "Space Grotesk",sans-serif;color:#ebd9a8}
+.native-guide p{margin:0;color:#d1c9af;font:11px/1.65 "DM Sans",sans-serif}
+.native-guide-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.native-guide-actions>.button{font-size:9px;padding:10px;white-space:normal}
+.native-guide-actions>a{font:700 9px "Space Grotesk",sans-serif;letter-spacing:.04em;color:#85e4c4;padding:8px 0;text-decoration:underline}
+.native-guide-actions>a:hover{color:#c2ffe9}
+@media(max-width:900px){.game-profile{padding:11px}.native-guide{padding:11px}}
