@@ -27,26 +27,41 @@
         <div class="pane-head">
           <span class="eyebrow">WORKSPACE / 01</span>
           <h1>Model converter<span class="title-dot">.</span></h1>
-          <p>Load an asset package. Inspect the geometry. Export a clean GLB.</p>
+          <p>Game-aware model rendering from Let’s Go to Legends: Z-A — including DLC.</p>
         </div>
+
+        <section class="game-profile" aria-label="Pokémon game format">
+          <label for="gameSource" class="input-label">POKÉMON GAME / ASSET ENGINE</label>
+          <select id="gameSource" class="field" aria-label="Choose Pokémon game"><option value="auto">Auto-detect format</option></select>
+          <div class="game-meta"><span id="gameEngine">AUTOMATIC FORMAT DETECTION</span><span id="gameYear"></span></div>
+          <p id="gameHint">Select a game to see which model files can be rendered directly and how to convert original assets.</p>
+        </section>
 
         <section class="side-section">
           <div class="section-heading"><span class="step-number">01</span><h2>IMPORT SOURCE</h2><span class="section-line"></span></div>
           <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Choose or drop a model or GFPAK file">
             <span class="drop-icon">⬡</span>
             <strong>Drop model files here</strong>
-            <span>FBX, OBJ, DAE, GLB, GLTF, ZIP, GFPAK</span>
+            <span>3D models, source files, ZIP packages &amp; GFPAK</span>
             <button id="chooseFiles" class="button button-outline" type="button">BROWSE FILES <span>↗</span></button>
           </div>
           <div class="secondary-actions">
             <button id="chooseFolder" class="text-button" type="button">＋ Import a folder</button>
             <button id="demoButton" class="text-button" type="button">◇ Try demo model</button>
           </div>
-          <input id="fileInput" type="file" accept=".zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
+          <input id="fileInput" type="file" accept=".zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.gfbmdl,.trmdl,.trmsh,.trmbf,.trskl,.gfbanm,.tranm,.bntx,.bundle,.unity3d,.assets,.nusrcmdlb,.nutexb,.ply,.stl,.3ds,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
           <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
           <input id="hashInput" type="file" accept=".txt,.json" hidden />
           <div id="sourceSummary" class="source-summary" aria-live="polite">
             <span class="tiny-led"></span><span>No source loaded</span>
+          </div>
+          <div id="nativeGuide" class="native-guide" hidden>
+            <strong id="nativeTitle">Original game assets detected</strong>
+            <p id="nativeExplanation"></p>
+            <div class="native-guide-actions">
+              <button id="inspectPackagedArchive" type="button" class="button button-secondary" hidden>INSPECT GFPAK IN ZIP <span>→</span></button>
+              <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">DESKTOP CONVERTER ↗</a>
+            </div>
           </div>
           <div id="modelChoice" class="model-choice" hidden>
             <label for="modelFilter">MODEL FILES <span id="modelCount"></span></label>
@@ -73,7 +88,7 @@
           <button id="frameModel" class="text-button full" type="button">◎ Center camera on model</button>
         </section>
 
-        <div class="sidebar-footer">GFPAK OPEN <span>V0.2 / WEB</span><br />NO UPLOADS • NO GAME FILES BUNDLED</div>
+        <div class="sidebar-footer">GFPAK OPEN <span>V0.3 / WEB</span><br />NO UPLOADS • NO GAME FILES BUNDLED</div>
       </aside>
 
       <main class="workspace">
@@ -130,6 +145,7 @@
             <div class="detail-pair"><span>Original format</span><strong id="originalFormat">—</strong></div>
             <div class="detail-pair"><span>Asset package</span><strong id="packageName">—</strong></div>
             <div class="detail-pair"><span>Export format</span><strong>GLB 2.0</strong></div>
+            <div class="detail-pair"><span>Game profile</span><strong id="activeGame">Auto</strong></div>
             <div class="inspector-note"><span>ⓘ</span> Models and textures are processed in this browser tab. No files are sent to our servers.</div>
           </div>
         </div>
@@ -138,7 +154,7 @@
           <div class="archive-header">
             <span class="eyebrow">GAME FREAK / ARCHIVE ANALYZER</span>
             <h2>GFLXPACK resource explorer</h2>
-            <p>Browse resource hashes and extract readable data. Oodle-compressed Trinity model resources still require the Windows converter.</p>
+            <p>Inspect original model archives from Let’s Go, Sword/Shield, Legends: Arceus, Scarlet/Violet and Z-A. Rendering requires decoded 3D geometry; Unity and Snap assets use different tools.</p>
           </div>
           <div class="archive-metrics">
             <div><span>RESOURCES</span><strong id="archiveResources">—</strong></div>
@@ -163,7 +179,7 @@
             <span id="archiveRowCount">0 resources shown</span>
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
-          <div class="archive-warning"><strong>About direct .gfpak conversion:</strong> Legends: Arceus often uses Oodle compression and proprietary Trinity model resources. A static website cannot execute Blender or a Windows decoder DLL. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for that path, or import already converted FBX / OBJ / DAE here.</div>
+          <div class="archive-warning"><strong>Raw native formats:</strong> GFPAK/GFBMDL/TRMDL and Unity asset bundles are not directly renderable by a static browser page. The site supports actual 3D rendering after extraction/conversion. For GFBMDL and Trinity source files, use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> or a compatible game model exporter; then import the result here.</div>
         </section>
 
         <div class="log-panel">
