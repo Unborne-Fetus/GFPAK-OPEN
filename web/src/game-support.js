@@ -5,10 +5,10 @@ export const GAMES = Object.freeze([
     hint:'Compatible GLB, GLTF, FBX, OBJ and DAE exports render directly.' },
   { id:'lgpe', name:"Let's Go Pikachu / Eevee", year:'2018', engine:'Game Freak GFBMDL',
     native:['.gfpak','.gfbmdl','.gfbanm','.bntx'],tags:['letsgo','lets_go','lgpe'],
-    short:'Legacy Game Freak models',hint:'Convert GFBMDL with the desktop Pokémon Switch Blender importer. Textures may need manual setup.' },
+    short:'Legacy Game Freak models',hint:'Native GFBMDL geometry now previews and exports GLB in the browser. For accurate textures, rigs and GFBANM animation, use the desktop converter and decoded assets.' },
   { id:'swsh', name:'Sword / Shield + DLC', year:'2019–2020', engine:'Game Freak GFBMDL',
     native:['.gfpak','.gfbmdl','.gfbanm','.bntx'],tags:['sword','shield','swsh','crown_tundra','isle_of_armor'],
-    short:'Includes Isle of Armor and Crown Tundra',hint:'Use a current GFBMDL decoder, with separate PNG textures as necessary, to export GLB.' },
+    short:'Includes Isle of Armor and Crown Tundra',hint:'Native GFBMDL meshes can now render in-browser. Full original materials, textures and animations still require additional conversion.' },
   { id:'snap', name:'New Pokémon Snap', year:'2021', engine:'Bandai Namco custom',
     native:['.nusrcmdlb','.nutexb','.nushdb'],tags:['new_pokemon_snap','pokemon_snap','newsnap'],
     short:'Custom model engine',hint:'Extract NUSRCMDLB with a compatible game-specific tool, then load FBX/OBJ/DAE/GLB.' },
@@ -56,8 +56,10 @@ export function describeSource(gameId,names){
    message:'Load a model to preview and export GLB. Original game shaders may not survive conversion.'};
  if(f.hasGfpak)return {kind:'native',title:'GFPak archive detected',
    message:'GFPak contains resource blocks, not a renderable mesh. Inspect the archive, then decode and convert model resources with a compatible local tool.'};
- if(f.hasTrmdl||f.hasGfbmdl)return {kind:'native',title:f.hasTrmdl?'TRMDL source model':'GFBMDL source model',
-   message:game.id!=='auto'?game.hint:'Native Game Freak meshes require a decoder. Convert them to GLB with the Windows converter or a matching model exporter.'};
+ if(f.hasGfbmdl)return {kind:'native',title:'Native GFBMDL model available',
+   message:'GFBMDL geometry can now be decoded and rendered directly in the browser, including GLB export. Game-specific shaders, BNTX textures, skeleton rigging and animations remain incomplete.'};
+ if(f.hasTrmdl)return {kind:'native',title:'TRMDL source model',
+   message:game.id!=='auto'?game.hint:'Trinity TRMDL meshes still require a compatible model exporter before browser preview.'};
  if(f.hasUnity)return {kind:'native',title:'Unity source assets',
    message:'Unity asset bundles cannot be rendered directly in GitHub Pages. Export FBX/OBJ/GLB and textures with a Unity asset tool first.'};
  if(f.hasSnap)return {kind:'native',title:'New Pokémon Snap source model',
