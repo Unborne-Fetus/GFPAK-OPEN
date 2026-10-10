@@ -13,17 +13,7 @@ from .converter import ConversionError, ConversionOptions, convert_model
 from .core import GFPak, GFPakError
 
 
-def find_blender() -> str:
-    path = shutil.which("blender")
-    if path:
-        return path
-    if os.name == "nt":
-        root = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Blender Foundation"
-        if root.exists():
-            found = sorted(root.glob("Blender */blender.exe"))
-            if found:
-                return str(found[-1])
-    return ""
+from .blender_detection import find_blender
 
 
 def settings_file() -> Path:
@@ -43,7 +33,7 @@ class Studio(tk.Tk):
             settings = json.loads(settings_file().read_text(encoding="utf-8"))
         except (FileNotFoundError, ValueError, OSError):
             settings = {}
-        self.blender = tk.StringVar(value=settings.get("blender", find_blender()))
+        self.blender = tk.StringVar(value=(settings.get("blender") if Path(settings.get("blender", "")).is_file() else find_blender()))
         self.addon = tk.StringVar(value=settings.get("addon", ""))
         self.hashes = tk.StringVar(value=settings.get("hashes", ""))
         self.oodle = tk.StringVar(value=settings.get("oodle", ""))
@@ -88,6 +78,7 @@ class Studio(tk.Tk):
         config = ttk.LabelFrame(self, text="2  Converter settings (saved automatically)", padding=10)
         config.pack(fill="x", padx=16, pady=5)
         self._row(config, 0, "Blender executable", self.blender)
+        ttk.Button(config, text="Auto-detect Blender", command=self.detect_blender).grid(row=0, column=3, padx=(8, 0))
         self._row(config, 1, "Pokémon Switch Blender add-on", self.addon, directory=True)
         self._row(config, 2, "GFPAK filename dictionary", self.hashes)
         self._row(config, 3, "Oodle runtime DLL", self.oodle)
@@ -112,6 +103,15 @@ class Studio(tk.Tk):
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         self.write("Ready. Choose a GFPak or TRMDL folder, configure Blender, and select Convert to GLB.")
+
+    def detect_blender(self):
+        found = find_blender()
+        if found:
+            self.blender.set(found)
+            self.save_settings()
+            self.status.set("Blender found: " + found)
+        else:
+            messagebox.showinfo("Blender not found", "Install Blender and try again, or browse to blender.exe.")
 
     def _row(self, parent, row, label, variable, directory=False):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=2)
@@ -221,6 +221,8 @@ class Studio(tk.Tk):
             if not dest:
                 return
             outputs = [Path(dest) / (src.stem + ".glb") for src in self.inputs]
+        if not Path(self.blender.get()).is_file():
+            self.blender.set(find_blender())
         self.save_settings()
         inputs = list(zip(self.inputs, outputs))
         settings = {key: getattr(self, key).get().strip()
