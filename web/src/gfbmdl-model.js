@@ -4,6 +4,8 @@
  */
 import * as THREE from 'three';
 import { decodeGfbmdl } from './gfbmdl.js';
+import { parseNativeAnimation } from './trinity-animation.js';
+import { animationTracks } from './trinity-model.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -49,7 +51,7 @@ function chooseMap(textureNames, material) {
     (candidates.length === 1 ? candidates[0] : null);
 }
 
-function threeMesh(geometrySource, materialArray) {
+function threeMesh(geometrySource, materialArray, rig = null) {
   const attributes = geometrySource.properties;
   const geometry = new THREE.BufferGeometry();
   const position = attributes.position;
@@ -58,8 +60,6 @@ function threeMesh(geometrySource, materialArray) {
   if (attributes.normal?.length >= geometrySource.vertexCount * 3) {
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(
       attributes.normal.slice(0, geometrySource.vertexCount * 3), 3));
-  } else {
-    geometry.computeVertexNormals();
   }
   if (attributes.uv?.length >= geometrySource.vertexCount * 2) {
     const uv = new Float32Array(geometrySource.vertexCount * 2);
@@ -77,6 +77,7 @@ function threeMesh(geometrySource, materialArray) {
     }
   }
   geometry.setIndex(geometrySource.indices);
+  if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
   const assigned = materialArray.length ? materialArray : [
     new THREE.MeshStandardMaterial({ color: 0xd2dce4, roughness: 0.74, side: THREE.DoubleSide })
   ];
@@ -84,10 +85,85 @@ function threeMesh(geometrySource, materialArray) {
     geometry.addGroup(group.start, group.count,
       group.materialIndex < assigned.length ? group.materialIndex : 0);
   }
-  const mesh = new THREE.Mesh(geometry, assigned);
+  let mesh = null;
+  const indices = attributes.joints;
+  const influence = attributes.weights;
+  if (rig && indices?.length === geometrySource.vertexCount * 4 &&
+      influence?.length === geometrySource.vertexCount * 4) {
+    const mapped = new Uint16Array(indices.length);
+    const weights = new Float32Array(indices.length);
+    let hasValidSkin = false;
+    for (let i = 0; i < geometrySource.vertexCount; i++) {
+      let total = 0;
+      for (let c = 0; c < 4; c++) {
+        const offset = i * 4 + c;
+        const local = Math.round(indices[offset]);
+        const actual = rig.deformingIndices[local];
+        const weight = influence[offset];
+        if (Number.isInteger(actual) && actual >= 0 && actual < rig.bones.length && weight > 0) {
+          mapped[offset] = actual;
+          weights[offset] = weight;
+          total += weight;
+        }
+      }
+      if (total > 0) {
+        hasValidSkin = true;
+        for (let c = 0; c < 4; c++) weights[i * 4 + c] /= total;
+      }
+    }
+    if (hasValidSkin) {
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(mapped, 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+      mesh = new THREE.SkinnedMesh(geometry, assigned);
+      mesh.bind(rig.skeleton);
+    }
+  }
+  if (!mesh) mesh = new THREE.Mesh(geometry, assigned);
   mesh.name = 'GFBMDL mesh ' + geometrySource.index;
   mesh.frustumCulled = false;
   return mesh;
+}
+
+function buildLegacyRig(root, entries) {
+  if (!entries?.length) return null;
+  const bones = entries.map(entry => {
+    const bone = new THREE.Bone();
+    bone.name = entry.name;
+    bone.position.fromArray(entry.translation);
+    bone.rotation.set(...entry.rotation, 'XYZ');
+    bone.scale.fromArray(entry.scale);
+    return bone;
+  });
+  entries.forEach((entry, i) => {
+    if (entry.parent >= 0 && entry.parent < bones.length && entry.parent !== i)
+      bones[entry.parent].add(bones[i]);
+    else root.add(bones[i]);
+  });
+  root.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(bones);
+  skeleton.calculateInverses();
+  const deformingIndices = entries.map((entry, i) => entry.rigid ? -1 : i).filter(i => i >= 0);
+  return { bones, skeleton, deformingIndices };
+}
+
+async function readLegacyAnimations(project, rig, report) {
+  if (!rig?.bones?.length) return [];
+  const sources = project.items.filter(item => getExtension(item.path) === '.gfbanm');
+  if (sources.length > 96) {
+    report('Import fewer GFBANM files at once to avoid decoding unrelated game animations.');
+    return [];
+  }
+  const clips = [];
+  for (const source of sources) {
+    try {
+      const data = await source.getBytes();
+      const binary = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      const native = parseNativeAnimation(binary, source.path.split('/').pop());
+      const clip = animationTracks(native, rig.bones);
+      if (clip) clips.push(clip);
+    } catch (error) { report('Animation ' + source.path + ' skipped: ' + error.message); }
+  }
+  return clips;
 }
 
 /**
@@ -113,8 +189,9 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
     material.name = source.name || 'GFBMDL Material ' + i;
     return material;
   });
+  const rig = buildLegacyRig(root, model.bones);
   for (const geometry of model.meshes) {
-    root.add(threeMesh(geometry, materials));
+    root.add(threeMesh(geometry, materials, rig));
   }
 
   // The original importer orients GFBMDL at +90° X, from the model's native axes.
@@ -143,11 +220,13 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
     }
   }
 
+  const animations = await readLegacyAnimations(project, rig, report);
   report('Decoded ' + model.stats.meshCount + ' real GFBMDL meshes and ' +
-    model.stats.vertexCount.toLocaleString() + ' vertices. ' +
-    'Original shaders and animation data are not reconstructed.');
+    model.stats.vertexCount.toLocaleString() + ' vertices, ' +
+    (rig?.bones.length || 0) + ' bones and ' + animations.length + ' animation clips. ' +
+    'Original shaders, BNTX and some skeletal variants are not reconstructed.');
   return {
-    root, animations: [], selected,
+    root, animations, selected,
     sourceFormat: 'GFBMDL',
     sourceStats: model.stats,
     disposeAssets: () => {
