@@ -15,8 +15,9 @@ import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
 import { identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
+import { loadTrinityModel } from './trinity-model.js';
 
-export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds', '.gfbmdl'];
+export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds', '.gfbmdl', '.trmdl', '.trmsh'];
 const TEXTURES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga', '.dds', '.ktx2', '.bin']);
 const MAX_FILES = 20000;
 const MAX_RESOURCE_BYTES = 400 * 1024 * 1024;
@@ -149,6 +150,7 @@ export async function loadModel(project, selected, report = () => {}) {
   const suffix = extension(entry.path);
   if (!SUPPORTED.includes(suffix)) throw new Error('Unsupported format ' + suffix);
   if (suffix === '.gfbmdl') return loadGfbmdl(project, selected, report);
+  if (suffix === '.trmdl' || suffix === '.trmsh') return loadTrinityModel(project, selected, report);
 
   const dependencyFiles = assetFilesForModel(project, entry.path);
   // There may be many textures in a game dump. Only load nearby files.
