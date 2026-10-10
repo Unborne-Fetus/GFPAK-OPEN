@@ -10,6 +10,7 @@ import {
   TrinityError, parseTrmdl, parseTrmsh, parseTrmbf,
   parseTrmtr, parseTrskl, decodeTrinityMeshes
 } from './trinity.js';
+import { parseNativeAnimation } from './trinity-animation.js';
 
 const MAX_BYTES = 450 * 1024 * 1024;
 const TEXTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
@@ -224,6 +225,56 @@ function makeMesh(part, material, skeletonInfo) {
   return mesh;
 }
 
+function normalizeBoneName(name) {
+  return String(name).split(/[/:|\\]/).at(-1).toLowerCase().trim();
+}
+
+function animationTracks(source, bones) {
+  const lookup = new Map(bones.map(bone => [normalizeBoneName(bone.name), bone]));
+  const frameRate = source.frameRate > 0 ? source.frameRate : 30;
+  const tracks = [];
+  for (const channel of source.tracks) {
+    const bone = lookup.get(normalizeBoneName(channel.bone));
+    if (!bone) continue;
+    for (const [kind, property] of [
+      ['translation', 'position'], ['rotation', 'quaternion'], ['scale', 'scale']
+    ]) {
+      const keys = channel[kind];
+      if (!keys?.length) continue;
+      const times = keys.map(key => key.frame / frameRate);
+      const values = keys.flatMap(key => key.value);
+      const path = bone.name + '.' + property;
+      tracks.push(property === 'quaternion'
+        ? new THREE.QuaternionKeyframeTrack(path, times, values)
+        : new THREE.VectorKeyframeTrack(path, times, values));
+    }
+  }
+  if (!tracks.length) return null;
+  const duration = source.frameCount > 1 ? (source.frameCount - 1) / frameRate : -1;
+  return new THREE.AnimationClip(source.name, duration, tracks);
+}
+
+async function loadNativeClips(project, selected, skeleton, report) {
+  if (!skeleton?.bones?.length) return [];
+  const compatible = project.items.filter(item => ['.tranm', '.gfbanm'].includes(ext(item.path)));
+  const clips = [];
+  // Avoid scanning arbitrary complete game dumps with thousands of animations.
+  if (compatible.length > 96) {
+    report('Many animation files found. Import a smaller animation folder for native clip decoding.');
+    return clips;
+  }
+  for (const item of compatible) {
+    try {
+      const native = parseNativeAnimation(await bytesFor(item), basename(item.path));
+      const clip = animationTracks(native, skeleton.bones);
+      if (clip) clips.push(clip);
+    } catch (error) {
+      report('Native animation ' + basename(item.path) + ' skipped: ' + error.message);
+    }
+  }
+  return clips;
+}
+
 /**
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
@@ -284,13 +335,13 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
     }
     scene.add(makeMesh(part, material, rig));
   }
-  // Avoid inventing native animations: a TRSKL is rest pose, not a clip.
+  const animations = await loadNativeClips(project, selected, rig, report);
   const vCount = parts.reduce((sum, p) => sum + p.vertices.count, 0);
   report('Decoded ' + parts.length + ' Trinity mesh parts / ' + vCount.toLocaleString() +
     ' vertices' + (rig ? ' / ' + rig.bones.length + ' skeleton bones' : '') +
-    '. Game-native shaders, BNTX and animation tracks require additional support.');
+    ' / ' + animations.length + ' native animation clips. Game-native shaders, BNTX and some track variants still require more support.');
   return {
-    root: scene, animations: [], selected,
+    root: scene, animations, selected,
     sourceFormat: 'TRMDL',
     sourceStats: { meshParts: parts.length, vertices: vCount, bones: rig?.bones.length ?? 0 },
     disposeAssets: () => {
