@@ -77,7 +77,7 @@
           <label for="outputName" class="input-label">FILE NAME</label>
           <div class="filename-row"><input id="outputName" class="field" value="converted-model" spellcheck="false" aria-label="GLB export filename" /><span>.glb</span></div>
           <button id="exportButton" class="button button-primary" type="button" disabled>EXPORT GLB <span class="button-arrow">↗</span></button>
-          <p class="helper-copy">Exports actual 3D geometry from compatible model files. Does not invent missing textures or animations.</p>
+          <p class="helper-copy">Exports actual mesh geometry. Native GFBMDL preview is experimental; original shaders, BNTX textures, skeletal animation and weight skinning are not yet preserved.</p>
         </section>
 
         <section class="side-section small-section">
@@ -154,7 +154,7 @@
           <div class="archive-header">
             <span class="eyebrow">GAME FREAK / ARCHIVE ANALYZER</span>
             <h2>GFLXPACK resource explorer</h2>
-            <p>Inspect original model archives from Let’s Go, Sword/Shield, Legends: Arceus, Scarlet/Violet and Z-A. Rendering requires decoded 3D geometry; Unity and Snap assets use different tools.</p>
+            <p>Inspect Switch model archives and preview native GFBMDL geometry when resources are stored or LZ4-compressed. Other formats may need separate conversion.</p>
           </div>
           <div class="archive-metrics">
             <div><span>RESOURCES</span><strong id="archiveResources">—</strong></div>
@@ -180,7 +180,7 @@
             <span id="archiveRowCount">0 resources shown</span>
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
-          <div class="archive-warning"><strong>Raw native formats:</strong> GFPAK/GFBMDL/TRMDL and Unity asset bundles are not directly renderable by a static browser page. The site supports actual 3D rendering after extraction/conversion. For GFBMDL and Trinity source files, use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> or a compatible game model exporter; then import the result here.</div>
+          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) can now be decoded and rendered directly when already extracted, or from stored/LZ4 GFPAK entries with a matching hash dictionary. Native Trinity/TRMDL, Unity, BNTX and Oodle-coded resources still need external decoding; original shaders and rigging may not survive. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
         <div class="log-panel">
