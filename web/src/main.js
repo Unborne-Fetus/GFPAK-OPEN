@@ -2,6 +2,7 @@
 import './style.css';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
+import { loadGfbmdl } from './gfbmdl-model.js';
 import {
   projectFromFiles, projectFromZip, loadModel, modelStats, exportGlb,
   downloadBlob, demoModel, extension
@@ -145,13 +146,14 @@ function setModel(result, format, packageName) {
   for (const [id, n] of mapping) el(id).textContent = Number(n).toLocaleString();
   el('inspectorState').textContent = 'LOADED';
   el('objectName').textContent = result.selected.split('/').pop() || result.selected;
-  el('objectSubtitle').textContent = info.meshes + ' mesh(es) ready for GLB export';
+  el('objectSubtitle').textContent = info.meshes + ' mesh(es) ready for GLB export' +
+    (result.sourceFormat === 'GFBMDL' ? ' · Native geometry (animations and shaders not decoded)' : '');
   el('originalFormat').textContent = format.replace('.', '').toUpperCase();
   el('packageName').textContent = packageName;
   el('activeGame').textContent = currentGame().name;
   el('emptyState').hidden = true;
   el('exportButton').disabled = false;
-  const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds)$/i, '') || 'model';
+  const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
   const clips = el('clipSelect');
@@ -263,12 +265,58 @@ async function loadArchive(file) {
     .map(([key, value]) => codecName(Number(key)) + ' ' + value).join(' / ');
   el('downloadIndex').disabled = false;
   el('downloadResource').disabled = true;
+  updateArchiveModelButton();
   el('archiveSearch').value = '';
   renderArchiveTable();
   showTab('archive');
   log('Opened ' + file.name + ': ' + archive.count + ' entries in ' + archive.folderCount + ' folders.', 'success');
   if (archive.compressionTypes['3']) {
     log('Found ' + archive.compressionTypes['3'] + ' Oodle-compressed resources: browser extraction of those files is not supported.');
+  }
+}
+
+function usableArchiveModels() {
+  if (!state.archive) return [];
+  return state.archive.resources.filter(resource =>
+    (resolvedName(resource, state.dictionary) || '').toLowerCase().endsWith('.gfbmdl'));
+}
+
+function updateArchiveModelButton() {
+  const candidates = usableArchiveModels();
+  const selected = state.resource;
+  const preview = el('previewArchiveModel');
+  preview.disabled = !candidates.length;
+  if (selected && candidates.includes(selected)) {
+    preview.textContent = '◈ PREVIEW SELECTED 3D MESH';
+  } else {
+    preview.textContent = '◈ PREVIEW 3D MESH (' + candidates.length + ')';
+  }
+}
+
+async function previewGfbmdlInArchive() {
+  if (!state.archive || state.busy) return;
+  const models = usableArchiveModels();
+  const source = models.includes(state.resource) ? state.resource : models[0];
+  if (!source) {
+    log('Load a matching hash dictionary that identifies a .gfbmdl model within the archive.', 'error');
+    return;
+  }
+  const name = resolvedName(source, state.dictionary);
+  busy(true, 'Decoding archive model', 'Extracting model resources locally…');
+  try {
+    const raw = extractResource(state.archive, source);
+    const data = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+    const project = {label: state.archive.filename, items: [{
+      path: name, getBytes: async () => data,
+    }]};
+    const result = await loadGfbmdl(project, name, message => log(message));
+    setModel(result, '.gfbmdl', state.archive.filename);
+    showTab('viewer');
+    log('GFBMDL model extracted and rendered entirely in the browser.', 'success');
+  } catch (error) {
+    errorMessage(error);
+  } finally {
+    busy(false);
   }
 }
 
@@ -319,11 +367,13 @@ function renderArchiveTable() {
       body.querySelectorAll('tr.selected').forEach(row => row.classList.remove('selected'));
       tr.classList.add('selected');
       el('downloadResource').disabled = false;
+      updateArchiveModelButton();
       log('Selected resource ' + r.index + ' (' + codecName(r.compression) + ').');
     });
     fragment.append(tr);
   }
   body.append(fragment);
+  updateArchiveModelButton();
   el('archiveRowCount').textContent = visible.length.toLocaleString() + ' of ' + all.length.toLocaleString() +
     (all.length > visible.length ? ' matching resources (first 1,500 shown)' : ' matching resources');
 }
@@ -335,6 +385,8 @@ async function readHashFile(file) {
     el('hashStatus').textContent = 'Loaded ' + state.dictionary.size + ' hash mappings from ' + file.name;
     log('Loaded filename dictionary ' + file.name + ' (' + state.dictionary.size + ' entries).', 'success');
     renderArchiveTable();
+    const models = usableArchiveModels();
+    if (models.length) log('Identified ' + models.length + ' GFBMDL model resource(s). Use PREVIEW 3D MESH to decode compatible uncompressed or LZ4 data.', 'success');
   } catch (err) { errorMessage(err); }
 }
 
@@ -440,6 +492,7 @@ function attachEvents() {
     el('toggleAnimation').textContent = playing ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
   });
   el('archiveSearch').addEventListener('input', renderArchiveTable);
+  el('previewArchiveModel').addEventListener('click', previewGfbmdlInArchive);
   el('chooseHashes').addEventListener('click', () => el('hashInput').click());
   el('hashInput').addEventListener('change', event => {
     if (event.target.files?.[0]) readHashFile(event.target.files[0]);
