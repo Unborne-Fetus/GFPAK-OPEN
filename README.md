@@ -1,69 +1,82 @@
-# GFPAK OPEN — 3D Model Converter
+# GFPAK OPEN — Pokémon Switch 3D Model Converter
 
-Two ways to work with Pokémon model assets: a Windows converter and a GitHub Pages web studio.
+**Windows converter:** [Download builds](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml)
 
-## Web studio (GitHub Pages)
+**Web 3D studio:** https://unborne-fetus.github.io/GFPAK-OPEN/
 
-Website (once GitHub Pages is enabled and deployed): https://unborne-fetus.github.io/GFPAK-OPEN/
+GFPAK OPEN recognizes model packages from Pokémon Switch games from **Let's Go Pikachu/Eevee through Legends: Z-A and Mega Dimension**, using different conversion routes according to each game's 3D engine.
 
-The web version is a local-browser 3D converter built with Three.js. It supports:
+## Game compatibility
 
-- Drag-and-drop FBX, OBJ + MTL, Collada DAE, glTF and GLB models.
-- ZIP packages containing multiple models and nearby textures. Select the model you want from a filterable list.
-- Orbitable 3D previews with zoom, pan, automatic camera framing, grid/axes, and animation playback when clips are supported.
-- Mesh / vertex / triangle / material / skeleton / animation counts.
-- Export to real GLB with compatible geometry, materials, textures, and animations.
-- Read GFLXPACK / .gfpak archive indexes, resolve hashes with optional filename dictionaries, export JSON and stored/LZ4 resource data. Oodle blocks can be downloaded as compressed bytes only.
-- All game/model files are processed locally in your browser, without a server upload.
+| Game | Original native format | Browser rendering | Native conversion route |
+| --- | --- | --- | --- |
+| Let's Go Pikachu / Eevee | GFBMDL, GFPAK, GFBANM | Converted 3D assets | Windows GFBMDL importer (materials not fully supported) |
+| Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Converted 3D assets | Windows GFBMDL importer (materials not fully supported) |
+| New Pokémon Snap | NUSRCMDLB / NUTEXB | Converted 3D assets | Game-specific extraction required |
+| Brilliant Diamond / Shining Pearl | Unity assets and asset bundles | Converted 3D assets | AssetStudio / AssetRipper to FBX/OBJ/GLB |
+| Legends: Arceus | GFPAK / TRMDL | Converted 3D assets | Windows Trinity importer / GFTool |
+| Scarlet / Violet + Teal Mask + Indigo Disk | Trinity / TRMDL | Converted 3D assets | Windows Trinity importer / GFTool |
+| Legends: Z-A + Mega Dimension | Revised Trinity / TRMDL | Converted 3D assets | Current GFTool / Trinity Model Viewer; support is evolving |
+| Other Switch Pokémon spin-offs | Varies (Unity, custom engines) | Converted 3D assets | Separate extraction may be necessary |
 
-**Important limitation:** A raw Legends: Arceus .gfpak typically contains Oodle-compressed Trinity model resources. GitHub Pages cannot run a Windows Oodle DLL or Blender, and the web app cannot yet decode these compressed TRMDL meshes into GLB. To convert them, use the Windows converter and its required external decoder/importer, or import an already-extracted FBX, OBJ, DAE or glTF model into the web page.
+**Important:** Browser rendering is verified for decoded/converted 3D model formats, not every game's proprietary raw model container. GitHub Pages cannot load Windows decoder DLLs or run Blender. Raw encrypted and compressed archives, GFBMDL and TRMDL cannot yet be rendered directly by this static web app.
 
-No site or program in this repository distributes game data, proprietary libraries, keys, or third-party addons.
+## GitHub Pages — web 3D studio
 
-### Enable GitHub Pages
+The sidebar includes a game selector with automatic filename-based suggestions. It supports:
 
-The build and deploy workflow is in .github/workflows/deploy-pages.yml.
+- GLB, GLTF, FBX, OBJ + MTL, DAE, STL, PLY and 3DS model rendering, using actual geometry decoders.
+- ZIP and folder imports with associated local textures.
+- Orbit controls, zoom/pan, automatic camera framing, model statistics, and compatible animation playback.
+- Export to actual GLB with meshes; empty output is rejected.
+- GFPAK inspection, including archives inside ZIPs; file-hash lists; metadata JSON exports; stored/LZ4 resource extraction and Oodle packed-resource export.
+- Specific feedback for native TRMDL, GFBMDL, Unity and New Pokémon Snap assets that require a conversion step.
 
-If the first run fails because GitHub Pages has not been initialized, open **Settings → Pages → Build and deployment → Source: GitHub Actions**. Then go to **Actions → Deploy GFPAK Open Web → Run workflow**.
+No files are sent to our server. Original game models and other assets are not distributed.
 
-The published URL will be https://unborne-fetus.github.io/GFPAK-OPEN/
+### Deployment
 
-### Local web development
+The workflow .github/workflows/deploy-pages.yml builds and deploys the web app. Set **Settings → Pages → Build and deployment → Source: GitHub Actions** before running it.
 
-Requires Node.js 22 or later:
+Local development requires Node.js 22+:
 
     npm install
     npm test
+    npx playwright install chromium
+    npx playwright test
     npm run dev
 
-Open the local URL printed by Vite. To generate the deployable static website, run npm run build. Output goes to dist-web/.
+The production build uses npm run build and outputs dist-web/.
 
 ## Windows converter
 
-Get the Windows EXE from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml).
+Get the executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml).
 
-The Windows version can hand off real decoded TRMDL resources to Blender and the open-source [Pokémon Switch V3 Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender) and export GLB. It can parse GFLXPACK. Raw GFPAK conversion requires a matching filename dictionary and a compatible legally obtained Oodle runtime. Nothing proprietary is included.
+1. Select a .gfbmdl file for Let's Go / Sword / Shield, a .trmdl file for Trinity games, a decoded model folder, or a .gfpak.
+2. Choose your installed Blender executable and the [Pokémon Switch V3 Blender addon](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender).
+3. For raw GFPAK, supply a matching filename hash dictionary and, when required, a compatible legitimately obtained Oodle DLL. Neither is bundled.
+4. Optionally provide decoded PNG textures or animation resources.
+5. Convert to GLB and load the result on the GitHub Pages viewer.
 
-For local Python use:
+The legacy GFBMDL addon path does not automatically restore original shaders/textures. Models from newer Legends: Z-A revisions may need a current [GFTool/Trinity Model Viewer](https://github.com/pkZukan/gftool) glTF export.
 
-    python launch.py
-
-For CLI help:
+CLI help:
 
     python -m gfpak_open.cli --help
 
-Python tests:
+Python unit tests:
 
     python -m unittest discover -s tests -v
 
-## Status
+## Current roadmap
 
-- [x] Windows GFLXPACK archive parser and TRMDL-to-Blender conversion pipeline.
-- [x] GitHub Pages browser project with WebGL preview and GLB exporter for FBX/OBJ/DAE/glTF/GLB.
-- [x] Browser GFPAK archive inspection, stored/LZ4 resource decoding, and Oodle packed-resource export.
-- [x] ZIP models and texture-file import.
-- [ ] Full browser-native Oodle + Trinity/TRMDL decoder directly from raw Legends: Arceus GFPAK.
-- [ ] Extensive fidelity tests for textures and animations across all Switch games.
-- [ ] Offline-first web caching and bulk web exports.
+- [x] Game-aware import options for major releases and DLC across the requested range.
+- [x] Browser rendering of converted geometry and valid GLB export.
+- [x] Windows GFBMDL and TRMDL Blender import entry points.
+- [x] ZIP, folder and GFPAK archive inspection.
+- [ ] Validate each native game family with representative real mesh, texture and animation samples.
+- [ ] Decode raw Unity and NUSRCMDLB models directly.
+- [ ] WebAssembly/browser-native Oodle + Trinity model decoder.
+- [ ] Fidelity fixes for complex shaders, texture variants, rigging, and animation.
 
-Only operate on assets you have rights to use.
+Only process models and game assets you own or are authorized to use.
