@@ -316,14 +316,27 @@ class AssetBrowser:
             "note": "Native XCI game-card HFS0 partitions. Expand secure to browse available NCA files.",
         }
 
-    def _xci_partition_children(self, node: dict) -> dict:
+    @staticmethod
+    def _archive_page_start(cursor: str | None, count: int) -> int:
+        if cursor is None:
+            return 0
+        if not isinstance(cursor, str) or not re.fullmatch(r"o:[0-9a-f]{8}", cursor):
+            raise ValueError("Invalid archive directory pagination cursor")
+        start = int(cursor[2:], 16)
+        if start > count:
+            raise ValueError("Archive directory cursor is outside its entries")
+        return start
+
+    def _xci_partition_children(self, node: dict, cursor: str | None = None) -> dict:
         part_id = node["id"]
         if part_id not in self._xci_partitions:
             image = self._xci_image(Path(node["path"]))
             self._xci_partitions[part_id] = image.open_partition(node["inner"])
         reader = self._xci_partitions[part_id]
         rows = []
-        for entry in reader.entries[:MAX_ENTRIES]:
+        start = self._archive_page_start(cursor, len(reader.entries))
+        limit = 250
+        for entry in reader.entries[start:start + limit]:
             child = self._node("nspfile", reader.path,
                                inner=f"xci:{node['inner']}:{entry.index}",
                                index=entry.index, name=entry.name, size=entry.size)
@@ -334,11 +347,13 @@ class AssetBrowser:
             child["offset"] = entry.offset
             self._nca_sources[child["id"]] = reader
             rows.append(child)
+        next_start = start + len(rows)
+        more = f"o:{next_start:08x}" if next_start < len(reader.entries) else None
         return {"root": self._public(node),
                 "entries": [self._public(item) for item in rows],
                 "counts": dict(Counter(row["category"] for row in rows)),
-                "truncated": len(reader.entries) > MAX_ENTRIES,
-                "note": "Showing indexed files inside this XCI HFS0 partition."}
+                "next_cursor": more, "truncated": bool(more),
+                "note": "XCI HFS0 partition: load additional pages to browse every indexed file."}
 
     def nsp_page(self, id_: str, page: int = 0, query: str = '',
                  category: str = 'all', limit: int = 250) -> dict:
@@ -399,7 +414,7 @@ class AssetBrowser:
         if kind == "xci":
             return self._xci_root_children(node)
         if kind == "xci_partition":
-            return self._xci_partition_children(node)
+            return self._xci_partition_children(node, cursor)
         if kind == "nspfile" and node["name"].lower().endswith((".nca", ".ncz")):
             return self._nca_children(node)
         if kind == "nca_section":
