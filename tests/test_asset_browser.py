@@ -65,7 +65,7 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertEqual(report["counts"]["animation"], 1)
             self.assertEqual(report["counts"]["texture"], 1)
             model = next(e for e in detail["entries"] if e["category"] == "model")
-            self.assertEqual(browser.preview_source(model["id"]), pokemon / "pm0025_00_00.trmdl")
+            self.assertEqual(browser.preview_source(model["id"]).resolve(), (pokemon / "pm0025_00_00.trmdl").resolve())
             texture = next(e for e in detail["entries"] if e["category"] == "texture")
             with self.assertRaises(ValueError):
                 browser.preview_source(texture["id"])
@@ -82,7 +82,7 @@ class AssetBrowserTests(unittest.TestCase):
             report = browser.children(base["id"])
             self.assertEqual(len(report["entries"]), 1)
             self.assertEqual(report["entries"][0]["category"], "unknown")
-            self.assertEqual(browser.preview_source(base["id"]), archive)
+            self.assertEqual(browser.preview_source(base["id"]).resolve(), archive.resolve())
             self.assertTrue(archive.is_file())
             with self.assertRaises(ValueError):
                 browser.preview_source(report["entries"][0]["id"])
