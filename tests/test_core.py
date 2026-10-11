@@ -1,4 +1,5 @@
 import json
+import mmap
 import sys
 from types import SimpleNamespace
 import struct
@@ -36,6 +37,42 @@ class GFPakTests(unittest.TestCase):
             report = Path(temp) / "report.json"
             arc.save_report(report)
             self.assertEqual(json.loads(report.read_text())["resources"][0]["file_hash"], "00000000000000ab")
+
+    def test_mapped_archive_can_index_oversized_resource_without_reading_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "huge.gfpak"
+            self.make_archive(source)
+            data = bytearray(source.read_bytes())
+            huge = 513 * 1024 * 1024
+            struct.pack_into("<II", data, 92, huge, huge)
+            source.write_bytes(data)
+            # A sparse on-disk fixture is huge logically but physically tiny.
+            with source.open("r+b") as handle:
+                handle.truncate(112 + huge)
+            with GFPak(source) as archive:
+                self.assertIsInstance(archive._bytes, mmap.mmap)
+                resource = archive.resources[0]
+                self.assertEqual(resource.size, huge)
+                self.assertEqual(archive.summary()["unpacked_bytes"], huge)
+                self.assertEqual(archive.peek_resource(resource, 12), (b"HELLO" + b"\\0" * 7, True))
+                with self.assertRaisesRegex(GFPakError, "streaming"):
+                    archive.read_resource(resource)
+
+    def test_copy_resource_streams_and_refuses_overwrites(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "regular.gfpak"
+            self.make_archive(source)
+            with GFPak(source) as archive:
+                resource = archive.resources[0]
+                destination = Path(temp) / "out.bin"
+                archive.copy_resource(resource, destination)
+                self.assertEqual(destination.read_bytes(), b"HELLO")
+                with self.assertRaises(FileExistsError):
+                    archive.copy_resource(resource, destination)
+                self.assertEqual(destination.read_bytes(), b"HELLO")
+                packed = Path(temp) / "packed.bin"
+                archive.copy_resource(resource, packed, packed=True)
+                self.assertEqual(packed.read_bytes(), b"HELLO")
 
     def test_auto_detect_nearby_oodle_dll(self):
         with tempfile.TemporaryDirectory() as temp:
