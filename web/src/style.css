@@ -68,3 +68,49 @@
 .native-error{color:#ffb3a9!important;white-space:pre-wrap}
 .native-results{display:flex;flex-direction:column;gap:8px}
 .native-results .button{white-space:normal;overflow-wrap:anywhere}
+
+
+/* Desktop adaptive layout: tools get the width they need and the viewer is not
+   stretched into a giant, mostly-empty canvas on large monitors. */
+.desktop-app .page{grid-template-columns:clamp(276px,19vw,355px) minmax(0,1fr)}
+.desktop-app .sidebar{min-height:0;align-self:stretch}
+.desktop-app .workspace{min-width:0;max-width:100%;padding:clamp(14px,1.5vw,28px);gap:14px}
+.desktop-app .mode-tabs{flex-wrap:wrap}
+.desktop-app .mode-tab{font-size:clamp(10px,.72vw,13px);letter-spacing:.045em;padding:12px clamp(11px,1.15vw,20px)}
+.desktop-app .viewer-panel{flex:0 0 auto;height:clamp(470px,68vh,790px);min-height:0;grid-template-columns:minmax(0,1fr) clamp(250px,20vw,330px);gap:clamp(12px,1vw,22px)}
+.desktop-app .viewport{min-height:0;height:100%}
+.desktop-app .inspector{height:100%;overflow:auto}
+.desktop-app .canvas-host{inset:0}
+.desktop-app #desktopTools{width:min(100%,1020px);margin:0 auto;flex:none;padding:clamp(20px,2vw,32px);gap:17px}
+.desktop-app #desktopTools .section-heading h2{font-size:16px;letter-spacing:.03em}
+.desktop-app #desktopTools .helper-copy{font-size:13px;color:#a4b9c8}
+.desktop-app #desktopTools .native-state{font-size:13px;padding:13px 15px}
+.desktop-app #desktopTools .native-button-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+.desktop-app #desktopTools .native-button-row .button{font-size:13px;min-height:46px}
+.desktop-app #desktopTools .native-advanced{border:1px solid #324e5e;border-radius:9px;padding:14px 18px;background:#0d2030}
+.desktop-app #desktopTools .native-advanced>summary{font-size:13px}
+.desktop-app #desktopTools .native-advanced .input-label{font-size:11px;margin-top:5px}
+.desktop-app #desktopTools .native-advanced .field{min-height:42px;font-size:12px}
+.desktop-app #desktopTools>.button-primary{min-height:52px;font-size:13px}
+.desktop-app #desktopTools #nativeSources{overflow-wrap:anywhere}
+.desktop-app #desktopTools .native-results{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.desktop-app #desktopTools #nativeProgress{min-height:20px}
+@media(min-width:1650px){
+ .desktop-app .viewer-panel{height:min(72vh,850px);grid-template-columns:minmax(0,1fr) 320px}
+ .desktop-app .inspector .stat-item strong{font-size:22px}
+}
+@media(max-width:1100px){
+ .desktop-app .page{grid-template-columns:minmax(220px,260px) minmax(0,1fr)}
+ .desktop-app .viewer-panel{grid-template-columns:minmax(0,1fr);height:auto;min-height:0}
+ .desktop-app .viewport{height:clamp(390px,52vh,640px)}
+ .desktop-app .inspector{height:auto;overflow:visible}
+ .desktop-app .stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:780px){
+ .desktop-app .page{display:flex;flex-direction:column}
+ .desktop-app .sidebar{padding:17px;gap:14px}
+ .desktop-app .workspace{padding:14px}
+ .desktop-app .viewport{height:clamp(330px,55vh,540px)}
+ .desktop-app #desktopTools{padding:18px}
+ .desktop-app #desktopTools .native-button-row{grid-template-columns:1fr}
+}
