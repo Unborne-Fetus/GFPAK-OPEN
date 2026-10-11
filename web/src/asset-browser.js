@@ -271,7 +271,7 @@ async function selectNCASetting(kind) {
 function nxTreeIcon(row) {
   if (row.kind === 'nsp') return '▣';
   if (row.kind === 'nspfile') return '▣';
-  if (row.kind === 'nca_section') return '▤';
+  if (row.kind === 'nca_section' || row.kind === 'nca_dir') return '▤';
   if (row.kind === 'nca_dir') return '▤';
   if (row.kind === 'nca_locked') return '🔒';
   if (row.kind === 'linked_dir') return '▤';
