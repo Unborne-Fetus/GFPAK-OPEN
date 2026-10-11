@@ -1,143 +1,220 @@
-"""Synthetic NSP tests for authentic nested NCA section tree behavior.
+"""Native NCA3 tests use synthetic ExeFS/RomFS fixtures and disposable test keys.
 
-No actual game packages, console keys, or decryption utilities are needed.
+No Switch keys, Nintendo content, hactool, downloads or subprocesses are needed.
 """
+from __future__ import annotations
+
 import struct
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from gfpak_open.asset_browser import AssetBrowser
-from gfpak_open.nca_sections import LocalNCASections, SECTION_RE
+from gfpak_open.nca_native import Keyset, NativeNCA, NativeNCAError
+from gfpak_open.nca_sections import LocalNCASections
 from gfpak_open.nsp_explorer import NSPAnalyzer
 
 
-def make_nsp(path: Path):
-    filename = b"0123456789abcdef0123456789abcdef.nca\0"
-    data = b"NCA placeholder bytes not a real encrypted file"
-    path.write_bytes(
-        b"PFS0" + struct.pack("<III", 1, len(filename), 0) +
-        struct.pack("<QQII", 0, len(data), 0, 0) +
-        filename + data
-    )
-    return data
+def pfs0_files(files: list[tuple[str, bytes]]):
+    names = bytearray()
+    table = bytearray()
+    payload = bytearray()
+    for name, body in files:
+        at = len(names)
+        names.extend(name.encode() + b"\0")
+        table.extend(struct.pack("<QQII", len(payload), len(body), at, 0))
+        payload.extend(body)
+    return (b"PFS0" + struct.pack("<III", len(files), len(names), 0)
+            + table + names + payload)
 
 
-class NCATreeTests(unittest.TestCase):
-    def test_section_recognition_from_reader_output(self):
-        report = "NCA header\nSection 0:\n\tExeFS\nSection 1:\n\tRomFS\nSection 2:\n"
-        self.assertEqual(sorted(set(map(int, SECTION_RE.findall(report)))), [0, 1, 2])
+def romfs_nested():
+    """Construct a real RomFS table with bin/archive/pokemon nested directories."""
+    names = ("", "bin", "archive", "pokemon")
+    positions = []
+    directory = bytearray()
+    for name in names:
+        positions.append(len(directory))
+        label = name.encode()
+        directory.extend(b"\0" * (24 + (len(label) + 3 & ~3)))
+    filename = b"pm0025_00_00.gfpak"
+    content = b"GFLXPACK test Pikachu model"
+    for i, name in enumerate(names):
+        child = positions[i+1] if i < len(names)-1 else 0xFFFFFFFF
+        first_file = 0 if i == 3 else 0xFFFFFFFF
+        parent = 0xFFFFFFFF if i == 0 else positions[i-1]
+        struct.pack_into("<6I", directory, positions[i],
+                         parent, 0xFFFFFFFF, child, first_file,
+                         0xFFFFFFFF, len(name.encode()))
+        directory[positions[i]+24:positions[i]+24+len(name.encode())] = name.encode()
+    filetable = (struct.pack("<IIQQII", positions[-1], 0xFFFFFFFF,
+                             0, len(content), 0xFFFFFFFF, len(filename)) + filename)
+    header = bytearray(0x50)
+    dt = 0x50
+    ft = dt + len(directory)
+    data_off = ft + len(filetable)
+    struct.pack_into("<10Q", header, 0, 0x50, 0x50, 0, dt, len(directory),
+                     ft, 0, ft, len(filetable), data_off)
+    return bytes(header) + bytes(directory) + filetable + content
 
-    def test_locked_nca_shows_help_not_fake_sections(self):
-        with tempfile.TemporaryDirectory() as temp:
-            source = Path(temp) / "test.nsp"
-            make_nsp(source)
-            browser = AssetBrowser(nca_workspace=Path(temp) / "cache")
-            root = browser.open(source)
-            nca = browser.children(root["id"])["entries"][0]
-            self.assertTrue(nca["expandable"])
-            listing = browser.children(nca["id"])
-            self.assertEqual([r["name"] for r in listing["entries"]],
-                             ["Sections unavailable"])
-            self.assertIn("Select a local NCA reader", listing["note"])
-            self.assertFalse(listing["entries"][0]["expandable"])
-            self.assertFalse((Path(temp) / "cache").joinpath("readable.nca").exists())
 
-    def test_true_section_tree_and_lazy_extraction(self):
+def plain_nca(sources: list[tuple[str, bytes]], encrypted=False, headerkey=None,
+              areakey=None, contentkey=None):
+    header = bytearray(0xC00)
+    header[0x200:0x204] = b"NCA3"
+    if encrypted:
+        header[0x206] = 1
+        header[0x220] = 1
+        assert len(headerkey) == 32 and len(areakey) == len(contentkey) == 16
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        slots = b"\0"*32 + contentkey + b"\0"*16
+        ctx = Cipher(algorithms.AES(areakey), modes.ECB()).encryptor()
+        header[0x300:0x340] = ctx.update(slots) + ctx.finalize()
+    body = bytearray()
+    for i, (kind, payload) in enumerate(sources):
+        padded = payload + b"\0" * (-len(payload) % 0x200)
+        offset = 0xC00 + len(body)
+        struct.pack_into("<II", header, 0x240 + i*16, offset//0x200,
+                         (offset+len(padded))//0x200)
+        fs = 0x400 + i * 0x200
+        header[fs:fs+2] = b"\x02\x00"
+        header[fs+4] = 3 if encrypted else 1
+        if kind == "pfs":
+            header[fs+2] = 2
+            header[fs+3] = 2
+            struct.pack_into("<Q", header, fs+0x40, 0)
+        else:
+            header[fs+2] = 3
+            header[fs+3] = 3
+            header[fs+8:fs+12] = b"IVFC"
+            struct.pack_into("<I", header, fs+0x14, 1)
+            struct.pack_into("<Q", header, fs+0x18, 0)
+        if encrypted:
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+            counter = bytes.fromhex("0011223344556677")
+            header[fs+0x140:fs+0x148] = counter[::-1]
+            iv = counter + (offset//16).to_bytes(8, "big")
+            enc = Cipher(algorithms.AES(contentkey), modes.CTR(iv)).encryptor()
+            padded = enc.update(padded) + enc.finalize()
+        body.extend(padded)
+    content = bytes(header) + bytes(body)
+    if not encrypted:
+        return content
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    encrypted_header = bytearray()
+    for number in range(6):
+        sector = header[number*0x200:(number+1)*0x200]
+        tweak = number.to_bytes(16, "big")
+        encrypt = Cipher(algorithms.AES(headerkey), modes.XTS(tweak)).encryptor()
+        encrypted_header.extend(encrypt.update(sector) + encrypt.finalize())
+    return bytes(encrypted_header) + bytes(body)
+
+
+def package(path: Path, entries: list[tuple[str, bytes]]):
+    names = bytearray()
+    table = bytearray()
+    data = bytearray()
+    for filename, value in entries:
+        start = len(names)
+        names.extend(filename.encode() + b"\0")
+        table.extend(struct.pack("<QQII", len(data), len(value), start, 0))
+        data.extend(value)
+    path.write_bytes(b"PFS0" + struct.pack("<III", len(entries), len(names), 0) +
+                     table + names + data)
+
+
+class NativeNCAIntegrationTests(unittest.TestCase):
+    def test_read_plaintext_sections_and_nested_romfs_directly(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            package = root / "test.nsp"
-            original = make_nsp(package)
-            tool = root / "hactool.exe"
-            tool.write_bytes(b"reader fixture")
-            keyset = root / "local.keys"
-            keyset.write_text("dummy fixture, not real keys")
-            browser = AssetBrowser(nca_workspace=root / "staged")
-            node = browser.open(package)
-            browser.configure_nca_reader(tool, keyset)
-            calls = []
-
-            def fake_reader(command, **_kw):
-                calls.append(command)
-                self.assertIn("--suppresskeys", command)
-                self.assertEqual(command[0], str(tool))
-                if "-i" in command:
-                    staged = Path(command[-1])
-                    self.assertTrue(staged.is_file())
-                    self.assertEqual(staged.read_bytes(), original)
-                    return SimpleNamespace(returncode=0,
-                                           stdout=b"Section 0:\nSection 1:\n",
-                                           stderr=b"")
-                if "--section0dir" in command:
-                    out = Path(command[command.index("--section0dir") + 1])
-                    (out / "main").write_bytes(b"fake main")
-                    (out / "main.npdm").write_bytes(b"fake npdm")
-                elif "--section1dir" in command:
-                    out = Path(command[command.index("--section1dir") + 1])
-                    pokemon = out / "bin" / "archive" / "pokemon"
-                    pokemon.mkdir(parents=True)
-                    (pokemon / "pm0025_00_00.gfpak").write_bytes(b"model fixture")
-                return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
-
-            with patch("gfpak_open.nca_sections.subprocess.run", side_effect=fake_reader):
-                nca = browser.children(node["id"])["entries"][0]
+            nsp = root / "synthetic.nsp"
+            data = plain_nca([
+                ("pfs", pfs0_files([("main", b"EXE"), ("main.npdm", b"NPDM")])),
+                ("romfs", romfs_nested()),
+            ])
+            package(nsp, [("program.nca", data)])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(nsp)
+            nca = browser.children(source["id"])["entries"][0]
+            with patch("gfpak_open.nsp_explorer.NSPAnalyzer.export_raw",
+                       side_effect=AssertionError("Bulk NCA staging should never happen")):
                 sections = browser.children(nca["id"])["entries"]
-                self.assertEqual([x["name"] for x in sections],
+                self.assertEqual([node["name"] for node in sections],
                                  ["Section 0", "Section 1"])
-                self.assertEqual(len(calls), 1)  # Listing sections is lazy.
-                section_zero = browser.children(sections[0]["id"])["entries"]
-                self.assertEqual({x["name"] for x in section_zero},
-                                 {"main", "main.npdm"})
-                section_one = browser.children(sections[1]["id"])["entries"]
-                self.assertEqual([r["name"] for r in section_one], ["bin"])
-                child = section_one[0]
-                for folder in ("archive", "pokemon"):
-                    listing = browser.children(child["id"])
-                    child = next(x for x in listing["entries"] if x["name"] == folder)
-                pokemon_files = browser.children(child["id"])["entries"]
-                self.assertEqual(pokemon_files[0]["name"], "pm0025_00_00.gfpak")
-                self.assertEqual(len(calls), 3)
-                browser.children(sections[1]["id"])
-                self.assertEqual(len(calls), 3)  # Section reused from temp cache.
+                exefs = browser.children(sections[0]["id"])["entries"]
+                self.assertEqual({node["name"] for node in exefs}, {"main", "main.npdm"})
+                romfs = browser.children(sections[1]["id"])["entries"]
+                self.assertEqual([node["name"] for node in romfs], ["bin"])
+                directory = romfs[0]
+                for name in ("archive", "pokemon"):
+                    directory = next(node for node in browser.children(directory["id"])["entries"]
+                                     if node["name"] == name)
+                model = browser.children(directory["id"])["entries"][0]
+                self.assertEqual(model["name"], "pm0025_00_00.gfpak")
+                self.assertEqual(model["category"], "model archive")
+                details = browser.item_details(model["id"])
+                self.assertEqual(details["signature"], "Game Freak GFPAK archive")
+                export = root / "saved-model.gfpak"
+                browser.export_item(model["id"], export)
+                self.assertEqual(export.read_bytes(), b"GFLXPACK test Pikachu model")
+                self.assertEqual(browser.preview_source(model["id"]).read_bytes(),
+                                 b"GFLXPACK test Pikachu model")
+            self.assertFalse(list((root / "cache").glob("*.nca")))
+            self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
 
-    def test_reader_failure_does_not_invent_sections(self):
+    def test_native_aes_xts_header_and_aes_ctr_section(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            package = root / "test.nsp"
-            make_nsp(package)
-            tool = root / "reader.exe"
-            tool.touch()
-            keyset = root / "local.keys"
-            keyset.touch()
-            browser = AssetBrowser(nca_workspace=root / "staged")
-            main = browser.open(package)
-            browser.configure_nca_reader(tool, keyset)
-            with patch("gfpak_open.nca_sections.subprocess.run",
-                       return_value=SimpleNamespace(returncode=1,
-                                                    stdout=b"secret keys here",
-                                                    stderr=b"bad")):
-                nca = browser.children(main["id"])["entries"][0]
-                result = browser.children(nca["id"])
+            header_key = bytes(range(32))
+            area_key = bytes(range(0x20, 0x30))
+            content_key = bytes(range(0x40, 0x50))
+            encrypted = plain_nca(
+                [("pfs", pfs0_files([("main", b"Test executable payload")]))],
+                encrypted=True,headerkey=header_key,areakey=area_key,contentkey=content_key
+            )
+            nsp = root / "protected.nsp"
+            package(nsp, [("program.nca", encrypted)])
+            reader = NSPAnalyzer(nsp)
+            with self.assertRaisesRegex(NativeNCAError, "keys file"):
+                NativeNCA(reader, 0)
+            keyfile = root / "fixture.keys"
+            keyfile.write_text(
+                "nca_header_key = " + header_key.hex() + "\n" +
+                "nca_key_area_key_application_00 = " + area_key.hex() + "\n"
+            )
+            native = NativeNCA(reader, 0, Keyset(keyfile))
+            self.assertFalse(native.plaintext)
+            fs = native.sections[0].filesystem()
+            self.assertEqual(fs.children()[0]["name"], "main")
+            self.assertEqual(native.sections[0].read(fs.file("main").offset, 23),
+                             b"Test executable payload")
+
+    def test_locked_nca_has_help_and_no_fabricated_sections(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            nsp = root / "locked.nsp"
+            package(nsp, [("program.nca", b"not actually an NCA")])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            main = browser.open(nsp)
+            entry = browser.children(main["id"])["entries"][0]
+            result = browser.children(entry["id"])
             self.assertEqual(result["entries"][0]["name"], "Sections unavailable")
-            self.assertNotIn("secret", result["note"].lower())
+            self.assertNotIn("Section 1", str(result["entries"]))
+            self.assertIn("incomplete", result["note"])
 
-    def test_no_available_disk_space_fails_cleanly(self):
+    def test_invalid_keys_and_out_of_range_reads(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            package = root / "test.nsp"
-            make_nsp(package)
-            tool = root / "reader.exe"
-            tool.touch()
-            keyset = root / "local.keys"
-            keyset.touch()
-            explorer = LocalNCASections(root / "staged")
-            explorer.configure(tool, keyset)
-            with patch("gfpak_open.nca_sections.shutil.disk_usage",
-                       return_value=SimpleNamespace(free=0)):
-                with self.assertRaisesRegex(RuntimeError, "free temporary disk"):
-                    explorer.sections(NSPAnalyzer(package), 0)
+            keyfile = root / "keys.txt"
+            keyfile.write_text("nca_header_key=XYZ\n")
+            self.assertFalse(Keyset(keyfile).has_header)
+            package(root / "test.nsp", [("a.nca", plain_nca([
+                ("pfs", pfs0_files([("main", b"hello")]))
+            ]))])
+            native = NativeNCA(NSPAnalyzer(root / "test.nsp"), 0)
+            with self.assertRaisesRegex(NativeNCAError, "outside"):
+                native.sections[0].read(999999, 100)
 
 
 if __name__ == "__main__":
