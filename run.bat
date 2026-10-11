@@ -47,7 +47,7 @@ if not exist "build\blender_deps\flatbuffers\__init__.py" (
 if errorlevel 1 goto :failed
 
 echo [4/4] Creating standalone GFPAK-OPEN.exe...
-%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --collect-all cryptography --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
+%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --collect-all cryptography --collect-all zstandard --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
 if errorlevel 1 goto :failed
 if not exist "dist\GFPAK-OPEN.exe" goto :failed
 
