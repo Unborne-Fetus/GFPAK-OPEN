@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 
 from .core import GFPak, GFPakError
 from .nsp_explorer import NSPAnalyzer
+from .xci_explorer import XCIImage, XCIPartition
 from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
@@ -32,7 +33,7 @@ TEXTURE = {".bntx", ".png", ".dds", ".tga", ".jpg", ".jpeg", ".webp", ".trtex", 
 SKELETON = {".trskl"}
 METADATA = {".tik", ".cert", ".xml", ".json", ".cnmt"}
 MATERIAL = {".trmtr", ".trmmt", ".mtl"}
-ARCHIVE = {".gfpak", ".zip", ".nsp", ".xci"}
+ARCHIVE = {".gfpak", ".zip", ".nsp", ".nsz", ".xci", ".xcz"}
 PREVIEW = {".trmdl", ".gfbmdl", ".glb", ".gfpak"}
 MAX_ENTRIES = 2000
 MAX_NSP_FILES = 50000
@@ -63,6 +64,8 @@ def classify(filename: str) -> str:
         return "archive"
     if ext == ".nca":
         return "encrypted container"
+    if ext == ".ncz":
+        return "compressed container"
     return "other"
 
 
@@ -82,6 +85,9 @@ class AssetBrowser:
         self._zip_lists: dict[Path, tuple[list[str], dict[str, zipfile.ZipInfo]]] = {}
         self._inferred: dict[Path, dict[int, str]] = {}
         self._pfs: dict[Path, NSPAnalyzer] = {}
+        self._xci_images: dict[Path, XCIImage] = {}
+        self._xci_partitions: dict[str, XCIPartition] = {}
+        self._nca_sources: dict[str, NSPAnalyzer] = {}
         self.root_id: str | None = None
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
@@ -104,7 +110,7 @@ class AssetBrowser:
         result = {"id": id_, "kind": kind, "path": str(path), "name": name,
                   "category": category, "size": size if size is not None else 0,
                   "inner": inner, "index": index,
-                  "expandable": kind in {"directory", "linked_dir", "nca_section", "nca_dir", "gfpak", "zip", "zipdir", "nsp"}}
+                  "expandable": kind in {"directory", "linked_dir", "nca_section", "nca_dir", "gfpak", "zip", "zipdir", "nsp", "xci", "xci_partition"}}
         self._keys[key] = id_
         self._nodes[id_] = result
         return result
@@ -122,6 +128,9 @@ class AssetBrowser:
         self._zip_lists.clear()
         self._inferred.clear()
         self._pfs.clear()
+        self._xci_images.clear()
+        self._xci_partitions.clear()
+        self._nca_sources.clear()
         self._section_nodes.clear()
         self._nca_virtual_nodes.clear()
         self._linked_extracted = None
@@ -135,7 +144,8 @@ class AssetBrowser:
         if path.is_dir():
             return self._node("directory", path, name=path.name)
         ext = path.suffix.lower()
-        kind = {".gfpak": "gfpak", ".zip": "zip", ".nsp": "nsp"}.get(ext, "file")
+        kind = {".gfpak": "gfpak", ".zip": "zip", ".nsp": "nsp",
+                ".nsz": "nsp", ".xci": "xci", ".xcz": "xci"}.get(ext, "file")
         return self._node(kind, path, size=path.stat().st_size)
 
     @staticmethod
@@ -254,6 +264,50 @@ class AssetBrowser:
         self._linked_nca[node["index"]] = linked
         return self._public(linked)
 
+    def _xci_image(self, path: Path) -> XCIImage:
+        if path not in self._xci_images:
+            self._xci_images[path] = XCIImage(path)
+        return self._xci_images[path]
+
+    def _xci_root_children(self, node: dict) -> dict:
+        image = self._xci_image(Path(node["path"]))
+        entries = []
+        for partition in image.partitions:
+            child = self._node("xci_partition", image.path, inner=partition.name,
+                               name=partition.name, size=partition.size)
+            child["category"] = "folder"
+            entries.append(child)
+        return {
+            "root": self._public(node),
+            "entries": [self._public(item) for item in entries],
+            "counts": {"folder": len(entries)},
+            "truncated": False,
+            "note": "Native XCI game-card HFS0 partitions. Expand secure to browse available NCA files.",
+        }
+
+    def _xci_partition_children(self, node: dict) -> dict:
+        part_id = node["id"]
+        if part_id not in self._xci_partitions:
+            image = self._xci_image(Path(node["path"]))
+            self._xci_partitions[part_id] = image.open_partition(node["inner"])
+        reader = self._xci_partitions[part_id]
+        rows = []
+        for entry in reader.entries[:MAX_ENTRIES]:
+            child = self._node("nspfile", reader.path,
+                               inner=f"xci:{node['inner']}:{entry.index}",
+                               index=entry.index, name=entry.name, size=entry.size)
+            child["category"] = classify(entry.name)
+            child["role"] = entry.role
+            child["format"] = entry.format
+            child["offset"] = entry.offset
+            self._nca_sources[child["id"]] = reader
+            rows.append(child)
+        return {"root": self._public(node),
+                "entries": [self._public(item) for item in rows],
+                "counts": dict(Counter(row["category"] for row in rows)),
+                "truncated": len(reader.entries) > MAX_ENTRIES,
+                "note": "Showing indexed files inside this XCI HFS0 partition."}
+
     def nsp_page(self, id_: str, page: int = 0, query: str = '',
                  category: str = 'all', limit: int = 250) -> dict:
         """Paginate/filter all NSP entries, including those past the UI row cap."""
@@ -310,6 +364,10 @@ class AssetBrowser:
         path = Path(node["path"])
         if kind == "nsp":
             return self.nsp_page(id_)
+        if kind == "xci":
+            return self._xci_root_children(node)
+        if kind == "xci_partition":
+            return self._xci_partition_children(node)
         if kind == "nspfile" and node["name"].lower().endswith(".nca"):
             return self._nca_children(node)
         if kind == "nca_section":
@@ -382,7 +440,7 @@ class AssetBrowser:
                          if kind == "gfpak" else "")}
 
     def _nca_children(self, node: dict) -> dict:
-        reader = self.nsp_reader(Path(node["path"]))
+        reader = self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"]))
         index = node["index"]
         entries = []
         linked = self._linked_nca.get(index)
@@ -396,6 +454,7 @@ class AssetBrowser:
                                    index=number, name=f"Section {number}")
                 child["category"] = "folder"
                 self._section_nodes[child["id"]] = (index, number)
+                self._nca_sources[child["id"]] = reader
                 entries.append(child)
             message = ("Opened " + str(len(entries)) + " NCA section headers "
                        "using GFPAK-OPEN's native parser.")
@@ -428,7 +487,7 @@ class AssetBrowser:
 
     def _virtual_children(self, index: int, section: int, folder: str,
                           parent: dict) -> dict:
-        reader = self.nsp_reader(Path(parent["path"]))
+        reader = self._nca_sources.get(parent["id"]) or self.nsp_reader(Path(parent["path"]))
         fs = self._nca_sections.filesystem(reader, index, section)
         children = fs.children(folder)
         rows = []
@@ -440,6 +499,7 @@ class AssetBrowser:
                               size=child["size"])
             item["category"] = "folder" if is_dir else classify(child["name"])
             self._nca_virtual_nodes[item["id"]] = (index, section, child["path"])
+            self._nca_sources[item["id"]] = reader
             rows.append(item)
         return {
             "root": self._public(parent),
@@ -464,7 +524,7 @@ class AssetBrowser:
         node = self.node(node_id)
         if node["kind"] != "nspfile":
             raise ValueError("Select an individual NSP file first")
-        return self.nsp_reader(Path(node["path"])), node["index"]
+        return self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"])), node["index"]
 
     def nsp_inspect(self, node_id: str, offset: int = 0, length: int = 256) -> dict:
         analyzer, index = self.nsp_entry(node_id)
@@ -475,7 +535,7 @@ class AssetBrowser:
         if not position:
             raise ValueError("The selected NCA file is no longer available")
         index, section, name = position
-        reader = self.nsp_reader(Path(node["path"]))
+        reader = self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"]))
         return reader, index, section, name
 
     def export_item(self, id_: str, target: str | Path) -> Path:
