@@ -609,7 +609,7 @@ class AssetBrowser:
         reader = self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"]))
         return reader, index, section, name
 
-    def export_item(self, id_: str, target: str | Path) -> Path:
+    def export_item(self, id_: str, target: str | Path, *, packed: bool = False) -> Path:
         """Export an explicitly selected supported member without modifying sources.
 
         Existing destination files cannot be overwritten. Zip and filesystem
@@ -623,6 +623,8 @@ class AssetBrowser:
             raise ValueError("Choose an existing destination directory")
         if kind not in {"file", "zipfile", "gfpak_resource", "nspfile", "nca_file"}:
             raise ValueError("Select a file or resource, not a folder")
+        if packed and kind != "gfpak_resource":
+            raise ValueError("Packed export is supported for GFPAK resources only")
         if kind == "file" and dest.resolve() == source.resolve():
             raise ValueError("Cannot replace the source file")
         if kind == "nspfile":
@@ -633,7 +635,7 @@ class AssetBrowser:
             return self._nca_sections.extract_one(reader, index, section, name, dest)
         if kind == "gfpak_resource":
             archive = self._archive(source)
-            return archive.copy_resource(archive.resources[node["index"]], dest)
+            return archive.copy_resource(archive.resources[node["index"]], dest, packed=packed)
         with dest.open("xb") as output:
             try:
                 if kind == "file":
