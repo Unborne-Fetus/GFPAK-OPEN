@@ -13,6 +13,26 @@ def _version(path: Path) -> tuple[int, ...]:
     return tuple(int(n) for n in numbers[:4])
 
 
+def can_launch_blender(path: str | Path) -> bool:
+    """Verify that a Windows Store or regular Blender executable can launch."""
+    if not path:
+        return False
+    candidate = Path(path).expanduser()
+    try:
+        if not candidate.is_file():
+            return False
+        result = subprocess.run(
+            [str(candidate), "--background", "--factory-startup",
+             "--python-expr", "print('GFPAK_BLENDER_OK')"],
+            capture_output=True, text=True, errors="replace", timeout=18,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        return result.returncode == 0 and "GFPAK_BLENDER_OK" in result.stdout
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
+
+
 def find_blender() -> str:
     """Return the best installed Blender executable, or an empty string."""
     candidates: list[Path] = []
@@ -74,4 +94,7 @@ def find_blender() -> str:
     existing.sort(key=lambda p: ("windowsapps" not in str(p).lower() or
                                  "blenderfoundation.blender_" in str(p).lower(),
                                  _version(p)), reverse=True)
-    return str(existing[0]) if existing else ""
+    for candidate in existing:
+        if can_launch_blender(candidate):
+            return str(candidate)
+    return ""
