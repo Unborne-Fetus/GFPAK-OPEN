@@ -307,7 +307,10 @@
               <p id="assetSignature" class="nx-signature"></p>
               <pre id="assetGeneralHex" class="nx-general-hex" hidden></pre>
               <p id="assetSelectedInfo">Select an asset to inspect its type and preview compatible models.</p>
-              <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
+              <div class="nx-selection-actions">
+                <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
+                <button type="button" id="assetSaveFile" class="button button-secondary" disabled>↓ Save selected file…</button>
+              </div>
               <p class="helper-copy">Preview conversion is automatic and temporary. Save a GLB only if you want to keep it.</p>
               <div id="assetScanSummary" class="asset-scan-summary">No recursive scan performed.</div>
               <section id="nspSelection" class="nsp-selection" hidden>
