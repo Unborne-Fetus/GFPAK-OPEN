@@ -433,6 +433,7 @@ async function nxNavigateTree(row) {
   scanListing = null;
   renderListing();
   nxHighlightTree(row);
+  select(row); // Keep chosen NCA selected after its child listing loads.
   id('nxTreeStatus').textContent = row.name + ' · ' +
     (stack.at(-1)?.listing.entries || []).length + ' visible items';
 }
