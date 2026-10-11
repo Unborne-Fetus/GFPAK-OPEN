@@ -16,7 +16,6 @@ from pathlib import Path
 
 from .addon_manager import find_addon, ensure_addon
 from .asset_browser import AssetBrowser
-from .nca_sections import find_local_nca_reader
 from .blender_detection import find_blender, can_launch_blender
 from .converter import ConversionOptions, convert_model, validate_glb
 
@@ -68,36 +67,36 @@ class DesktopAPI:
         path.write_text(json.dumps(self.settings, indent=2), encoding="utf-8")
 
     def _configure_nca_browser(self):
-        reader = self.settings.get("nca_reader") or find_local_nca_reader()
-        keyset = self.settings.get("nca_keyset") or ""
-        self._browser.configure_nca_reader(reader, keyset)
+        # Native parser is built in; only an optional user-supplied keyset
+        # is consulted. No keys are bundled or exposed to the web interface.
+        self._browser.configure_nca_reader(self.settings.get("nca_keyset") or "")
 
     def browse_nca_settings(self):
         with self._lock:
-            reader = self._browser._nca_sections.tool
             keyset = self._browser._nca_sections.keyset
             return {
-                "reader": reader.name if reader and reader.is_file() else "",
+                "reader": "Built-in NCA3 / RomFS / ExeFS",
                 "keyset": keyset.name if keyset and keyset.is_file() else "",
-                "ready": self._browser._nca_sections.available(),
-                "note": ("NCA sections require a locally installed hactool or hactoolnet "
-                         "reader and a compatible local keyset. None are supplied or "
-                         "downloaded by GFPAK-OPEN.")
+                "ready": True,
+                "has_keys": self._browser._nca_sections.key_ready(),
+                "note": ("No external NCA reader executable required. "
+                         "Plaintext sections open immediately. Encrypted NCAs "
+                         "need an existing compatible user-supplied keys file; "
+                         "keys are not bundled or downloaded.")
             }
 
     def browse_nca_select(self, option: str):
-        if option not in ("reader", "keyset"):
-            raise ValueError("Unknown NCA reader configuration")
-        title = ("Choose installed hactool / hactoolnet executable" if option == "reader"
-                 else "Choose your existing local NCA keyset file")
-        chosen = self._dialog("open", title, ("All files (*.*)",))
-        if not chosen:
+        if option != "keyset":
+            raise ValueError("The NCA reader is built in; no executable is needed.")
+        selected = self._dialog("open", "Select existing local keys file",
+                                ("Keys files (*.keys;*.txt)", "All files (*.*)"))
+        if not selected:
             return self.browse_nca_settings()
-        selected = Path(chosen[0])
-        if not selected.is_file():
-            raise ValueError("Selected file no longer exists")
+        keyfile = Path(selected[0])
+        if not keyfile.is_file():
+            raise ValueError("Selected local keys file does not exist")
         with self._lock:
-            self.settings["nca_" + option] = str(selected)
+            self.settings["nca_keyset"] = str(keyfile)
             self._save()
             self._configure_nca_browser()
         return self.browse_nca_settings()
@@ -367,7 +366,7 @@ class DesktopAPI:
         with self._lock:
             browser = self._browser
             node = browser.node(node_id)
-            if node["kind"] not in {"file", "zipfile", "gfpak_resource", "nspfile"}:
+            if node["kind"] not in {"file", "zipfile", "gfpak_resource", "nspfile", "nca_file"}:
                 raise ValueError("Select a file rather than a folder")
             name = node["name"].replace("\\", "/").rsplit("/", 1)[-1]
             if node["kind"] == "gfpak_resource":
