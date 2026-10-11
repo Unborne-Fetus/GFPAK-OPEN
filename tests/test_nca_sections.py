@@ -315,6 +315,8 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(result["entries"][0]["name"], "Sections unavailable")
             self.assertNotIn("Section 1", str(result["entries"]))
             self.assertIn("incomplete", result["note"])
+            details = browser.item_details(result["entries"][0]["id"])
+            self.assertTrue(any("incomplete" in note for note in details["notes"]))
 
     def test_invalid_keys_and_out_of_range_reads(self):
         with tempfile.TemporaryDirectory() as temp:
