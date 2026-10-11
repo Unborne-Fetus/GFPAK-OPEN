@@ -44,7 +44,7 @@ class ConverterTests(unittest.TestCase):
     def test_community_dictionary_matches_archive_model_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
             names = ["model.trmdl"] + [f"asset_{i}.trmsh" for i in range(130)]
-            response = io.BytesIO(("\\n".join(names) + "\\n").encode())
+            response = io.BytesIO(("\n".join(names) + "\n").encode())
             archive = type("Archive", (), {
                 "resources": [Resource(0, 0, 3, 100, 50, 0, fnv1a64("model.trmdl"), None, None, None)]
             })()
@@ -160,7 +160,7 @@ class ConverterTests(unittest.TestCase):
             root = Path(tmp)
             mesh_bytes = b"native mesh"
             root.joinpath("anonymous.trmdl").write_bytes(
-                b"flatbuffer-table\\x00mesh_body.trmsh\\x00"
+                b"flatbuffer-table\x00mesh_body.trmsh\x00"
             )
             a = Resource(0, 0, 0, 38, 38, 0,
                          fnv1a64("anonymous.trmdl"), 0, None,
