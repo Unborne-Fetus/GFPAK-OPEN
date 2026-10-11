@@ -344,3 +344,60 @@ test('NX-style tree expands linked extracted NSP folders without fake NCA conten
   await page.locator('#assetTree .nx-tree-name').filter({hasText:'archive'}).click();
   await expect(page.locator('#assetRows')).toContainText('pokemon');
 });
+
+test('selected NCA expands linked Section 1, bin, archive and pokemon in left tree', async ({page}) => {
+  await page.addInitScript(() => {
+    const nca = {id:'nca0',name:'program.nca',kind:'nspfile',
+      category:'encrypted container',format:'Encrypted NCA',
+      expandable:true,size:600000};
+    const root = {id:'nsp',name:'Pokemon Legends Arceus.nsp',kind:'nsp',
+      category:'archive',expandable:true,size:700000};
+    const node = (id,name) => ({
+      id,name,kind:'directory',category:'folder',expandable:true,size:0
+    });
+    const linked = {id:'linked',name:'Extracted files (linked)',kind:'linked_dir',
+      category:'folder',expandable:true,size:0};
+    const branch = {
+      nsp:[nca],nca0:[linked],linked:[node('section','Section 1')],
+      section:[node('bin','bin')],bin:[node('archive','archive')],
+      archive:[node('pokemon','pokemon')],
+      pokemon:[{id:'pikachu',name:'pm0025_00_00.gfpak',kind:'gfpak',
+        category:'model archive',expandable:true,size:1024}]
+    };
+    const listing = (id,entries) => ({
+      root:id==='nsp'?root:id==='nca0'?nca:node(id,id),
+      entries,counts:{folder:entries.filter(e=>e.category==='folder').length},
+      truncated:false,note:''
+    });
+    window.pywebview={api:{
+      setup_status:async()=>({blender:'',addon:'',setup:{state:'ready',error:''},
+        sources:[],settings:{hashes:'',oodle:'',textures:''},animations:true}),
+      browse_choose:async()=>({root,children:listing('nsp',branch.nsp)}),
+      browse_nca_settings:async()=>({reader:'',keyset:'',ready:false}),
+      browse_item_details:async()=>({category:'encrypted container',kind:'nspfile',
+        location:'package',size:1024,hex_lines:[],notes:[]}),
+      browse_nsp_summary:async()=>({filename:'Pokemon Legends Arceus.nsp',
+        files:1,bytes:100000,header_bytes:100,
+        formats:{'Encrypted NCA':1},roles:{'Content archive NCA':1},
+        role_bytes:{'Content archive NCA':99900},warnings:[]}),
+      browse_nsp_inspect:async()=>({hex_lines:[],signature:'Encrypted NCA',note:''}),
+      browse_children:async id=>listing(id,branch[id]||[]),
+      browse_attach_extracted_nca:async id=>({
+        parent:nca,linked,children:listing('nca0',branch.nca0)
+      })
+    }};
+  });
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFile').click();
+  await page.locator('#assetTree .nx-tree-name').filter({hasText:'program.nca'}).click();
+  await expect(page.locator('#assetAttachNCA')).toBeEnabled();
+  await page.locator('#assetAttachNCA').click();
+  await expect(page.locator('#assetTree')).toContainText('Extracted files (linked)');
+  for (const name of ['Extracted files (linked)','Section 1','bin','archive']) {
+    const line = page.locator('#assetTree .nx-tree-line')
+      .filter({has:page.locator('.nx-tree-name', {hasText:name})}).first();
+    await line.locator('.nx-tree-toggle').click();
+  }
+  await expect(page.locator('#assetTree')).toContainText('pokemon');
+});
