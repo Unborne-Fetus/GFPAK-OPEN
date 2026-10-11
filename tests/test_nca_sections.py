@@ -163,6 +163,31 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertFalse(list((root / "cache").glob("*.nca")))
             self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
 
+    def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            nsp = root / "textures.nsp"
+            image = b"\x89PNG\r\n\x1a\n" + b"synthetic image"
+            data = plain_nca([("pfs", pfs0_files([
+                ("body.png", image),
+                ("main", b"EXE"),
+            ]))])
+            package(nsp, [("program.nca", data)])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(nsp)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            picture = next(row for row in browser.children(section["id"])["entries"]
+                           if row["name"] == "body.png")
+            details = browser.item_details(picture["id"])
+            self.assertTrue(details["thumbnail"].startswith("data:image/png;base64,"))
+            directory = root / "linked"
+            directory.mkdir()
+            browser.attach_extracted_nca(nca["id"], directory)
+            listing = browser.children(nca["id"])["entries"]
+            self.assertEqual([row["name"] for row in listing],
+                             ["Extracted files (linked)", "Section 0"])
+
     def test_model_preview_stages_matching_real_animation_and_texture_companions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
