@@ -257,3 +257,66 @@
 
 /* Native-only tabs never appear in the hosted browser without a desktop bridge. */
 #tabAssets[hidden], #tabConverter[hidden], #assetBrowser[hidden]{display:none!important}
+
+/* Advanced read-only NSP workbench and bounded forensic previews. */
+.desktop-app .nsp-workbench{
+ display:flex;flex-direction:column;gap:16px;
+ border:1px solid #386478;border-radius:12px;padding:clamp(14px,1.5vw,23px);
+ background:linear-gradient(135deg,#142f3c,#0a1c2d);
+}
+.desktop-app .nsp-heading{display:flex;align-items:center;justify-content:space-between;gap:22px}
+.desktop-app .nsp-heading h3{font:700 clamp(18px,1.5vw,24px)/1.2 "Space Grotesk",sans-serif;color:#e3f8f1;margin:7px 0}
+.desktop-app .nsp-heading p{font:12px/1.65 "DM Sans",sans-serif;max-width:710px;color:#a8bccc;margin:0}
+.desktop-app .nsp-actions{display:flex;flex-wrap:wrap;gap:9px}
+.desktop-app .nsp-actions .button{font-size:11px;min-height:42px;white-space:normal}
+.desktop-app .nsp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.desktop-app .nsp-metrics>div{
+ display:flex;flex-direction:column;gap:7px;background:#091e2d;
+ border:1px solid #315364;border-radius:9px;padding:15px;
+}
+.desktop-app .nsp-metrics span{font:700 10px "Space Grotesk",sans-serif;letter-spacing:.08em;color:#8aa9bc}
+.desktop-app .nsp-metrics strong{font:700 20px "Space Grotesk",sans-serif;color:#e0f9ec}
+.desktop-app .nsp-breakdown{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:9px}
+.desktop-app .nsp-role-card{min-width:0;border:1px solid #34536b;border-radius:8px;background:#0d2434;padding:10px}
+.desktop-app .nsp-role-card>div:first-child{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;color:#b8ccd8;font:11px "DM Sans",sans-serif}
+.desktop-app .nsp-role-card strong{font-size:10px;color:#83deca}
+.desktop-app .nsp-role-bar{height:5px;margin-top:9px;background:#243f50;border-radius:99px;overflow:hidden}
+.desktop-app .nsp-role-bar span{display:block;height:100%;background:linear-gradient(90deg,#367fb0,#58d6b9);border-radius:99px}
+.desktop-app .nsp-warnings{border:1px solid #304b59;border-radius:7px;padding:11px 13px;color:#bbd4dd}
+.desktop-app .nsp-warnings summary{cursor:pointer;font:700 12px "Space Grotesk",sans-serif}
+.desktop-app .nsp-warnings summary span{margin-left:8px;font-weight:400;color:#9bc7bd}
+.desktop-app .nsp-warnings p,.desktop-app .nsp-warnings>div{color:#a4b5c3;font:12px/1.5 "DM Sans",sans-serif}
+.desktop-app .nsp-boundary{padding-top:12px;border-top:1px solid #345163;color:#9caaba;font:11px/1.6 "DM Sans",sans-serif}
+.desktop-app .nsp-selection{display:flex;flex-direction:column;gap:11px;min-width:0}
+.desktop-app .nsp-selection h4{margin:5px 0 0;color:#d3e8e5;font:700 14px "Space Grotesk",sans-serif}
+.desktop-app .nsp-entry-metadata{display:grid;grid-template-columns:minmax(78px,1fr) minmax(0,2fr);gap:9px;margin:0;padding:12px;border:1px solid #2f4c5b;border-radius:7px}
+.desktop-app .nsp-entry-metadata dt{color:#95aabb;font:11px/1.5 "DM Sans",sans-serif}
+.desktop-app .nsp-entry-metadata dd{margin:0;color:#e0eeeb;font:600 11px/1.5 "DM Sans",sans-serif;overflow-wrap:anywhere}
+.desktop-app .nsp-hex-options{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;gap:6px}
+.desktop-app .nsp-hex-options .field{min-width:0;padding:7px;font-size:11px}
+.desktop-app .nsp-hex-options .button{padding:7px 9px;font-size:10px;white-space:nowrap}
+.desktop-app .nsp-signature{border-radius:6px;padding:10px;background:#172b3a;border:1px solid #304958;color:#a9cfd0;font:11px/1.5 "DM Sans",sans-serif}
+.desktop-app .nsp-hexdump{
+ max-width:100%;min-height:80px;max-height:280px;margin:0;padding:12px;
+ border-radius:7px;border:1px solid #305061;background:#061321;
+ color:#c6dedc;font:11px/1.65 ui-monospace,"Cascadia Code",Consolas,monospace;
+ white-space:pre;overflow:auto;
+}
+.desktop-app .nsp-file-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.desktop-app .nsp-file-actions .button{font-size:10px;min-width:0;white-space:normal}
+.desktop-app .nsp-hash{font:11px/1.6 ui-monospace,Consolas,monospace;color:#a2e6d4;white-space:pre-wrap;overflow-wrap:anywhere}
+.desktop-app .nsp-task-panel{display:flex;flex-direction:column;gap:9px;padding:13px;background:#0a2933;border:1px solid #355e64;border-radius:9px}
+.desktop-app .nsp-task-header{display:flex;justify-content:space-between;gap:12px;align-items:center;color:#cef0e7;font:700 11px "Space Grotesk",sans-serif}
+.desktop-app .nsp-task-header .text-button{color:#bfcfd4}
+.desktop-app .nsp-progress-track{height:8px;background:#223a49;border-radius:99px;overflow:hidden}
+.desktop-app .nsp-progress-fill{width:0;height:100%;border-radius:99px;background:linear-gradient(90deg,#39a1d3,#5de8bb);transition:width .2s}
+.desktop-app .nsp-task-panel .helper-copy{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+@media(max-width:1450px){
+ .desktop-app .nsp-heading{align-items:flex-start;flex-direction:column}
+ .desktop-app .nsp-metrics strong{font-size:18px}
+}
+@media(max-width:950px){
+ .desktop-app .nsp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .desktop-app .nsp-breakdown{grid-template-columns:1fr}
+}
+#nspWorkbench[hidden],#nspSelection[hidden],#nspTaskPanel[hidden]{display:none!important}
