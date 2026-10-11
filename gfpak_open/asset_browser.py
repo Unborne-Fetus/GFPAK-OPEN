@@ -621,9 +621,11 @@ class AssetBrowser:
             info = self._nca_sections.file_info(reader, index, section, name)
             if info.size > 512 * 1024 * 1024:
                 raise ValueError("Model is too large for temporary preview; export it explicitly.")
-            directory = self._nca_sections.workspace / "preview"
-            directory.mkdir(parents=True, exist_ok=True)
-            target = directory / (uuid.uuid4().hex + Path(node["name"]).suffix.lower())
+            directory = self._nca_sections.workspace / "preview" / uuid.uuid4().hex
+            directory.mkdir(parents=True, exist_ok=False)
+            # Preserve the actual filename so the native model importer can
+            # recognize Pokémon IDs and resource families during preview.
+            target = directory / Path(node["name"]).name
             return self._nca_sections.extract_one(reader, index, section, name, target)
         raise ValueError(
             "This entry cannot be previewed directly yet. Choose a .gfpak, .trmdl, "
