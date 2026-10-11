@@ -739,6 +739,33 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () => preview());
   id('assetScan').addEventListener('click', scanFolder);
+  const menuActions = {
+    nxMenuOpenPackage: () => id('assetOpenFile').click(),
+    nxMenuOpenFolder: () => id('assetOpenFolder').click(),
+    nxMenuLinkFolder: () => id('assetAttach').click(),
+    nxMenuFocusTree: () => id('assetTree').querySelector('.nx-tree-name')?.focus(),
+    nxMenuClearSearch: () => {
+      id('assetSearch').value = '';
+      id('assetCategory').value = 'all';
+      if (pathStack.at(-1)?.root.kind === 'nsp') loadNSPPage(0);
+      else renderRows(current);
+    },
+    nxMenuScan: () => id('assetScan').click(),
+    nxMenuHash: () => id('nspAudit').click(),
+    nxMenuManifest: () => id('nspManifest').click(),
+    nxMenuAbout: () => showNotice(
+      'NX-style file tree with native GFPAK/ZIP and outer NSP inspection. ' +
+      'To browse bin/archive/... under an NSP, link an already-extracted game folder. ' +
+      'Encrypted NCA contents cannot be opened directly.'
+    )
+  };
+  for (const [name, action] of Object.entries(menuActions)) {
+    id(name).addEventListener('click', () => {
+      for (const menu of document.querySelectorAll('.nx-fileviewer .nx-menu')) menu.open = false;
+      action();
+    });
+  }
+
   id('nspManifest').addEventListener('click', async () => {
     if (!activeNSP) return;
     try {
