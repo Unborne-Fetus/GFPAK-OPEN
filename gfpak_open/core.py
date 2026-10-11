@@ -47,31 +47,26 @@ class GFPak:
 
     def __init__(self, source: str | Path):
         self.source = Path(source)
-        self._handle = None
         self._bytes = None
         self.version = 0
         self.relocated = 0
         self.resources: list[Resource] = []
         self.folder_count = 0
-        try:
-            self._handle = self.source.open("rb")
+        # Map only while indexing; release the file handle immediately.
+        # This avoids both multi-GB heap allocation and Windows file locks.
+        with self.source.open("rb") as handle:
             if self.source.stat().st_size < 40:
                 raise GFPakError("Truncated GFLXPACK header")
-            # Index tables are mapped read-only; huge payloads stay on disk.
-            self._bytes = mmap.mmap(self._handle.fileno(), 0, access=mmap.ACCESS_READ)
-            self._parse()
-        except BaseException:
-            self.close()
-            raise
+            with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as index:
+                self._bytes = index
+                try:
+                    self._parse()
+                finally:
+                    self._bytes = None
 
     def close(self) -> None:
-        """Release a mapped source, including its Windows file handle."""
-        mapping, handle = self._bytes, self._handle
-        self._bytes, self._handle = None, None
-        if mapping is not None:
-            mapping.close()
-        if handle is not None:
-            handle.close()
+        """Compatibility hook; archive handles are not kept open."""
+        return None
 
     def __enter__(self):
         return self
@@ -79,9 +74,13 @@ class GFPak:
     def __exit__(self, *_):
         self.close()
 
-    def __del__(self):
-        if getattr(self, "_bytes", None) is not None or getattr(self, "_handle", None) is not None:
-            self.close()
+    def _range(self, offset: int, size: int) -> bytes:
+        with self.source.open("rb") as handle:
+            handle.seek(offset)
+            contents = handle.read(size)
+        if len(contents) != size:
+            raise GFPakError("Archive changed or truncated since indexing")
+        return contents
 
     def _read(self, fmt: str, at: int) -> tuple:
         size = struct.calcsize(fmt)
@@ -158,7 +157,7 @@ class GFPak:
                 "Resource exceeds the 512 MiB in-memory limit; "
                 "export stored or packed data using streaming extraction."
             )
-        block = self._bytes[resource.offset:resource.offset + resource.packed_size]
+        block = self._range(resource.offset, resource.packed_size)
         if packed:
             return block
         if resource.compression == 0:
@@ -215,10 +214,10 @@ class GFPak:
             raise GFPakError("Resource does not belong to this archive")
         count = min(max(int(length), 0), 4096)
         if resource.compression == 0:
-            return self._bytes[resource.offset:resource.offset + min(count, resource.size)], True
+            return self._range(resource.offset, min(count, resource.size)), True
         if resource.size <= 8 * 1024 * 1024:
             return self.read_resource(resource)[:count], True
-        return self._bytes[resource.offset:resource.offset + min(count, resource.packed_size)], False
+        return self._range(resource.offset, min(count, resource.packed_size)), False
 
     def copy_resource(self, resource: Resource, target: str | Path, *,
                       packed: bool = False, oodle_dll: str | Path | None = None) -> Path:
