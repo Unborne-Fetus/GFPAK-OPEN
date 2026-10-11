@@ -445,3 +445,30 @@ test('huge native NCA folder adds subsequent pages to both left tree and file li
   await expect(page.locator('#assetRows .nx-pagination-button')).toHaveCount(0);
   await expect(page.locator('#assetTree')).toContainText('asset_0319.gfpak');
 });
+
+test('XCI gamecard browser includes built-in NCA keys selector', async ({page}) => {
+  await page.addInitScript(() => {
+    window.xciKeysSelected = 0;
+    const root={id:'xci',name:'game.xci',kind:'xci',
+      expandable:true,category:'archive',size:100000};
+    window.pywebview={api:{
+      setup_status:async()=>({blender:'',addon:'',setup:{state:'ready',error:''},
+        sources:[],settings:{hashes:'',oodle:'',textures:''},animations:true}),
+      browse_choose:async()=>({root,children:{
+        root,entries:[],counts:{},truncated:false,note:'XCI gamecard'
+      }}),
+      browse_nca_settings:async()=>({reader:'Built-in NCA3',ready:true,
+        has_keys:window.xciKeysSelected>0,
+        keyset:window.xciKeysSelected?'test.keys':''}),
+      browse_nca_select:async()=>{window.xciKeysSelected++;return{};},
+      browse_item_details:async()=>({kind:'xci',category:'archive',size:100000,notes:[]})
+    }};
+  });
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFile').click();
+  await expect(page.locator('#ncaReaderBar')).toBeVisible();
+  await page.locator('#ncaSelectKeyset').click();
+  await expect.poll(()=>page.evaluate(()=>window.xciKeysSelected)).toBe(1);
+  await expect(page.locator('#ncaReaderStatus')).toContainText('test.keys');
+});
