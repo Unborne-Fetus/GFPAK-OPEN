@@ -10,6 +10,8 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import os
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -109,6 +111,51 @@ def discover_dictionary(source: Path) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
+
+
+
+# Community-contributed filename list for Pokémon Legends: Arceus (Terasol).
+# No game files or proprietary decompression DLLs are downloaded.
+PLA_HASHES_URL = (
+    "https://gist.githubusercontent.com/Terasol/"
+    "c12b518af355d443486c244a425b9541/raw/GFPAK.txt"
+)
+
+def community_dictionary(archive: GFPak, log: Callable[[str], None]) -> tuple[HashDictionary | None, dict[int, str]]:
+    """Fetch a public candidate and accept it only when model hashes match."""
+    cache = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "GFPAK-OPEN" / "hashes"
+    path = cache / "legends_arceus_gfpak.txt"
+    if not path.is_file():
+        try:
+            request = urllib.request.Request(PLA_HASHES_URL, headers={"User-Agent": "GFPAK-OPEN"})
+            with urllib.request.urlopen(request, timeout=12) as response:
+                data = response.read(24 * 1024 * 1024 + 1)
+            if len(data) > 24 * 1024 * 1024:
+                raise ValueError("Community dictionary is too large")
+            decoded = data.decode("utf-8-sig")
+            if ".trmdl" not in decoded or len(decoded.splitlines()) < 100:
+                raise ValueError("Community dictionary contains no usable model names")
+            cache.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache,
+                                             suffix=".txt", delete=False) as temp:
+                temp.write(decoded)
+                staged = Path(temp.name)
+            staged.replace(path)
+        except (OSError, UnicodeError, ValueError) as exc:
+            log("Community hash lookup unavailable: " + str(exc))
+            return None, {}
+    try:
+        mapping = HashDictionary(path)
+        found = read_resource_names(archive, mapping)
+    except (OSError, ValueError) as exc:
+        log("Community dictionary could not be read: " + str(exc))
+        return None, {}
+    models = [name for name in found.values() if Path(name).suffix.lower() in MODEL_SUFFIXES]
+    if not models:
+        log("Community Legends: Arceus filename list did not match this archive's model hashes.")
+        return None, {}
+    log(f"Community filename list matched {len(found)} archive entries, including {len(models)} models.")
+    return mapping, found
 
 
 def read_resource_names(archive: GFPak, mapping: HashDictionary) -> dict[int, str]:
@@ -260,6 +307,11 @@ def convert_model(options: ConversionOptions,
                 log("Automatically found filename dictionary: " + str(dictionary))
             mapping = HashDictionary(dictionary)
             found = read_resource_names(archive, mapping)
+            if not any(Path(name).suffix.lower() in MODEL_SUFFIXES for name in found.values()) and not dictionary:
+                _public_dictionary, auto_found = community_dictionary(archive, log)
+                if auto_found:
+                    found = auto_found
+                    dictionary = "community Legends: Arceus list"
             model_names = [name for name in found.values()
                            if Path(name).suffix.lower() in MODEL_SUFFIXES]
             if not model_names:
@@ -268,13 +320,19 @@ def convert_model(options: ConversionOptions,
                     f"Opened {len(archive.resources)} GFPAK resources (compression {codecs}), "
                     "but none resolved to a .trmdl or .gfbmdl model. "
                     + ("No companion filename dictionary was found. "
-                       if not dictionary else "The selected dictionary does not match this archive. ")
+                       if not dictionary else "No model hashes matched the available dictionary. ")
                     + "Place a matching gfpak.txt or gfpak.json alongside the archive, "
                     "or select one under Advanced converter settings. "
                     "The original model names and companion resource paths are hashed; "
                     "they cannot yet be reconstructed reliably from this archive alone. "
                     + ("Oodle decoding will also require a compatible locally supplied DLL. "
                        if "3" in codecs and not detected_oodle else "")
+                )
+            if "3" in archive.summary()["compression_types"] and not detected_oodle:
+                raise ConversionError(
+                    f"Found {len(model_names)} model resource(s), but all required archive data "
+                    "uses Oodle compression. No compatible oo2core_*.dll was found locally. "
+                    "Select one you already have in Advanced Settings; GFPAK-OPEN does not download DLLs."
                 )
             log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
             unpack_named(archive, workspace, found, oodle=detected_oodle, progress=log)
