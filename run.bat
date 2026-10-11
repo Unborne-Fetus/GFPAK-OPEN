@@ -24,7 +24,7 @@ where npm >nul 2>&1
 if errorlevel 1 goto :missing_node
 
 echo [1/4] Preparing portable desktop build tools...
-%PYTHON% -m pip install --disable-pip-version-check pyinstaller pywebview pyooz==0.0.8
+%PYTHON% -m pip install --disable-pip-version-check pyinstaller pywebview pyooz==0.0.8 cryptography>=44
 if errorlevel 1 goto :failed
 
 echo [2/4] Building bundled offline 3D studio...
