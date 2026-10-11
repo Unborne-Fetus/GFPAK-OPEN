@@ -40,8 +40,8 @@ test('decoded DDS textures can be created from project file bytes', async () => 
   assert.throws(() => decodeDDSTexture(new Uint8Array(12)), /truncated/);
 });
 
-test('unsupported BNTX never masquerades as a decoded Pokémon skin', async () => {
+test('malformed BNTX never masquerades as a decoded Pokémon skin', async () => {
   await assert.rejects(() => loadDecodedTexture({
     path:'pm0025_body.bntx',getBytes: async()=>new Uint8Array(32)
-  }), /game-specific tiling/);
+  }), /Not a BNTX container/);
 });
