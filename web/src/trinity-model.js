@@ -1,3 +1,4 @@
+import { selectNativeAnimations } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
  * This path requires a readable .trmdl/.trmsh with the matching .trmbf.
@@ -256,12 +257,12 @@ export function animationTracks(source, bones) {
 
 async function loadNativeClips(project, selected, skeleton, report) {
   if (!skeleton?.bones?.length) return [];
-  const compatible = project.items.filter(item => ['.tranm', '.gfbanm'].includes(ext(item.path)));
+  const compatible = selectNativeAnimations(project.items, selected, 64);
   const clips = [];
-  // Avoid scanning arbitrary complete game dumps with thousands of animations.
-  if (compatible.length > 96) {
-    report('Many animation files found. Import a smaller animation folder for native clip decoding.');
-    return clips;
+  const available = project.items.filter(item => ['.tranm', '.gfbanm'].includes(ext(item.path))).length;
+  if (available > compatible.length) {
+    report('Found ' + available + ' native animation files; selected ' + compatible.length +
+      ' likely companions for this Pokémon rather than scanning unrelated species.');
   }
   for (const item of compatible) {
     try {
