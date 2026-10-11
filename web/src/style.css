@@ -51,3 +51,20 @@
   .canvas-hint{font-size:9px;max-width:100%}
   .view-badge{display:none}
 }
+
+/* Desktop native conversion is part of the same studio, not a second window. */
+.desktop-native{padding:15px;border:1px solid #355c68;border-radius:12px;background:linear-gradient(145deg,#152b38,#101f30);gap:12px}
+.desktop-native>.helper-copy{line-height:1.65}
+.native-state{padding:9px 11px;border-radius:7px;background:#0c2530;border:1px solid #2b4b54;color:#a7d4cf;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.native-button-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.native-button-row .button{min-width:0;white-space:normal;letter-spacing:0;padding:10px 7px}
+.native-advanced{border-top:1px solid #304a58;padding-top:10px}
+.native-advanced>summary{cursor:pointer;color:#b7e4d8;font-size:11px;font-weight:700;padding:7px 0}
+.native-advanced[open]{display:flex;flex-direction:column;gap:8px}
+.native-path{display:flex;gap:6px;align-items:center}
+.native-path input{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.native-path .button{padding:10px 7px;letter-spacing:0}
+.desktop-native>.button-primary{width:100%;white-space:normal;font-size:11px}
+.native-error{color:#ffb3a9!important;white-space:pre-wrap}
+.native-results{display:flex;flex-direction:column;gap:8px}
+.native-results .button{white-space:normal;overflow-wrap:anywhere}
