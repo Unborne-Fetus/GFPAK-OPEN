@@ -188,7 +188,25 @@
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
           <div class="nx-title-strip">
             <div class="nx-app-title"><span class="nx-logo">▤</span><strong>File Viewer</strong><span class="nx-subtitle">GFPAK-OPEN / NX-style browser</span></div>
-            <div class="nx-top-menu"><span>File</span><span>View</span><span>Tools</span><span>Help</span></div>
+            <div class="nx-top-menu" aria-label="File viewer menus">
+              <details class="nx-menu"><summary>File</summary><div class="nx-menu-items">
+                <button type="button" id="nxMenuOpenPackage">Open package…</button>
+                <button type="button" id="nxMenuOpenFolder">Open extracted folder…</button>
+                <button type="button" id="nxMenuLinkFolder">Link extracted NSP files…</button>
+              </div></details>
+              <details class="nx-menu"><summary>View</summary><div class="nx-menu-items">
+                <button type="button" id="nxMenuFocusTree">Focus content tree</button>
+                <button type="button" id="nxMenuClearSearch">Clear filters</button>
+              </div></details>
+              <details class="nx-menu"><summary>Tools</summary><div class="nx-menu-items">
+                <button type="button" id="nxMenuScan">Scan model / animation / texture files</button>
+                <button type="button" id="nxMenuHash">Audit NSP entries</button>
+                <button type="button" id="nxMenuManifest">Save NSP inventory (JSON)</button>
+              </div></details>
+              <details class="nx-menu"><summary>Help</summary><div class="nx-menu-items">
+                <button type="button" id="nxMenuAbout">About this file viewer</button>
+              </div></details>
+            </div>
           </div>
           <div class="asset-hero">
             <div><span class="eyebrow">INTEGRATED GAME-ASSET EXPLORER</span>
