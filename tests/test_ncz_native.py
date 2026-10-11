@@ -115,6 +115,23 @@ class NCZTests(unittest.TestCase):
             self.assertEqual(ctx.update(output.read_bytes()[0x4000:]) + ctx.finalize(),
                              original[0x4000:])
 
+    def test_low_disk_space_rejects_large_ncz_without_partial_extraction(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            data = make_nca(pfs0_file("main", b"X" * 160))
+            ncz = compress_ncz(data)
+            source = root / "compressed.ncz"
+            target = root / "restored.nca"
+            source.write_bytes(ncz)
+            with patch("gfpak_open.ncz_native.shutil.disk_usage",
+                       return_value=SimpleNamespace(free=0)):
+                with self.assertRaisesRegex(NCZError, "temporary storage"):
+                    restore_ncz(source, 0, len(ncz), target)
+            self.assertFalse(target.exists())
+            self.assertEqual(source.read_bytes(), ncz)
+
     def test_bad_header_does_not_leave_partial_nca(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
