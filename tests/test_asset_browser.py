@@ -166,7 +166,7 @@ class AssetBrowserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             image = root / "model.png"
-            image.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"test")
+            image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"test")
             browser = AssetBrowser()
             node = browser.open(root)
             image_node = browser.children(node["id"])["entries"][0]
