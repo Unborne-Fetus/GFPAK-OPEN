@@ -138,6 +138,14 @@ class AssetBrowser:
         candidate = Path(path).expanduser().resolve(strict=True)
         if not candidate.is_dir() and not candidate.is_file():
             raise ValueError("Select a file or directory")
+        # Switching between giant compressed packages must not retain
+        # gigabytes of session-only restored NCZ files or model previews.
+        # Only these two app-owned directories may be cleared; never the NSP.
+        for subfolder in ("ncz", "preview"):
+            staged = self._nca_sections.workspace / subfolder
+            if staged.is_dir():
+                shutil.rmtree(staged)
+        self._nca_sections._readers.clear()
         self._nodes.clear()
         self._keys.clear()
         self._archives.clear()
