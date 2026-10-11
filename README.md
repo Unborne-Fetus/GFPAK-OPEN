@@ -67,7 +67,7 @@ The desktop application opens **one studio window** with the web 3D viewer, GFPA
 
 - **XCI game-card files:** Native `HEAD`/HFS0 partition parsing, with browseable `secure`, `normal`, and other present partitions. Their NCA entries can use the existing built-in NCA3 reader. No external XCI tool is needed for supported file structures.
 - **NSZ/XCZ packages:** Read standard NSP-like/ XCI-like outer indexes. Expand an `.ncz` resource to decode supported zstandard stream or NCZBLOCK compression into a temporary NCA in the app's session cache. Encrypted NCZ section payloads are reconstructed from NCZ metadata; the usual authorized keys are still needed for subsequent NCA browsing. This is not a guaranteed decoder for all compressed game releases.
-- **Update and DLC NCA inspection:** Per-section detection of BKTR updates, sparse mappings, and compressed storage. Unaffected standard ExeFS sections can be browsed even when a patched RomFS exists. **BKTR base/update overlay reconstruction, sparse remapping, and compressed NCA filesystem block mapping are still not implemented.** Do not mistake the detection/status report for complete patch reading.
+- **Update and DLC NCA inspection:** Per-section detection of BKTR updates, sparse mappings, and compressed storage. Unaffected standard ExeFS sections can be browsed even when a patched RomFS exists. **Compatible read-only BucketTree mapping is now available:** plaintext sparse NCA ranges can zero-fill holes; unpatched compressed NCA sections can decode stored, zero and LZ4 blocks. Encrypted BKTR overlays, encrypted sparse IV generation, combined sparse/compressed storage and unsupported codecs still require validation. Do not mistake the detection/status report for complete patch reading.
 - **Pokémon asset recognition:** Classify discovered Game Freak TRMDL/GFBMDL meshes, materials, `.trskl` skeletons, `.tranm`/`.gfbanm` animations and texture files. Group related `pm####` filename families without assuming internal numbering equals National Pokédex numbering. Unknown hashed entries remain unidentified until verified.
 - **Decoded material textures:** Web/native model viewer uses actual compatible PNG/JPEG/WebP and **DDS BCn** textures. BNTX, TRTEX, game-specific tiling, advanced shaders, and many later-game variants remain unsupported; skin textures cannot be marked universally correct.
 - **Native animation matching:** Automatically rank existing Pokémon animation companions by filename family and location even in large game directories. Actual decoded skeletal tracks only play when they match the loaded rig; unsupported formats still require work.
@@ -117,9 +117,9 @@ instead of filling the disk unexpectedly.
 These reliability fixes are validated using synthetic NSP, XCI, NCZ, RomFS,
 ZIP, plaintext-header/AES-CTR and large-directory fixtures. They are not a
 claim of universal compatibility with every Nintendo Switch release.
-Game-specific BKTR update overlays, sparse mappings, NCA compressed storage,
-BNTX texture formats, and some animation pipelines still require separate
-decoders and real-world test cases.
+Game-specific encrypted BKTR overlays, encrypted sparse mappings, combined
+storage layers, BC7/ASTC BNTX formats and some animation pipelines still need
+additional decoders and real-world test cases.
 
 ### Large NCA sections and paginated filesystem browsing
 
