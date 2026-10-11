@@ -24,7 +24,7 @@ where npm >nul 2>&1
 if errorlevel 1 goto :missing_node
 
 echo [1/4] Preparing portable desktop build tools...
-%PYTHON% -m pip install --disable-pip-version-check pyinstaller pywebview pyooz==0.0.8 "cryptography>=44,<48" "zstandard>=0.23,<1"
+%PYTHON% -m pip install --disable-pip-version-check pyinstaller pywebview pyooz==0.0.8 "cryptography>=44,<48" "zstandard>=0.23,<1" "lz4>=4,<5"
 if errorlevel 1 goto :failed
 
 echo [2/4] Building bundled offline 3D studio...
@@ -47,7 +47,7 @@ if not exist "build\blender_deps\flatbuffers\__init__.py" (
 if errorlevel 1 goto :failed
 
 echo [4/4] Creating standalone GFPAK-OPEN.exe...
-%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --collect-all cryptography --collect-all zstandard --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
+%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --collect-all cryptography --collect-all zstandard --collect-all lz4 --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
 if errorlevel 1 goto :failed
 if not exist "dist\GFPAK-OPEN.exe" goto :failed
 
