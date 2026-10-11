@@ -361,6 +361,76 @@ function nxAddTreeNode(row, depth, lineage, target) {
   });
 }
 
+function nxAppendMoreControl(row, listing, view) {
+  if (!listing?.next_cursor || !view) return;
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'nx-tree-more nx-load-more';
+  more.textContent = '＋ Load next 250 files…';
+  more.setAttribute('aria-label', 'Load more files in ' + row.name);
+  more.addEventListener('click', event => {
+    event.stopPropagation();
+    nxLoadMoreTree(row).catch(error => showNotice(error.message || String(error), true));
+  });
+  view.children.append(more);
+}
+
+async function nxLoadMoreTree(row) {
+  const listing = nxTreeListings.get(row.id);
+  const view = nxTreeItems.get(row.id);
+  if (!listing?.next_cursor || view?.loadingMore) return;
+  const cursor = listing.next_cursor;
+  if (view) view.loadingMore = true;
+  const previous = view?.children.querySelector('.nx-load-more');
+  if (previous) {
+    previous.disabled = true;
+    previous.textContent = 'Loading the next 250 files…';
+  }
+  try {
+    // Only the next metadata page is read, not the whole RomFS/NCA.
+    const incoming = await api.browse_children(row.id, cursor);
+    if (nxTreeListings.get(row.id) !== listing) return;
+    if (incoming?.next_cursor === cursor) throw new Error('Directory cursor did not advance.');
+    const known = new Set(listing.entries.map(item => item.id));
+    const added = (incoming.entries || []).filter(item => !known.has(item.id));
+    listing.entries.push(...added);
+    listing.next_cursor = incoming.next_cursor || null;
+    listing.truncated = Boolean(listing.next_cursor);
+    for (const item of added) {
+      const category = item.category || 'other';
+      listing.counts[category] = (listing.counts[category] || 0) + 1;
+    }
+    if (view) {
+      if (!view.loaded) {
+        nxPopulateChildren(row, listing);
+      } else {
+        previous?.remove();
+        const ancestry = nxTreePaths.get(row.id) || [row];
+        for (const child of added) nxAddTreeNode(child, ancestry.length, ancestry, view.children);
+        nxAppendMoreControl(row, listing, view);
+      }
+      view.expanded = true;
+      view.children.hidden = false;
+      view.toggle.textContent = '▾';
+      view.node.setAttribute('aria-expanded', 'true');
+    }
+    if (pathStack.at(-1)?.root.id === row.id) {
+      pathStack.at(-1).listing = listing;
+      renderListing();
+    }
+    showNotice('Showing ' + listing.entries.length.toLocaleString() +
+      ' files in this folder' + (listing.next_cursor ? ' · More pages available.' : ' · All entries loaded.'));
+  } catch (error) {
+    if (previous?.isConnected) {
+      previous.disabled = false;
+      previous.textContent = '＋ Retry loading more files';
+    }
+    throw error;
+  } finally {
+    if (view) view.loadingMore = false;
+  }
+}
+
 function nxPopulateChildren(row, listing) {
   const node = nxTreeItems.get(row.id);
   if (!node) return;
@@ -370,6 +440,7 @@ function nxPopulateChildren(row, listing) {
     nxAddTreeNode(child, ancestry.length, ancestry, node.children);
   }
   node.loaded = true;
+  nxAppendMoreControl(row, listing, node);
   if (row.kind === 'nsp' && listing.pagination && listing.pagination.total > 250) {
     const hint = document.createElement('div');
     hint.className = 'nx-tree-more';
