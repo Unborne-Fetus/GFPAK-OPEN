@@ -775,3 +775,20 @@
   margin:0;color:#8296a2;font:10px/1.5 "Segoe UI",sans-serif;
 }
 #assetFamily[hidden]{display:none!important}
+
+.desktop-app .nx-fileviewer .nx-game-profile{
+  display:flex;align-items:center;flex-wrap:wrap;gap:7px 15px;order:2;
+  padding:9px 13px;border-bottom:1px solid #d4dfe7;background:#eaf1f7;
+}
+.desktop-app .nx-fileviewer .nx-game-title{
+  color:#35576c;font:600 12px "Segoe UI",sans-serif;
+}
+.desktop-app .nx-fileviewer .nx-game-engine{
+  font:10px "Segoe UI",sans-serif;background:#d6e8f5;
+  border:1px solid #b8d1e3;color:#3a6680;padding:3px 6px;border-radius:4px;
+}
+.desktop-app .nx-fileviewer .nx-game-profile p{
+  flex-basis:100%;margin:0;line-height:1.55;color:#5d7988;
+  font:11px/1.55 "Segoe UI",sans-serif;
+}
+#assetGameProfile[hidden]{display:none!important}
