@@ -180,7 +180,7 @@ def find_oodle_dll(archive: str | Path | None = None) -> Path | None:
     explicit = os.environ.get("GFPAK_OODLE_DLL")
     if explicit:
         candidate = Path(explicit).expanduser()
-        if candidate.is_file() and re.fullmatch(r"oo2core_.*\\.dll", candidate.name, re.I):
+        if candidate.is_file() and re.fullmatch(r"oo2core_.*[.]dll", candidate.name, re.I):
             return candidate.resolve()
         if candidate.is_dir():
             roots.append(candidate)
