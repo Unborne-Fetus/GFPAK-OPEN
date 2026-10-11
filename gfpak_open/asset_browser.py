@@ -741,7 +741,50 @@ class AssetBrowser:
             # Preserve the actual filename so the native model importer can
             # recognize Pokémon IDs and resource families during preview.
             target = directory / Path(node["name"]).name
-            return self._nca_sections.extract_one(reader, index, section, name, target)
+            output = self._nca_sections.extract_one(reader, index, section, name, target)
+            # When the selected model is a loose TRMDL/GFBMDL file inside an
+            # NSP/XCI/NSZ, prepare its real sibling resources so Blender can
+            # resolve the referenced meshes, materials, textures and clips.
+            ext = target.suffix.lower()
+            if ext in {".trmdl", ".gfbmdl"}:
+                from .pokemon_assets import pokemon_id
+                token = pokemon_id(name)
+                if token:
+                    try:
+                        fs = self._nca_sections.filesystem(reader, index, section)
+                        parent = name.rpartition("/")[0]
+                        companion_types = {
+                            ".trmsh", ".trmbf", ".trmtr", ".trskl", ".tranm",
+                            ".gfbanm", ".dds", ".png", ".jpg", ".webp", ".bntx"
+                        }
+                        total = 0
+                        added = 0
+                        for row in fs.children(parent):
+                            if added >= 48 or total >= 128 * 1024 * 1024:
+                                break
+                            if row["type"] != "file" or row["path"] == name:
+                                continue
+                            if pokemon_id(row["path"]) != token:
+                                continue
+                            companion_name = row["name"]
+                            if Path(companion_name).suffix.lower() not in companion_types:
+                                continue
+                            size = row["size"]
+                            if size <= 0 or size > 64 * 1024 * 1024 or total + size > 128 * 1024 * 1024:
+                                continue
+                            sibling_target = directory / companion_name
+                            if sibling_target.is_file():
+                                continue
+                            try:
+                                self._nca_sections.extract_one(
+                                    reader, index, section, row["path"], sibling_target)
+                            except (OSError, ValueError):
+                                continue
+                            total += size
+                            added += 1
+                    except (OSError, ValueError):
+                        pass
+            return output
         raise ValueError(
             "This entry cannot be previewed directly yet. Choose a .gfpak, .trmdl, "
             ".gfbmdl or .glb from an extracted directory. Encrypted NSP/NCA contents "
