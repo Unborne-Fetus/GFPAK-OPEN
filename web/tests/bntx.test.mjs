@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseBntx, decodeBntxTexture, BntxError } from '../src/bntx.js';
+import { loadDecodedTexture } from '../src/texture-loader.js';
+import * as THREE from 'three';
 function sampleBntx({format=0x0b01, tileMode=0, width=2, height=2}={}) {
   const bytes=new Uint8Array(0x500),v=new DataView(bytes.buffer);
   const set16=(at,n)=>v.setUint16(at,n,true),set32=(at,n)=>v.setUint32(at,n,true);
@@ -38,4 +40,27 @@ test('rejects unknown formats and corrupted pointers',()=>{
  assert.throws(()=>decodeBntxTexture(parseBntx(bytes)),/Unsupported BNTX texture format/);
  v.setBigUint64(0x170,9999999n,true);
  assert.throws(()=>parseBntx(bytes),BntxError);
+});
+
+test('BC7 is deswizzled and passed to GPU without fake pixel conversion', async()=>{
+ const {bytes}=sampleBntx({format:0x2006,tileMode:1,width:4,height:4});
+ bytes.set(new Uint8Array(16).fill(0xab),0x200);
+ const decoded=decodeBntxTexture(parseBntx(bytes));
+ assert.equal(decoded.compressed,'bc7');
+ assert.deepEqual(Array.from(decoded.data),Array(16).fill(0xab));
+ const texture=await loadDecodedTexture({path:'body.bntx',getBytes:async()=>bytes});
+ assert.ok(texture.isCompressedTexture);
+ assert.equal(texture.format,THREE.RGBA_BPTC_Format);
+ texture.dispose();
+});
+
+test('ASTC 6x6 Nintendo BNTX surfaces use hardware ASTC format',async()=>{
+ const {bytes}=sampleBntx({format:0x3101,tileMode:1,width:6,height:6});
+ bytes.set(new Uint8Array(16).fill(0x72),0x200);
+ const decoded=decodeBntxTexture(parseBntx(bytes));
+ assert.equal(decoded.compressed,'astc');
+ assert.deepEqual([decoded.blockWidth,decoded.blockHeight],[6,6]);
+ const texture=await loadDecodedTexture({path:'body.bntx',getBytes:async()=>bytes});
+ assert.equal(texture.format,THREE.RGBA_ASTC_6x6_Format);
+ texture.dispose();
 });
