@@ -381,6 +381,11 @@ class AssetBrowser:
         reader = self.nsp_reader(Path(node["path"]))
         index = node["index"]
         entries = []
+        linked = self._linked_nca.get(index)
+        if linked:
+            return {'root': self._public(node), 'entries': [self._public(linked)],
+                    'counts': {'folder': 1}, 'truncated': False,
+                    'note': 'Showing separately extracted files linked to this NCA; no NCA decryption was performed.'}
         if not self._nca_sections.available():
             message = ("NCA sections are protected. Select a local NCA reader and "
                        "a compatible keyset in the toolbar. Sections will be "
@@ -396,11 +401,6 @@ class AssetBrowser:
                 message = f"Identified {len(entries)} actual NCA filesystem sections."
             except (OSError, RuntimeError, ValueError) as error:
                 message = str(error)
-        linked = self._linked_nca.get(index)
-        if linked:
-            entries.insert(0, linked)
-            message = ("Linked files were provided from a separate extracted folder. "
-                       "No encrypted NCA contents were decoded by this link. " + message)
         if not entries:
             locked = self._node("nca_locked", reader.path, inner=str(index),
                                 name="Sections unavailable")
