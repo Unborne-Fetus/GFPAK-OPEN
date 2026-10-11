@@ -376,7 +376,7 @@ class AssetBrowser:
                                'total': total, 'first': first + 1 if total else 0,
                                'last': first + len(output)},
                 'note': 'Outer PFS0 only. NCA payloads remain encrypted.'}
-    def children(self, id_: str) -> dict:
+    def children(self, id_: str, cursor: str | None = None) -> dict:
         node = self.node(id_)
         kind = node["kind"]
         path = Path(node["path"])
@@ -389,9 +389,9 @@ class AssetBrowser:
         if kind == "nspfile" and node["name"].lower().endswith((".nca", ".ncz")):
             return self._nca_children(node)
         if kind == "nca_section":
-            return self._section_children(node)
+            return self._section_children(node, cursor)
         if kind == "nca_dir":
-            return self._virtual_nca_children(node)
+            return self._virtual_nca_children(node, cursor)
         results = []
         if kind in {"directory", "linked_dir"}:
             for entry in sorted(path.iterdir(),
@@ -500,27 +500,28 @@ class AssetBrowser:
                 "note": message, "truncated": False}
 
 
-    def _section_children(self, node: dict) -> dict:
+    def _section_children(self, node: dict, cursor: str | None = None) -> dict:
         pair = self._section_nodes.get(node["id"])
         if not pair:
             raise ValueError("This section does not exist in the selected NCA")
         index, section = pair
-        return self._virtual_children(index, section, "", node)
+        return self._virtual_children(index, section, "", node, cursor)
 
-    def _virtual_nca_children(self, node: dict) -> dict:
+    def _virtual_nca_children(self, node: dict, cursor: str | None = None) -> dict:
         position = self._nca_virtual_nodes.get(node["id"])
         if not position:
             raise ValueError("Unknown native NCA directory")
         index, section, path = position
-        return self._virtual_children(index, section, path, node)
+        return self._virtual_children(index, section, path, node, cursor)
 
     def _virtual_children(self, index: int, section: int, folder: str,
-                          parent: dict) -> dict:
+                          parent: dict, cursor: str | None = None) -> dict:
         reader = self._nca_sources.get(parent["id"]) or self.nsp_reader(Path(parent["path"]))
         fs = self._nca_sections.filesystem(reader, index, section)
-        children = fs.children(folder)
+        # Real pagination rather than discarding all entries after a fixed cap.
+        page = fs.children_page(folder, cursor=cursor, limit=250)
         rows = []
-        for child in children[:MAX_ENTRIES]:
+        for child in page["entries"]:
             is_dir = child["type"] == "directory"
             kind = "nca_dir" if is_dir else "nca_file"
             inner = f"{index}:{section}:{child['path']}"
@@ -530,13 +531,16 @@ class AssetBrowser:
             self._nca_virtual_nodes[item["id"]] = (index, section, child["path"])
             self._nca_sources[item["id"]] = reader
             rows.append(item)
+        more = page["next_cursor"]
         return {
             "root": self._public(parent),
             "entries": [self._public(item) for item in rows],
             "counts": dict(Counter(item["category"] for item in rows)),
-            "note": ("Reading the NCA filesystem directly inside GFPAK-OPEN; "
-                     "no other application and no whole-section extraction."),
-            "truncated": len(children) > MAX_ENTRIES,
+            "note": ("Browsing a large NCA section in pages of 250. "
+                     "Use Load more to continue; files are read directly "
+                     "without extracting the full game."),
+            "next_cursor": more,
+            "truncated": more is not None,
         }
 
     def nsp_reader(self, path: Path | None = None) -> NSPAnalyzer:
