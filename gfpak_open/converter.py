@@ -191,6 +191,77 @@ def unpack_named(archive: GFPak, destination: Path, names: dict[int, str],
     return output
 
 
+
+# Filenames embedded in decoded FlatBuffers can restore the exact paths expected
+# by the Blender importer, after suffix-hash inference identifies the first model.
+# Do not treat random strings or unmatched hashes as verified resources.
+REFERENCE_RE = re.compile(
+    rb"[A-Za-z0-9_][A-Za-z0-9_./-]{2,190}"
+    rb"\\.(?:trmdl|trmsh|trmbf|trmtr|trskl|trmmt|tranm|gfbanm|bntx|png|dds|tga)",
+    re.IGNORECASE,
+)
+
+
+def restore_referenced_paths(archive: GFPak, workspace: Path, names: dict[int, str],
+                             *, oodle: str | Path | None = None,
+                             progress: Callable[[str], None] | None = None) -> int:
+    """Restore exact companion filenames only when their FNV hashes match.
+
+    A TRMDL FlatBuffer refers to meshes/materials/skeletons by string, not by
+    numeric resource ID. Our inferred filenames are aliases, so decode those
+    references and write authenticated alias copies for Blender. No name is
+    guessed from its file contents alone.
+    """
+    lookup: dict[str, list[Resource]] = {}
+    for resource in archive.resources:
+        for hash_value in (resource.path_hash, resource.file_hash):
+            if hash_value:
+                lookup.setdefault(hash_value, []).append(resource)
+    queue = [workspace / safe_path(name) for name in names.values()
+             if Path(name).suffix.lower() in {".trmdl", ".trmsh", ".trmtr", ".trskl"}]
+    visited: set[Path] = set()
+    created = 0
+    while queue and len(visited) < 250:
+        current = queue.pop(0)
+        if current in visited or not current.is_file():
+            continue
+        visited.add(current)
+        if current.stat().st_size > 12 * 1024 * 1024:
+            continue
+        content = current.read_bytes()
+        for reference in set(REFERENCE_RE.findall(content)):
+            try:
+                decoded = reference.decode("ascii")
+                path = safe_path(decoded)
+            except (UnicodeError, ConversionError):
+                continue
+            full = path.as_posix()
+            filename = path.name
+            matches = lookup.get(fnv1a64(full), []) + lookup.get(fnv1a64(filename), [])
+            # Deduplicate the same resource found through both hashes.
+            unique = {entry.index: entry for entry in matches}
+            if len(unique) != 1:
+                continue
+            resource = next(iter(unique.values()))
+            target = workspace / path
+            if target.is_file():
+                continue
+            # Reuse an existing inferred alias when available.
+            alias = workspace / safe_path(names[resource.index]) if resource.index in names else None
+            if alias is not None and alias.is_file():
+                data = alias.read_bytes()
+            else:
+                data = archive.read_resource(resource, oodle_dll=oodle)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            created += 1
+            if target.suffix.lower() in {".trmdl", ".trmsh", ".trmtr", ".trskl"}:
+                queue.append(target)
+    if created and progress:
+        progress(f"Recovered {created} exact companion paths from verified FlatBuffer references.")
+    return created
+
+
 def find_models(root: Path) -> list[Path]:
     return sorted((p for p in root.rglob("*") if p.is_file()
                    and p.suffix.lower() in MODEL_SUFFIXES),
@@ -359,6 +430,7 @@ def convert_model(options: ConversionOptions,
                     ) from exc
             log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
             unpack_named(archive, workspace, found, oodle=detected_oodle, progress=log)
+            restore_referenced_paths(archive, workspace, found, oodle=detected_oodle, progress=log)
         if options.texture_folder:
             source_textures = Path(options.texture_folder)
             for texture in source_textures.rglob("*"):
