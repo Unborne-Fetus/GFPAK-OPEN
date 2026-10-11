@@ -402,7 +402,7 @@ async function nxToggleTree(row, force = null) {
     if (row.kind === 'nspfile') {
       showNotice('Reading NCA Section folders. The local reader may temporarily stage a large NCA; no original files are changed.');
     } else if (row.kind === 'nca_section') {
-      showNotice('Extracting only Section ' + row.index + ' into the temporary preview cache…');
+      showNotice('Extracting ' + row.name + ' into the temporary preview cache…');
     }
     try {
       const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
