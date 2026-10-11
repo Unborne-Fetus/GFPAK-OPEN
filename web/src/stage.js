@@ -17,6 +17,10 @@ export class ModelStage {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.append(this.renderer.domElement);
+    // Three.js sets a fixed pixel size on canvas during initial setup.
+    // Keep CSS dimensions fluid while resize() controls the drawing buffer.
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -25,6 +29,7 @@ export class ModelStage {
     this.controls.maxDistance = 20000;
     this.controls.target.set(0, 1, 0);
     this.userAdjustedCamera = false;
+    this.controls.addEventListener('start', () => { this.userAdjustedCamera = true; });
 
     this.scene.add(new THREE.HemisphereLight(0xc2e8ff, 0x2d4959, 2.2));
     const key = new THREE.DirectionalLight(0xfff6e7, 3.5);
