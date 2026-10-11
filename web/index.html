@@ -255,6 +255,11 @@
             <div><span>TEXTURES</span><strong id="assetCountTexture">—</strong></div>
             <div><span>OTHER ASSETS</span><strong id="assetCountOther">—</strong></div>
           </div>
+          <section id="assetGameProfile" class="nx-game-profile" hidden aria-label="Detected game engine and native format compatibility">
+            <span id="assetGameName" class="nx-game-title">Unknown source</span>
+            <span id="assetGameEngine" class="nx-game-engine">Auto-detect</span>
+            <p id="assetGameSupport">Game format compatibility appears here when you open a source.</p>
+          </section>
           <div class="asset-toolbar">
             <button type="button" id="assetBack" class="button button-secondary" disabled title="Go back one folder">← Back</button>
             <div id="assetBreadcrumb" class="asset-breadcrumb">No game source selected</div>
@@ -352,7 +357,7 @@
             </aside>
           </div>
           <p id="assetNotice" class="asset-notice" role="status" aria-live="polite"></p>
-          <div class="asset-guidance">Like NX File Viewer, use the tree to expand folders. Only already-extracted files are displayed under linked game folders: encrypted NCA contents cannot be opened without separately available decrypted data. No game data is uploaded.</div>
+          <div class="asset-guidance">Like NX File Viewer, use the tree to expand folders. Supported NCA3/ExeFS/RomFS files are read directly. Encrypted sections require compatible locally supplied keys; BKTR update overlays and sparse/compressed storage mapping are not yet fully decoded. No game data is uploaded.</div>
         </section>
 
         <section id="desktopTools" class="side-section desktop-native" role="tabpanel" aria-labelledby="tabConverter" hidden>
