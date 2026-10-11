@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import struct
 from collections import OrderedDict
+from .bucket_tree import BucketTree, BucketTreeError
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -138,8 +139,31 @@ class NativeSection:
         self.compression_table_size = _u64(fs_header, 0x180)
         self.counter_prefix = fs_header[0x140:0x148][::-1]
         self._fs = None
+        self._storage_tree = None
+        self._storage_base = 0
+        self._storage_kind = None
+        self.logical_size = size
 
     def read(self, relative: int, size: int) -> bytes:
+        if self._storage_tree is not None:
+            if relative < 0 or size < 0 or relative > self.logical_size or size > self.logical_size - relative:
+                raise NativeNCAError("Read outside mapped NCA filesystem section.")
+            if relative >= self._storage_base:
+                offset = relative - self._storage_base
+                if self._storage_kind == "compressed":
+                    return self._storage_tree.read_compressed(
+                        offset, size,
+                        lambda physical, count: self._read_regular(self._storage_base + physical, count)
+                    )
+                if self._storage_kind == "sparse":
+                    return self._storage_tree.read_indirect(
+                        offset, size,
+                        lambda physical, count: self._read_regular(physical, count),
+                        sparse=True
+                    )
+        return self._read_regular(relative, size)
+
+    def _read_regular(self, relative: int, size: int) -> bytes:
         if size < 0 or relative < 0 or relative > self.size or size > self.size - relative:
             raise NativeNCAError("Requested data is outside the NCA filesystem section.")
         absolute = self.start + relative
@@ -201,20 +225,65 @@ class NativeSection:
                 "matching base NCA. Combined patch filesystem decoding is not "
                 "yet supported; other sections in this NCA remain accessible."
             )
-        if self.sparse_table_size:
-            raise NativeNCAError(
-                "This NCA section uses sparse storage mapping. The table can "
-                "be identified but sparse extent remapping is not yet supported."
-            )
-        if self.compression_table_size:
-            raise NativeNCAError(
-                "This NCA section uses a compressed storage layer. Its table "
-                "can be identified but transparent block decoding is not yet supported."
-            )
+        if self.sparse_table_size and self.compression_table_size:
+            raise NativeNCAError("Combined sparse/compressed NCA layers require a matching patch and are not decoded.")
         if self.encryption not in (1, 2, 3):
             raise NativeNCAError(
                 f"Unsupported NCA section encryption type {self.encryption}."
             )
+        # Physical storage offsets remain bounded by the real NCA section.
+        # BucketTree data maps the virtual filesystem without staging whole
+        # NCAs to disk or allocating one large output buffer.
+        if self.sparse_table_size:
+            if self.encryption != 1:
+                raise NativeNCAError(
+                    "Sparse remapping currently supports plaintext sections only; "
+                    "the encrypted sparse IV generation requires separate validation."
+                )
+            offset = _u64(header, 0x168) + self.sparse_table_offset
+            count = _u32(header, 0x160)
+            if not offset or offset + self.sparse_table_size > self.nca.entry.size:
+                raise NativeNCAError("Sparse table is outside the NCA.")
+            try:
+                tree = BucketTree(
+                    lambda at, count_bytes: self.nca.read_raw(offset + at, count_bytes),
+                    self.sparse_table_size, count)
+            except BucketTreeError as exc:
+                raise NativeNCAError("Invalid sparse mapping: " + str(exc)) from exc
+            self._storage_tree = tree
+            self._storage_kind = "sparse"
+            self.logical_size = max(self.size, tree.end)
+        if self.compression_table_size:
+            if self.encryption not in (1, 3):
+                raise NativeNCAError("Unsupported compressed section encryption mode.")
+            # The hash-target offset is the regular base for compressed blocks.
+            # The table itself is stored in the same physical section after
+            # that base, so it must be read through the unmapped section.
+            if self.fs_type in (1, 2) and self.hash_type in (2, 5):
+                base = _u64(header, 0x40)
+            elif self.fs_type in (0, 3) or self.hash_type in (3, 6):
+                if header[8:12] != b"IVFC":
+                    raise NativeNCAError("Compressed RomFS has no IVFC header.")
+                layers = _u32(header, 0x14)
+                if not 1 <= layers <= 6:
+                    raise NativeNCAError("Compressed RomFS has an invalid IVFC layer count.")
+                base = _u64(header, 0x18 + (layers - 1) * 0x18)
+            else:
+                raise NativeNCAError("Unsupported compressed filesystem type.")
+            table_at = base + self.compression_table_offset
+            count = _u32(header, 0x190)
+            if table_at > self.size or self.compression_table_size > self.size - table_at:
+                raise NativeNCAError("Compressed storage table is outside the section.")
+            try:
+                tree = BucketTree(
+                    lambda at, count_bytes: self._read_regular(table_at + at, count_bytes),
+                    self.compression_table_size, count, compressed=True)
+            except BucketTreeError as exc:
+                raise NativeNCAError("Invalid compressed NCA storage map: " + str(exc)) from exc
+            self._storage_tree = tree
+            self._storage_base = base
+            self._storage_kind = "compressed"
+            self.logical_size = max(self.size, base + tree.end)
         if self.fs_type in (1, 2) and self.hash_type in (0, 1, 2, 5):
             # Hierarchical SHA256 hash table followed by real PFS0 data layer.
             file_offset = _u64(header, 0x40) if self.hash_type in (2, 5) else 0
