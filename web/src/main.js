@@ -533,6 +533,9 @@ function attachEvents() {
 }
 
 function start() {
+  window.addEventListener('gfpak-native-model', event => {
+    if (event.detail instanceof File) chooseProject([event.detail]);
+  });
   initGameOptions();
   attachEvents();
   resetInspector();
