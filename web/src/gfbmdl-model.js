@@ -1,3 +1,4 @@
+import { loadDecodedTexture } from './texture-loader.js';
 import { selectNativeAnimations } from './animation-association.js';
 /**
  * Turn decoded legacy Game Freak GFBMDL mesh data into an actual Three.js scene.
@@ -20,7 +21,7 @@ function baseName(path) {
 function nearbyTextures(project, modelPath) {
   const stem = baseName(modelPath);
   const items = project.items.filter(item =>
-    ['.png', '.jpg', '.jpeg', '.webp'].includes(getExtension(item.path))
+    ['.png', '.jpg', '.jpeg', '.webp', '.dds'].includes(getExtension(item.path))
   );
   return items.map(item => {
     const normalized = item.path.replace(/\\/g, '/').toLowerCase();
@@ -205,12 +206,7 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
     const file = findTexture(model.textureNames[match.textureIndex], known);
     if (!file) continue;
     try {
-      const image = await createImageBitmap(new Blob([await file.getBytes()]));
-      const texture = new THREE.Texture(image);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = true;
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.needsUpdate = true;
+      const texture = await loadDecodedTexture(file, true);
       materials[i].map = texture;
       materials[i].color.setRGB(1, 1, 1);
       materials[i].needsUpdate = true;
