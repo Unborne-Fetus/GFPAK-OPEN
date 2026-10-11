@@ -688,6 +688,33 @@ function renderRows(rows) {
     });
     body.append(row);
   }
+  const step = pathStack.at(-1);
+  if (!scanListing && step?.listing?.next_cursor &&
+      (step.root.kind === 'nca_section' || step.root.kind === 'nca_dir')) {
+    const moreRow = document.createElement('tr');
+    moreRow.className = 'nx-pagination-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'nx-pagination-button button button-secondary';
+    more.textContent = '＋ Load next 250 entries (' +
+      step.listing.entries.length.toLocaleString() + ' loaded)';
+    more.addEventListener('click', async () => {
+      more.disabled = true;
+      more.textContent = 'Reading next 250 entries…';
+      try {
+        await nxLoadMoreTree(step.root);
+      } catch (error) {
+        more.disabled = false;
+        more.textContent = '＋ Retry loading more entries';
+        showNotice(error.message || String(error), true);
+      }
+    });
+    cell.append(more);
+    moreRow.append(cell);
+    body.append(moreRow);
+  }
 }
 
 async function loadNSPPage(page = 0) {
