@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGfpak, summary, extractResource, decompressLz4, parseHashDictionary, fnv1a64 } from '../src/gfpak.js';
+import { parseGfpak, parseGfpakFile, summary, extractResource, extractResourceAsync, decompressLz4, parseHashDictionary, fnv1a64 } from '../src/gfpak.js';
 
 function syntheticArchive(codec = 0, corruptOffset = false) {
   const buffer = new ArrayBuffer(117);
@@ -25,6 +25,27 @@ function syntheticArchive(codec = 0, corruptOffset = false) {
   bytes.set(new TextEncoder().encode('HELLO'), 112);
   return buffer;
 }
+
+
+test('lazy file-backed parser reads index ranges rather than the full GFPAK', async () => {
+  const input = new Blob([syntheticArchive()]);
+  input.arrayBuffer = () => { throw new Error('whole archive must not be read'); };
+  const archive = await parseGfpakFile(input, 'lazy.gfpak');
+  assert.equal(archive.count, 1);
+  assert.equal(archive.filename, 'lazy.gfpak');
+  assert.equal(archive.resources[0].pathHash, '0000000012345678');
+  assert.equal(summary(archive).file, undefined);
+  assert.equal(summary(archive).buffer, undefined);
+  assert.equal(new TextDecoder().decode(await (await extractResourceAsync(archive, archive.resources[0])).arrayBuffer()), 'HELLO');
+  assert.equal((await extractResourceAsync(archive, archive.resources[0], { packed: true })).size, 5);
+});
+
+test('file-backed GFPAK rejects truncated index and lazy Oodle remains explicit', async () => {
+  await assert.rejects(parseGfpakFile(new Blob([new Uint8Array(15)])), /outside archive/);
+  const archive = await parseGfpakFile(new Blob([syntheticArchive(3)]));
+  await assert.rejects(extractResourceAsync(archive, archive.resources[0]), /Oodle/);
+  assert.equal((await extractResourceAsync(archive, archive.resources[0], { packed: true })).size, 5);
+});
 
 test('parses a valid GFLXPACK archive and extracts stored data', () => {
   const a = parseGfpak(syntheticArchive(), 'test.gfpak');
