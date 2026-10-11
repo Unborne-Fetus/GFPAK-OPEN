@@ -1,5 +1,4 @@
 import json
-import mmap
 import sys
 from types import SimpleNamespace
 import struct
@@ -50,7 +49,7 @@ class GFPakTests(unittest.TestCase):
             with source.open("r+b") as handle:
                 handle.truncate(112 + huge)
             with GFPak(source) as archive:
-                self.assertIsInstance(archive._bytes, mmap.mmap)
+                self.assertIsNone(archive._bytes)  # Index mapping released; Windows files unlocked
                 resource = archive.resources[0]
                 self.assertEqual(resource.size, huge)
                 self.assertEqual(archive.summary()["unpacked_bytes"], huge)
