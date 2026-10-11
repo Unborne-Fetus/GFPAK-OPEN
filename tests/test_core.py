@@ -1,8 +1,11 @@
 import json
+import sys
+from types import SimpleNamespace
 import struct
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from unittest.mock import patch
 
 from gfpak_open.core import GFPak, GFPakError, find_oodle_dll
@@ -63,6 +66,18 @@ class GFPakTests(unittest.TestCase):
             self.make_archive(source, corrupt=True)
             with self.assertRaises(GFPakError):
                 GFPak(source)
+
+    def test_compression3_open_source_backend(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "sample.gfpak"
+            self.make_archive(source)
+            data = bytearray(source.read_bytes())
+            struct.pack_into("<H", data, 90, 3)
+            source.write_bytes(data)
+            archive = GFPak(source)
+            engine = SimpleNamespace(decompress=lambda raw, size: b"HELLO")
+            with patch.dict(sys.modules, {"ooz": engine}):
+                self.assertEqual(archive.read_resource(archive.resources[0]), b"HELLO")
 
     def test_compression3_requires_runtime(self):
         with tempfile.TemporaryDirectory() as temp:
