@@ -337,7 +337,7 @@ class AssetBrowser:
             raise ValueError('Invalid NSP page parameters')
         query = str(query).strip().lower()[:128]
         category = str(category).lower()[:64]
-        valid = {'all', 'encrypted container', 'metadata', 'texture', 'archive',
+        valid = {'all', 'encrypted container', 'compressed container', 'metadata', 'texture', 'archive',
                  'model archive', 'model', 'other'}
         if category not in valid:
             category = 'all'
