@@ -196,6 +196,30 @@
               <button type="button" id="assetOpenFile" class="button button-secondary">Open GFPAK / ZIP / NSP</button>
             </div>
           </div>
+          <section id="nspWorkbench" class="nsp-workbench" hidden>
+            <div class="nsp-heading">
+              <div><span class="eyebrow">NINTENDO SWITCH PACKAGE ANALYZER</span>
+                <h3 id="nspPackageTitle">NSP package</h3>
+                <p>Inspect the full outer PFS0 index, content IDs, offsets and raw signatures. Encrypted NCA contents remain protected.</p>
+              </div>
+              <div class="nsp-actions">
+                <button type="button" id="nspManifest" class="button button-secondary">↓ Save index JSON</button>
+                <button type="button" id="nspAudit" class="button button-secondary">✓ Hash all entries</button>
+              </div>
+            </div>
+            <div class="nsp-metrics">
+              <div><span>PACKAGE SIZE</span><strong id="nspBytes">—</strong></div>
+              <div><span>PFS0 FILES</span><strong id="nspFiles">—</strong></div>
+              <div><span>NCA FILES</span><strong id="nspNcas">—</strong></div>
+              <div><span>INDEX SIZE</span><strong id="nspHeader">—</strong></div>
+            </div>
+            <div class="nsp-breakdown" id="nspRoleBreakdown"></div>
+            <details class="nsp-warnings">
+              <summary>Package structure checks <span id="nspWarningCount">—</span></summary>
+              <div id="nspWarnings"></div>
+            </details>
+            <div class="nsp-boundary">NSP outer package analysis only. This tool does not decrypt NCA files, import cryptographic keys, or recreate the protected RomFS filesystem.</div>
+          </section>
           <div class="asset-summary">
             <div><span>MODELS</span><strong id="assetCountModel">—</strong></div>
             <div><span>ANIMATIONS</span><strong id="assetCountAnimation">—</strong></div>
@@ -219,6 +243,8 @@
               <option value="material">Materials</option>
               <option value="mesh">Mesh parts</option>
               <option value="unknown">Unidentified resources</option>
+              <option value="encrypted container">Encrypted NCA entries</option>
+              <option value="archive">Other archives</option>
             </select>
           </div>
           <div class="asset-content">
@@ -235,6 +261,29 @@
               <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
               <p class="helper-copy">Preview conversion is automatic and temporary. Save a GLB only if you want to keep it.</p>
               <div id="assetScanSummary" class="asset-scan-summary">No recursive scan performed.</div>
+              <section id="nspSelection" class="nsp-selection" hidden>
+                <h4>NSP file analysis</h4>
+                <dl id="nspEntryMetadata" class="nsp-entry-metadata"></dl>
+                <label class="input-label" for="nspHexOffset">HEX VIEW OFFSET (BYTES)</label>
+                <div class="nsp-hex-options">
+                  <input class="field" type="number" id="nspHexOffset" min="0" value="0" step="256" />
+                  <select id="nspHexLength" class="field" aria-label="Preview length"><option value="128">128 B</option><option value="256" selected>256 B</option><option value="512">512 B</option><option value="1024">1 KiB</option></select>
+                  <button type="button" id="nspReadHex" class="button button-secondary">Read</button>
+                </div>
+                <p id="nspSignature" class="nsp-signature">Select a package file.</p>
+                <pre id="nspHexDump" class="nsp-hexdump" aria-label="Hexadecimal file preview"></pre>
+                <div class="nsp-file-actions">
+                  <button type="button" id="nspHash" class="button button-secondary"># SHA-256</button>
+                  <button type="button" id="nspExtract" class="button button-secondary">↓ Save raw file</button>
+                </div>
+                <div id="nspHashResult" class="nsp-hash" aria-live="polite"></div>
+              </section>
+              <section id="nspTaskPanel" class="nsp-task-panel" hidden>
+                <div class="nsp-task-header"><span id="nspTaskLabel">Reading package...</span><button type="button" id="nspCancel" class="text-button">Cancel</button></div>
+                <div class="nsp-progress-track"><div id="nspProgressBar" class="nsp-progress-fill"></div></div>
+                <p id="nspTaskDetails" class="helper-copy" aria-live="polite"></p>
+              </section>
+
             </aside>
           </div>
           <p id="assetNotice" class="asset-notice" role="status" aria-live="polite"></p>
