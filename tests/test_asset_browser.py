@@ -176,6 +176,40 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertTrue(info["thumbnail"].startswith("data:image/png;base64,"))
             self.assertTrue(info["hex_lines"])
 
+    def test_export_selected_file_zip_member_and_gfpak_resource(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = root / "sample.tranm"
+            original.write_bytes(b"animation bytes")
+            zip_path = root / "assets.zip"
+            with zipfile.ZipFile(zip_path, "w") as archive:
+                archive.writestr("pokemon/body.png", b"PNG test")
+            pack = root / "pm0025_00_00.gfpak"
+            create_gfpak(pack)
+            browser = AssetBrowser()
+            folder = browser.open(root)
+            entries = browser.children(folder["id"])["entries"]
+            animation = next(e for e in entries if e["name"] == "sample.tranm")
+            output = root / "exported.tranm"
+            browser.export_item(animation["id"], output)
+            self.assertEqual(output.read_bytes(), b"animation bytes")
+            with self.assertRaises(FileExistsError):
+                browser.export_item(animation["id"], output)
+            archive_node = next(e for e in entries if e["name"] == "assets.zip")
+            category = browser.children(archive_node["id"])["entries"][0]
+            image_node = browser.children(category["id"])["entries"][0]
+            zip_output = root / "saved.png"
+            browser.export_item(image_node["id"], zip_output)
+            self.assertEqual(zip_output.read_bytes(), b"PNG test")
+            pack_node = next(e for e in entries if e["name"] == "pm0025_00_00.gfpak")
+            resource = browser.children(pack_node["id"])["entries"][0]
+            pack_output = root / "saved-resource.bin"
+            browser.export_item(resource["id"], pack_output)
+            self.assertEqual(pack_output.read_bytes(), b"HELLO")
+            self.assertTrue(pack.read_bytes().startswith(b"GFLXPACK"))
+            with self.assertRaisesRegex(ValueError, "Select a file"):
+                browser.export_item(category["id"], root / "cannot-export-folder")
+
     def test_zip_tree_rejects_traversal_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "models.zip"
