@@ -227,28 +227,64 @@ function normalizeBoneName(name) {
 }
 
 export function animationTracks(source, bones) {
-  const lookup = new Map(bones.map(bone => [normalizeBoneName(bone.name), bone]));
-  const frameRate = source.frameRate > 0 ? source.frameRate : 30;
+  // Identically named bones can occur in separate rig branches. Skip
+  // ambiguous names instead of silently retargeting a clip to the last one.
+  const lookup = new Map();
+  for (const bone of bones) {
+    const name = normalizeBoneName(bone.name);
+    if (!lookup.has(name)) lookup.set(name, bone);
+    else lookup.set(name, null);
+  }
+  const frameRate = Number.isFinite(source.frameRate) && source.frameRate > 0
+    ? source.frameRate : 30;
   const tracks = [];
+  const occupied = new Set();
   for (const channel of source.tracks) {
     const bone = lookup.get(normalizeBoneName(channel.bone));
     if (!bone) continue;
-    for (const [kind, property] of [
-      ['translation', 'position'], ['rotation', 'quaternion'], ['scale', 'scale']
+    for (const [kind, property, width] of [
+      ['translation', 'position', 3], ['rotation', 'quaternion', 4], ['scale', 'scale', 3]
     ]) {
       const keys = channel[kind];
       if (!keys?.length) continue;
-      const times = keys.map(key => key.frame / frameRate);
-      const values = keys.flatMap(key => key.value);
+      const key = bone.uuid + ':' + property;
+      if (occupied.has(key)) continue;
+      const valid = keys.filter(row => Number.isFinite(row.frame) && row.frame >= 0 &&
+        row.value?.length === width && row.value.every(Number.isFinite));
+      if (!valid.length) continue;
+      const times = valid.map(row => row.frame / frameRate);
+      const values = [];
+      let previous = null;
+      for (const row of valid) {
+        const vector = row.value.slice();
+        if (property === 'quaternion') {
+          const magnitude = Math.hypot(...vector);
+          if (magnitude < 1e-9) continue;
+          for (let i = 0; i < 4; i++) vector[i] /= magnitude;
+          // q and -q encode the same pose, but sudden sign changes can
+          // interpolate through the long rotation arc.
+          if (previous && vector.reduce((sum, v, i) => sum + v * previous[i], 0) < 0) {
+            for (let i = 0; i < 4; i++) vector[i] = -vector[i];
+          }
+          previous = vector.slice();
+        }
+        values.push(...vector);
+      }
+      if (values.length !== times.length * width) continue;
       const path = bone.name + '.' + property;
-      tracks.push(property === 'quaternion'
+      const track = property === 'quaternion'
         ? new THREE.QuaternionKeyframeTrack(path, times, values)
-        : new THREE.VectorKeyframeTrack(path, times, values));
+        : new THREE.VectorKeyframeTrack(path, times, values);
+      tracks.push(track);
+      occupied.add(key);
     }
   }
   if (!tracks.length) return null;
   const duration = source.frameCount > 1 ? (source.frameCount - 1) / frameRate : -1;
-  return new THREE.AnimationClip(source.name, duration, tracks);
+  const clip = new THREE.AnimationClip(source.name, duration, tracks);
+  if (!clip.validate()) return null;
+  clip.optimize();
+  return clip;
 }
 
 async function loadNativeClips(project, selected, skeleton, report) {
