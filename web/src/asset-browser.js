@@ -79,6 +79,24 @@ async function loadNSPDashboard(root) {
     card.append(heading, bar);
     breakdown.append(card);
   }
+  const titles = overview.plaintext_cnmt || [];
+  id('nspTitles').hidden = titles.length === 0;
+  const records = id('nspTitleRecords');
+  records.replaceChildren();
+  for (const record of titles) {
+    const entry = document.createElement('div');
+    entry.className = 'nsp-title-record';
+    const heading = document.createElement('strong');
+    heading.textContent = record.title_id || 'Unknown title ID';
+    const details = document.createElement('p');
+    details.textContent = (record.type || 'Unknown content type') +
+      (record.version ? ' · version ' + record.version : '') +
+      ' · ' + (record.contents || []).length + ' referenced content files';
+    const file = document.createElement('small');
+    file.textContent = record.filename;
+    entry.append(heading, details, file);
+    records.append(entry);
+  }
   const warnings = overview.warnings || [];
   id('nspWarningCount').textContent = warnings.length ? warnings.length + ' warnings' : 'No structural warnings';
   const lines = id('nspWarnings');
@@ -209,7 +227,7 @@ function select(row) {
   id('assetSelectedInfo').textContent = row
     ? type + ' • ' + formatSize(row.size) +
       (row.relative ? '\n' + row.relative : '') +
-      (row.kind === 'nspfile' ? '\nEncrypted NCA contents cannot be decoded here.' : '')
+      (row.kind === 'nspfile' && row.format === 'Encrypted NCA' ? '\nEncrypted NCA contents cannot be decoded here.' : '')
     : 'Select an asset to inspect or preview it.';
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
@@ -427,8 +445,10 @@ function initialize() {
   id('nspAudit').addEventListener('click', () => startNSPTask('audit', activeNSP));
   id('nspHash').addEventListener('click', () => startNSPTask('hash', selected));
   id('nspExtract').addEventListener('click', () => startNSPTask('extract', selected));
-  id('nspReadHex').addEventListener('click', () => readHexDump());
-  id('nspCancel').addEventListener('click', () => api.browse_nsp_cancel_task());
+  id('nspReadHex').addEventListener('click', () =>
+    readHexDump().catch(error => showNotice(error.message || String(error), true)));
+  id('nspCancel').addEventListener('click', () =>
+    api.browse_nsp_cancel_task().catch(error => showNotice(error.message || String(error), true)));
 
 }
 
