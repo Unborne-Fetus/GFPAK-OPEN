@@ -11,6 +11,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install native NCA reader crypto dependency
+        run: python -m pip install --disable-pip-version-check "cryptography>=44,<48"
       - name: Test archive reader and model converter
         run: python -m unittest discover -s tests -v
       - uses: actions/setup-node@v4
