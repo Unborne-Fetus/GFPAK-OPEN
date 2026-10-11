@@ -39,6 +39,14 @@ test('3D demo loads and exports real nonempty GLB', async ({ page }) => {
   await expect(page.locator('#objectName')).toContainText('No active object');
   await page.locator('#demoButton').click();
   await expect(page.locator('#statMeshes')).toHaveText('2');
+  await expect(page.locator('#statClips')).toHaveText('1');
+  await expect(page.locator('#clipSelect')).toBeEnabled();
+  await expect(page.locator('#clipSelect')).toHaveValue('0');
+  await expect(page.locator('#toggleAnimation')).toHaveText('Ⅱ PAUSE ANIMATION');
+  await page.locator('#toggleAnimation').click();
+  await expect(page.locator('#toggleAnimation')).toHaveText('▶ PLAY ANIMATION');
+  await page.locator('#toggleAnimation').click();
+  await expect(page.locator('#toggleAnimation')).toHaveText('Ⅱ PAUSE ANIMATION');
   await expect(page.locator('#exportButton')).toBeEnabled();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -46,6 +54,11 @@ test('3D demo loads and exports real nonempty GLB', async ({ page }) => {
   ]);
   expect(download.suggestedFilename()).toBe('gfpak-demo.glb');
   await expectValidGlb(download);
+  const bytes = await fs.readFile(await download.path());
+  const jsonSize = bytes.readUInt32LE(12);
+  const exported = JSON.parse(bytes.toString('utf8', 20, 20 + jsonSize));
+  expect(exported.animations?.length).toBe(1);
+  expect(exported.animations[0].channels.length).toBeGreaterThanOrEqual(2);
 });
 
 test('OBJ model from a ZIP can be previewed and exported', async ({ page }) => {
