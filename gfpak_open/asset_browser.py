@@ -152,6 +152,8 @@ class AssetBrowser:
                     # another game from opening; the session owns the cache.
                     pass
         self._nca_sections._readers.clear()
+        for archive in self._archives.values():
+            archive.close()
         self._nodes.clear()
         self._keys.clear()
         self._archives.clear()
@@ -629,6 +631,9 @@ class AssetBrowser:
         if kind == "nca_file":
             reader, index, section, name = self._nca_virtual_file(node)
             return self._nca_sections.extract_one(reader, index, section, name, dest)
+        if kind == "gfpak_resource":
+            archive = self._archive(source)
+            return archive.copy_resource(archive.resources[node["index"]], dest)
         with dest.open("xb") as output:
             try:
                 if kind == "file":
@@ -641,12 +646,6 @@ class AssetBrowser:
                             raise ValueError("ZIP member too large for this exporter")
                         with archive.open(member) as stream:
                             shutil.copyfileobj(stream, output, length=1024 * 1024)
-                elif kind == "gfpak_resource":
-                    archive = self._archive(source)
-                    resource = archive.resources[node["index"]]
-                    if resource.size > 256 * 1024 * 1024:
-                        raise ValueError("GFPAK member too large for in-memory decoding")
-                    output.write(archive.read_resource(resource))
             except Exception:
                 output.close()
                 dest.unlink(missing_ok=True)
@@ -721,10 +720,11 @@ class AssetBrowser:
                 result["size"] = resource.size
                 result["compression"] = resource.compression
                 result["hash"] = resource.path_hash
-                if resource.size <= 8 * 1024 * 1024:
-                    data = self._archive(path).read_resource(resource)[:512]
-                else:
-                    result["notes"].append("Resource too large for inline preview.")
+                result["packed_size"] = resource.packed_size
+                result["offset"] = resource.offset
+                data, decoded = self._archive(path).peek_resource(resource)
+                if not decoded:
+                    result["notes"].append("Showing packed bytes; decoded preview exceeds the safe limit.")
             elif kind == "zipfile":
                 with zipfile.ZipFile(path) as archive:
                     entry = archive.getinfo(node["inner"])
