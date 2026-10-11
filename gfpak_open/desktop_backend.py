@@ -328,6 +328,23 @@ class DesktopAPI:
             return {"root": root, "directory": str(self._browser.root_path),
                     "children": self._browser.children(root["id"])}
 
+    def browse_attach_extracted_nca(self, node_id: str):
+        """Associate an existing extracted folder with the selected NCA."""
+        with self._lock:
+            browser = self._browser
+            node = browser.node(node_id)
+            if node["kind"] != "nspfile" or not node["name"].lower().endswith(".nca"):
+                raise ValueError("Select a Program or other NCA entry in the tree first")
+        folders = self._dialog("folder", "Choose existing extracted NCA section files")
+        if not folders:
+            return None
+        with self._lock:
+            if browser is not self._browser:
+                raise ValueError("The opened NSP has changed")
+            linked = browser.attach_extracted_nca(node_id, folders[0])
+            return {"parent": browser._public(node), "linked": linked,
+                    "children": browser.children(node_id)}
+
     def browse_attach_extracted(self):
         """Link an existing extracted directory into the NSP's file tree."""
         with self._lock:
