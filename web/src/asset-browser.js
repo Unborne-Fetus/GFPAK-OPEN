@@ -462,6 +462,7 @@ async function nxLoadDetails(row) {
   thumbnail.hidden = true;
   thumbnail.removeAttribute('src');
   signature.textContent = '';
+  id('assetFamily').hidden = true;
   if (!row) return;
   let info;
   try {
@@ -490,6 +491,31 @@ async function nxLoadDetails(row) {
   if (info.thumbnail) {
     thumbnail.src = info.thumbnail;
     thumbnail.hidden = false;
+  }
+  if (api?.browse_asset_family) {
+    try {
+      const family = await api.browse_asset_family(row.id);
+      if (revision === nxDetailRevision && selected?.id === row.id && family?.asset_id) {
+        id('assetFamily').hidden = false;
+        id('assetFamilyId').textContent = family.asset_id;
+        const counts = id('assetFamilyCounts');
+        counts.replaceChildren();
+        for (const [kind, count] of Object.entries(family.counts || {})) {
+          const chip = document.createElement('span');
+          chip.textContent = kind + ': ' + count;
+          counts.append(chip);
+        }
+        const files = id('assetFamilyFiles');
+        files.replaceChildren();
+        for (const asset of (family.files || []).slice(0, 12)) {
+          const item = document.createElement('div');
+          item.textContent = asset.kind + ' · ' + asset.path.split(/[/\\]/).at(-1);
+          item.title = asset.path;
+          files.append(item);
+        }
+        id('assetFamily').title = family.note || '';
+      }
+    } catch (error) { /* Asset relationship hints are optional. */ }
   }
   if (info.hex_lines?.length && row.kind !== 'nspfile') {
     hex.textContent = info.hex_lines.map(line =>
