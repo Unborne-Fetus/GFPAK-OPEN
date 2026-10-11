@@ -201,6 +201,33 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertTrue(info["thumbnail"].startswith("data:image/png;base64,"))
             self.assertTrue(info["hex_lines"])
 
+    def test_zip_image_thumbnail_and_session_cache_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "assets.zip"
+            second = root / "other.zip"
+            with zipfile.ZipFile(first, "w") as archive:
+                archive.writestr("pokemon/face.png", b"\x89PNG\r\n\x1a\n" + b"picture")
+            with zipfile.ZipFile(second, "w") as archive:
+                archive.writestr("readme.txt", b"safe")
+            browser = AssetBrowser(nca_workspace=root / "owned-cache")
+            source = browser.open(first)
+            folder = browser.children(source["id"])["entries"][0]
+            asset = browser.children(folder["id"])["entries"][0]
+            info = browser.item_details(asset["id"])
+            self.assertTrue(info["thumbnail"].startswith("data:image/png;base64,"))
+            cache = root / "owned-cache"
+            (cache / "ncz").mkdir()
+            (cache / "preview").mkdir()
+            (cache / "ncz" / "old.nca").write_bytes(b"temporary")
+            (cache / "preview" / "old.glb").write_bytes(b"temporary")
+            keep = root / "user_original.nca"
+            keep.write_bytes(b"original")
+            browser.open(second)
+            self.assertFalse((cache / "ncz" / "old.nca").exists())
+            self.assertFalse((cache / "preview" / "old.glb").exists())
+            self.assertEqual(keep.read_bytes(), b"original")
+
     def test_export_selected_file_zip_member_and_gfpak_resource(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
