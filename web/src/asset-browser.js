@@ -471,8 +471,22 @@ function initialize() {
     else if (pathStack.length > 1) pathStack.pop();
     renderListing();
   });
-  id('assetSearch').addEventListener('input', () => renderRows(current));
-  id('assetCategory').addEventListener('change', () => renderRows(current));
+  id('assetSearch').addEventListener('input', () => {
+    if (pathStack.at(-1)?.root.kind === 'nsp') scheduleNSPSearch();
+    else renderRows(current);
+  });
+  id('assetCategory').addEventListener('change', () => {
+    if (pathStack.at(-1)?.root.kind === 'nsp') loadNSPPage(0);
+    else renderRows(current);
+  });
+  id('nspPrev').addEventListener('click', () => {
+    const page = pathStack.at(-1)?.listing.pagination;
+    if (page && page.page > 0) loadNSPPage(page.page - 1);
+  });
+  id('nspNext').addEventListener('click', () => {
+    const page = pathStack.at(-1)?.listing.pagination;
+    if (page && page.page + 1 < page.pages) loadNSPPage(page.page + 1);
+  });
   id('assetPreview').addEventListener('click', () => preview());
   id('assetScan').addEventListener('click', scanFolder);
   id('nspManifest').addEventListener('click', async () => {
