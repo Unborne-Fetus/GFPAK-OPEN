@@ -528,6 +528,7 @@ class AssetBrowser:
             locked = self._node("nca_locked", reader.path, inner=node["id"],
                                 name="Sections unavailable")
             locked["category"] = "locked"
+            locked["error"] = message
             entries.append(locked)
         return {"root": self._public(node),
                 "entries": [self._public(entry) for entry in entries],
@@ -682,7 +683,11 @@ class AssetBrowser:
             "thumbnail": None,
             "notes": [],
         }
-        if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_dir", "nca_locked"}:
+        if kind == "nca_locked":
+            result["notes"].append(node.get("error") or
+                                   "The NCA sections cannot be read with the current configuration.")
+            return result
+        if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_dir"}:
             features = node.get("capabilities")
             if features:
                 statuses = []
