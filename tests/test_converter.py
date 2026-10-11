@@ -5,11 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from gfpak_open.core import Resource
+from gfpak_open.core import Resource, GFPak
+from gfpak_open.model_discovery import infer_model_resources
 
 from gfpak_open.converter import (
     ConversionError, ConversionOptions, HashDictionary, convert_model,
-    find_models, fnv1a64, safe_path, validate_glb, discover_dictionary, community_dictionary,
+    find_models, fnv1a64, safe_path, validate_glb, discover_dictionary, community_dictionary, restore_referenced_paths,
 )
 
 
@@ -154,20 +155,37 @@ class ConverterTests(unittest.TestCase):
                 convert_model(ConversionOptions(source, output, blender, addon))
             self.assertEqual(output.read_bytes(), b"preserve original")
 
-    def test_archive_without_dictionary_fails_cleanly(self):
-        sample = Path("/mnt/data/pm0025_00_00.gfpak")
-        if not sample.is_file():
-            self.skipTest("User Pikachu sample is not in the public repository")
+    def test_recover_exact_reference_names_from_filenames_in_model_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "blender.exe").write_bytes(b"fake")
-            addon = root / "addon"
-            addon.mkdir()
-            (addon / "__init__.py").write_text("")
-            target = root / "out.glb"
-            with self.assertRaisesRegex(ConversionError, "filename dictionary"):
-                convert_model(ConversionOptions(sample, target, root / "blender.exe", addon))
-            self.assertFalse(target.exists())
+            mesh_bytes = b"native mesh"
+            root.joinpath("anonymous.trmdl").write_bytes(
+                b"flatbuffer-table\\x00mesh_body.trmsh\\x00"
+            )
+            a = Resource(0, 0, 0, 38, 38, 0,
+                         fnv1a64("anonymous.trmdl"), 0, None,
+                         fnv1a64("anonymous.trmdl"))
+            b = Resource(1, 0, 0, len(mesh_bytes), len(mesh_bytes), 0,
+                         fnv1a64("mesh_body.trmsh"), 0, None,
+                         fnv1a64("mesh_body.trmsh"))
+            class FakeArchive:
+                resources = [a, b]
+                def read_resource(self, resource, *, oodle_dll=None):
+                    return mesh_bytes
+            copied = restore_referenced_paths(FakeArchive(), root,
+                                               {0: "anonymous.trmdl"})
+            self.assertEqual(copied, 1)
+            self.assertEqual((root / "mesh_body.trmsh").read_bytes(), mesh_bytes)
+
+    def test_uploaded_archive_recovers_model_group_without_dictionary(self):
+        sample = Path("/mnt/data/pm0025_00_00.gfpak")
+        if not sample.is_file():
+            self.skipTest("User-provided game archive is not distributed in this repository")
+        archive = GFPak(sample)
+        detected = infer_model_resources(archive.resources, sample.stem)
+        self.assertEqual(detected[153], "pm0025_00_00.trmdl")
+        self.assertEqual(detected[155], "pm0025_00_00.trmsh")
+        self.assertEqual(detected[152], "pm0025_00_00.trmbf")
 
 
 if __name__ == "__main__":
