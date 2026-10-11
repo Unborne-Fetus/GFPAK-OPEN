@@ -69,6 +69,21 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### Advanced NSP package workbench
+
+When an NSP is selected, **Game File Explorer** now opens a full **read-only PFS0 analyzer** in the same desktop application:
+
+- **Whole-package inventory:** exact NSP size, index size, indexed file counts, NCA counts, per-role file sizes, and warnings for duplicate names, overlaps, malformed offsets, reserved fields and trailing/unindexed data.
+- **Complete indexed browsing:** server-side filename/type/role search, with paginated results across the entire NSP index rather than a fixed first-page sample (250 rows per page). Distinguishes content and metadata NCAs, tickets, certificates, artwork, plaintext metadata and other resources.
+- **Plaintext CNMT information where available:** title ID, version, content type, required system version and content references from existing `.cnmt.xml` files. If metadata exists only inside encrypted NCAs, those fields cannot be recovered.
+- **Per-file byte inspector:** absolute offset, file size, content ID, file signature, hex+ASCII preview (maximum 1 KiB per request, with selectable byte offset). Ticket payload bytes are intentionally hidden from the hex viewer.
+- **Streaming integrity tools:** SHA-256 for a selected file and an optional cancellable SHA-256 audit of every indexed file, with progress. Comparison of an NCA filename's content-ID prefix with the calculated digest is advisory and **not** a complete authenticity check.
+- **Explicit, safe export:** save a selected **raw** NSP entry (byte-identical, no decryption) or save a JSON index manifest. Nothing is extracted automatically, existing destinations are not overwritten, and original NSP files are never modified.
+
+The PFS0 reader handles very large packages without loading entire game payloads into memory. It **does not** decrypt NCAs, bypass copy protection, retrieve console keys or mount protected RomFS data. The full tree visible in NX File Viewer still requires already-decrypted/extracted files supplied locally. NSZ and XCI container decoding are not yet implemented.
+
+
+
 **Blender 5.x / FlatBuffers:** The Pokémon Switch Blender importer also requires Python
 modules such as `flatbuffers` and `requests`. Blender may prohibit the importer's
 own pip installation when Online Access is disabled. GFPAK-OPEN instead prepares
