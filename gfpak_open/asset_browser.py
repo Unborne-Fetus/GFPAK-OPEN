@@ -201,10 +201,58 @@ class AssetBrowser:
                 self._zip_lists[path] = (sorted(items), items)
         return self._zip_lists[path]
 
+    def nsp_page(self, id_: str, page: int = 0, query: str = '',
+                 category: str = 'all', limit: int = 250) -> dict:
+        """Paginate/filter all NSP entries, including those past the UI row cap."""
+        node = self.node(id_)
+        if node['kind'] != 'nsp':
+            raise ValueError('Select an NSP package for index browsing')
+        reader = self.nsp_reader(Path(node['path']))
+        page, limit = int(page), int(limit)
+        if page < 0 or not 1 <= limit <= 500:
+            raise ValueError('Invalid NSP page parameters')
+        query = str(query).strip().lower()[:128]
+        category = str(category).lower()[:64]
+        valid = {'all', 'encrypted container', 'metadata', 'texture', 'archive',
+                 'model archive', 'model', 'other'}
+        if category not in valid:
+            category = 'all'
+        matches, counts = [], Counter()
+        for entry in reader.entries:
+            kind = classify(entry.name)
+            counts[kind] += 1
+            searchable = entry.name.lower() + ' ' + entry.role.lower() + ' ' + entry.format.lower()
+            if query and query not in searchable:
+                continue
+            if category != 'all' and category != kind:
+                continue
+            matches.append(entry)
+        total = len(matches)
+        pages = max(1, (total + limit - 1) // limit)
+        page = min(page, pages - 1)
+        first = page * limit
+        output = []
+        for entry in matches[first:first + limit]:
+            item = self._node('nspfile', Path(node['path']), index=entry.index,
+                              name=entry.name, size=entry.size)
+            item['category'] = classify(entry.name)
+            item['role'] = entry.role
+            item['format'] = entry.format
+            item['content_id'] = entry.content_id
+            item['offset'] = entry.offset
+            output.append(self._public(item))
+        return {'root': self._public(node), 'entries': output,
+                'counts': dict(counts), 'truncated': total > limit,
+                'pagination': {'page': page, 'pages': pages, 'page_size': limit,
+                               'total': total, 'first': first + 1 if total else 0,
+                               'last': first + len(output)},
+                'note': 'Outer PFS0 only. NCA payloads remain encrypted.'}
     def children(self, id_: str) -> dict:
         node = self.node(id_)
         kind = node["kind"]
         path = Path(node["path"])
+        if kind == "nsp":
+            return self.nsp_page(id_)
         results = []
         if kind == "directory":
             for entry in sorted(path.iterdir(),
@@ -259,17 +307,7 @@ class AssetBrowser:
                     break
             results = sorted(names.values(),
                              key=lambda item: (not item["expandable"], item["name"].lower()))
-        elif kind == "nsp":
-            analyzer = self.nsp_reader(path)
-            for entry in analyzer.entries[:MAX_ENTRIES]:
-                child = self._node("nspfile", path, index=entry.index,
-                                   name=entry.name, size=entry.size)
-                child["category"] = classify(entry.name)
-                child["role"] = entry.role
-                child["format"] = entry.format
-                child["content_id"] = entry.content_id
-                child["offset"] = entry.offset
-                results.append(child)
+
         counts = dict(Counter(row["category"] for row in results))
         return {"root": self._public(node), "entries": [self._public(c) for c in results],
                 "counts": counts, "truncated": len(results) >= MAX_ENTRIES,
