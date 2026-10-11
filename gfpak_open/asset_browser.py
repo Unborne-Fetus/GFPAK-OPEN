@@ -26,6 +26,7 @@ MESH = {".trmsh", ".trmbf"}
 ANIMATION = {".tranm", ".gfbanm", ".bck", ".bca", ".tracn", ".tracp", ".tracr", ".tracs"}
 TEXTURE = {".bntx", ".png", ".dds", ".tga", ".jpg", ".jpeg", ".webp", ".trtex", ".bfttf"}
 SKELETON = {".trskl"}
+METADATA = {".tik", ".cert", ".xml", ".json", ".cnmt"}
 MATERIAL = {".trmtr", ".trmmt", ".mtl"}
 ARCHIVE = {".gfpak", ".zip", ".nsp", ".xci"}
 PREVIEW = {".trmdl", ".gfbmdl", ".glb", ".gfpak"}
@@ -48,6 +49,8 @@ def classify(filename: str) -> str:
         return "texture"
     if ext in SKELETON:
         return "skeleton"
+    if ext in METADATA:
+        return "metadata"
     if ext in MATERIAL:
         return "material"
     if ext in ARCHIVE:
