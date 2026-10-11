@@ -171,7 +171,7 @@ async function readLegacyAnimations(project, selected, rig, report) {
  * Load an independent, genuine GFBMDL geometry asset in a browser.
  * Preserves decoded positions/normals/UVs/colors/material groups.
  *
- * GFBANM animations and original game shaders remain unsupported.
+ * Some GFBANM animation variants and original game shaders remain unsupported.
  */
 export async function loadGfbmdl(project, selected, report = () => {}) {
   const entry = project.items.find(item => item.path === selected);
@@ -220,7 +220,7 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
   report('Decoded ' + model.stats.meshCount + ' real GFBMDL meshes and ' +
     model.stats.vertexCount.toLocaleString() + ' vertices, ' +
     (rig?.bones.length || 0) + ' bones and ' + animations.length + ' animation clips. ' +
-    'Original shaders, BNTX and some skeletal variants are not reconstructed.');
+    'Original shaders, some BNTX formats and skeletal variants remain unsupported.');
   return {
     root, animations, selected,
     sourceFormat: 'GFBMDL',
