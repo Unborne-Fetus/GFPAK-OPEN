@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import functools
+import mimetypes
+import re
 import http.server
 import os
 import subprocess
@@ -58,27 +60,31 @@ def _assets() -> Path:
     return Path(__file__).resolve().parent.parent / "dist-desktop"
 
 
+from .desktop_backend import DesktopAPI
+
 class _Server(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, directory=None, **kwargs):
-        super().__init__(*args, directory=directory, **kwargs)
+    api = None
+
+    def do_GET(self):
+        match = re.fullmatch(r"/__native_output/([0-9a-f]{32})", self.path)
+        if match:
+            path = self.api.output_file(match.group(1)) if self.api else None
+            if not path or not path.is_file():
+                self.send_error(404, "Converted model not found")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "model/gltf-binary")
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with path.open("rb") as source:
+                import shutil
+                shutil.copyfileobj(source, self.wfile)
+            return
+        super().do_GET()
 
     def log_message(self, format, *args):
         pass
-
-
-class DesktopAPI:
-    def open_converter(self):
-        """Launch existing converter without blocking the 3D viewer."""
-        if getattr(sys, "frozen", False):
-            cmd = [sys.executable, "--classic"]
-        else:
-            cmd = [sys.executable, str(Path(__file__).resolve().parent.parent / "launch.py"), "--classic"]
-        subprocess.Popen(cmd, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return True
-
-    def find_blender(self):
-        from .blender_detection import find_blender
-        return find_blender()
 
 
 def main():
@@ -87,13 +93,15 @@ def main():
         import webview
     except ImportError as exc:
         raise RuntimeError("pywebview is required for the Windows studio: pip install pywebview") from exc
+    api = DesktopAPI()
+    _Server.api = api
     factory = functools.partial(_Server, directory=str(assets))
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), factory) as server:
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
         url = f"http://127.0.0.1:{server.server_port}/"
         webview.create_window("GFPAK Open — Model Studio", url,
-                              js_api=DesktopAPI(), width=1380, height=900, min_size=(1000, 680))
+                              js_api=api, width=1380, height=900, min_size=(1000, 680))
         try:
             webview.start(gui="edgechromium")
         finally:
