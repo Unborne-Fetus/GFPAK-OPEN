@@ -53,7 +53,7 @@ class GFPakTests(unittest.TestCase):
                 resource = archive.resources[0]
                 self.assertEqual(resource.size, huge)
                 self.assertEqual(archive.summary()["unpacked_bytes"], huge)
-                self.assertEqual(archive.peek_resource(resource, 12), (b"HELLO" + b"\\0" * 7, True))
+                self.assertEqual(archive.peek_resource(resource, 12), (b"HELLO" + bytes(7), True))
                 with self.assertRaisesRegex(GFPakError, "streaming"):
                     archive.read_resource(resource)
 
