@@ -749,3 +749,29 @@
   .desktop-app .nx-fileviewer .asset-content{grid-template-columns:minmax(0,1fr)}
   .desktop-app .nx-fileviewer .asset-inspector{grid-column:1}
 }
+
+.desktop-app .nx-fileviewer .nx-asset-family{
+  padding:11px;background:#fff;border:1px solid #d4e0e8;
+  border-radius:5px;display:flex;flex-direction:column;gap:8px;min-width:0;
+}
+.desktop-app .nx-fileviewer .nx-family-title{
+  font:600 12px "Segoe UI",sans-serif;color:#3a6374;
+  display:flex;justify-content:space-between;gap:8px;
+}
+.desktop-app .nx-fileviewer .nx-family-title strong{color:#1d7b72}
+.desktop-app .nx-fileviewer .nx-family-counts{display:flex;flex-wrap:wrap;gap:5px}
+.desktop-app .nx-fileviewer .nx-family-counts span{
+  color:#315f76;background:#e7f3fa;border:1px solid #c6dfe9;
+  padding:3px 6px;border-radius:3px;font:10px "Segoe UI",sans-serif;
+}
+.desktop-app .nx-fileviewer .nx-family-files{
+  max-height:126px;overflow:auto;color:#536879;
+  font:10px/1.5 "Segoe UI",sans-serif;
+}
+.desktop-app .nx-fileviewer .nx-family-files>div{
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.desktop-app .nx-fileviewer .nx-family-note{
+  margin:0;color:#8296a2;font:10px/1.5 "Segoe UI",sans-serif;
+}
+#assetFamily[hidden]{display:none!important}
