@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import shutil
 import struct
 import uuid
 import zipfile
@@ -361,6 +362,49 @@ class AssetBrowser:
     def nsp_inspect(self, node_id: str, offset: int = 0, length: int = 256) -> dict:
         analyzer, index = self.nsp_entry(node_id)
         return analyzer.inspect(index, offset=offset, length=length)
+
+    def export_item(self, id_: str, target: str | Path) -> Path:
+        """Export an explicitly selected supported member without modifying sources.
+
+        Existing destination files cannot be overwritten. Zip and filesystem
+        members are streamed; GFPAK members are decoded only if safely sized.
+        """
+        node = self.node(id_)
+        kind = node["kind"]
+        source = Path(node["path"])
+        dest = Path(target)
+        if not dest.parent.is_dir():
+            raise ValueError("Choose an existing destination directory")
+        if kind not in {"file", "zipfile", "gfpak_resource", "nspfile"}:
+            raise ValueError("Select a file or resource, not a folder")
+        if kind == "file" and dest.resolve() == source.resolve():
+            raise ValueError("Cannot replace the source file")
+        if kind == "nspfile":
+            reader, index = self.nsp_entry(id_)
+            return reader.export_raw(index, dest)
+        with dest.open("xb") as output:
+            try:
+                if kind == "file":
+                    with source.open("rb") as stream:
+                        shutil.copyfileobj(stream, output, length=1024 * 1024)
+                elif kind == "zipfile":
+                    with zipfile.ZipFile(source) as archive:
+                        member = archive.getinfo(node["inner"])
+                        if member.file_size > 1024 * 1024 * 1024:
+                            raise ValueError("ZIP member too large for this exporter")
+                        with archive.open(member) as stream:
+                            shutil.copyfileobj(stream, output, length=1024 * 1024)
+                elif kind == "gfpak_resource":
+                    archive = self._archive(source)
+                    resource = archive.resources[node["index"]]
+                    if resource.size > 256 * 1024 * 1024:
+                        raise ValueError("GFPAK member too large for in-memory decoding")
+                    output.write(archive.read_resource(resource))
+            except Exception:
+                output.close()
+                dest.unlink(missing_ok=True)
+                raise
+        return dest
 
     def item_details(self, id_: str) -> dict:
         """Bounded content sniffing for the selected file in the native tree."""
