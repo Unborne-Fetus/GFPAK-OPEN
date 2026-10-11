@@ -107,7 +107,7 @@ class AssetBrowser:
         self.root_id: str | None = None
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
-        self._linked_nca: dict[int, dict] = {}
+        self._linked_nca: dict[str, dict] = {}
         self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
         self._section_nodes: dict[str, tuple[int, int]] = {}
         self._nca_virtual_nodes: dict[str, tuple[int, int, str]] = {}
@@ -275,10 +275,10 @@ class AssetBrowser:
         if not folder.is_dir():
             raise ValueError("The linked extracted content must be an existing folder")
         linked = self._node("linked_dir", folder,
-                            inner="nca-" + str(node["index"]),
+                            inner="nca-" + node_id,
                             name="Extracted files (linked)")
         linked["category"] = "folder"
-        self._linked_nca[node["index"]] = linked
+        self._linked_nca[node_id] = linked
         return self._public(linked)
 
     def _xci_image(self, path: Path) -> XCIImage:
@@ -471,14 +471,14 @@ class AssetBrowser:
             reader = self._ncz_restored[node["id"]]
             index = 0
         entries = []
-        linked = self._linked_nca.get(index)
+        linked = self._linked_nca.get(node["id"])
         if linked:
             return {'root': self._public(node), 'entries': [self._public(linked)],
                     'counts': {'folder': 1}, 'truncated': False,
                     'note': 'Showing separately extracted files linked to this NCA; no NCA decryption was performed.'}
         try:
             for number in self._nca_sections.sections(reader, index):
-                child = self._node("nca_section", reader.path, inner=str(index),
+                child = self._node("nca_section", reader.path, inner=node["id"],
                                    index=number, name=f"Section {number}")
                 child["category"] = "folder"
                 child["capabilities"] = self._nca_sections.section_info(reader, index, number)
@@ -524,7 +524,7 @@ class AssetBrowser:
         for child in page["entries"]:
             is_dir = child["type"] == "directory"
             kind = "nca_dir" if is_dir else "nca_file"
-            inner = f"{index}:{section}:{child['path']}"
+            inner = f"{parent['id']}:{index}:{section}:{child['path']}"
             item = self._node(kind, reader.path, inner=inner, name=child["name"],
                               size=child["size"])
             item["category"] = "folder" if is_dir else classify(child["name"])
@@ -622,7 +622,7 @@ class AssetBrowser:
         node = self.node(id_)
         def display_path(item: dict) -> str:
             if item["kind"] in {"nca_file", "nca_dir"}:
-                return item["inner"].split(":", 2)[-1]
+                return self._nca_virtual_nodes[item["id"]][2]
             if item["kind"] == "file":
                 return str(item["path"])
             return item["name"].split(" · ", 1)[-1]
