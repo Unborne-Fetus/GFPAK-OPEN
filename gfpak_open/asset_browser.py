@@ -16,6 +16,7 @@ from collections import Counter
 from pathlib import Path, PurePosixPath
 
 from .core import GFPak, GFPakError
+from .nsp_explorer import NSPAnalyzer
 from .model_discovery import infer_model_resources
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
                         fnv1a64, REFERENCE_RE, safe_path, ConversionError)
@@ -59,37 +60,11 @@ def classify(filename: str) -> str:
 
 
 def pfs0_entries(source: Path) -> list[dict]:
-    """Inspect the *outer* PFS0 NSP index. Never attempt NCA decryption."""
-    with source.open("rb") as stream:
-        header = stream.read(16)
-        if len(header) != 16 or header[:4] != b"PFS0":
-            raise ValueError(
-                "Not a PFS0 NSP. This build reads standard PFS0 package indices, "
-                "not XCI files or encrypted NCA file systems."
-            )
-        count, strings_len, _reserved = struct.unpack_from("<III", header, 4)
-        if count > MAX_NSP_FILES or strings_len > MAX_STRING_TABLE:
-            raise ValueError("NSP file table exceeds safety limits")
-        table_bytes = stream.read(count * 24)
-        strings = stream.read(strings_len)
-        if len(table_bytes) != count * 24 or len(strings) != strings_len:
-            raise ValueError("Truncated NSP file table")
-    data_start = 16 + count * 24 + strings_len
-    size = source.stat().st_size
-    files = []
-    for i in range(count):
-        offset, length, pos, _ = struct.unpack_from("<QQII", table_bytes, i * 24)
-        if (pos >= len(strings) or data_start > size or
-                offset > size - data_start or length > size - data_start - offset):
-            raise ValueError("Invalid NSP index entry")
-        end = strings.find(b"\0", pos)
-        if end < 0:
-            raise ValueError("Missing NSP file name terminator")
-        filename = strings[pos:end].decode("utf-8", errors="replace")
-        # Filenames shown in the UI are metadata. Do not use as extraction paths.
-        files.append({"name": filename, "type": classify(filename),
-                      "size": length, "offset": data_start + offset})
-    return files
+    """Backward-compatible outer package file table from full NSP analyzer."""
+    reader = NSPAnalyzer(source)
+    return [{"name": item.name, "type": classify(item.name),
+             "size": item.size, "offset": item.offset}
+            for item in reader.entries]
 
 
 class AssetBrowser:
@@ -99,7 +74,7 @@ class AssetBrowser:
         self._archives: dict[Path, GFPak] = {}
         self._zip_lists: dict[Path, tuple[list[str], dict[str, zipfile.ZipInfo]]] = {}
         self._inferred: dict[Path, dict[int, str]] = {}
-        self._pfs: dict[Path, list[dict]] = {}
+        self._pfs: dict[Path, NSPAnalyzer] = {}
         self.root_id: str | None = None
         self.root_path: Path | None = None
 
@@ -146,9 +121,13 @@ class AssetBrowser:
 
     @staticmethod
     def _public(node: dict) -> dict:
-        # Avoid exposing hidden backing paths in every row; emit stable node IDs.
-        return {key: node[key] for key in
-                ("id", "name", "kind", "category", "size", "expandable")}
+        # Expose metadata but not hidden backing paths.
+        values = {key: node[key] for key in
+                  ("id", "name", "kind", "category", "size", "expandable")}
+        for field in ("role", "format", "offset", "content_id"):
+            if field in node:
+                values[field] = node[field]
+        return values
 
     def node(self, id_: str) -> dict:
         if not isinstance(id_, str) or id_ not in self._nodes:
