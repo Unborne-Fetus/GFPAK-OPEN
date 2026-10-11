@@ -297,6 +297,7 @@ class AssetBrowser:
                                inner=f"xci:{node['inner']}:{entry.index}",
                                index=entry.index, name=entry.name, size=entry.size)
             child["category"] = classify(entry.name)
+            child["expandable"] = entry.name.lower().endswith(".nca")
             child["role"] = entry.role
             child["format"] = entry.format
             child["offset"] = entry.offset
