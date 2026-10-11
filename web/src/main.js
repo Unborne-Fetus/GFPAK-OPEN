@@ -8,7 +8,7 @@ import {
   downloadBlob, demoModel, extension
 } from './model.js';
 import {
-  parseGfpak, summary, extractResource, parseHashDictionary, resolvedName
+  parseGfpakFile, summary, extractResourceAsync, parseHashDictionary, resolvedName
 } from './gfpak.js';
 
 const el = id => document.getElementById(id);
@@ -245,7 +245,7 @@ async function chooseProject(files) {
 }
 
 async function loadArchive(file) {
-  const archive = parseGfpak(await file.arrayBuffer(), file.name);
+  const archive = await parseGfpakFile(file, file.name);
   state.archive = archive;
   state.project = null;
   suggestGame([file.name]);
@@ -326,8 +326,10 @@ async function previewGfbmdlInArchive() {
       path,
       size: resource.size,
       getBytes: async () => {
-        const raw = extractResource(state.archive, resource);
-        return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+        const raw = await extractResourceAsync(state.archive, resource);
+        return raw instanceof Blob
+          ? raw.arrayBuffer()
+          : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
       }
     }))
   };
@@ -418,7 +420,7 @@ async function downloadSelectedResource() {
   if (!state.archive || !state.resource) return;
   try {
     const packed = el('savePacked').checked;
-    const data = extractResource(state.archive, state.resource, { packed });
+    const data = await extractResourceAsync(state.archive, state.resource, { packed });
     const sourceName = resolvedName(state.resource, state.dictionary) ||
       String(state.resource.index).padStart(4, '0') + '_' + state.resource.pathHash + '.bin';
     downloadBlob(validResourceName(sourceName) + (packed ? '.packed' : ''), data);
