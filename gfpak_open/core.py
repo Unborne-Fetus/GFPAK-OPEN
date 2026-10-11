@@ -5,6 +5,9 @@ Game assets, hash dictionaries, and proprietary decoders are not bundled.
 from __future__ import annotations
 
 import ctypes
+import os
+import re
+import shutil
 import json
 import struct
 from dataclasses import asdict, dataclass
@@ -164,6 +167,46 @@ class GFPak:
             dest.write_bytes(contents)
             paths.append(dest)
         return paths
+
+
+
+def find_oodle_dll(archive: str | Path | None = None) -> Path | None:
+    """Find a locally installed Oodle runtime without downloading proprietary files.
+
+    Search only explicit settings, PATH, and nearby standard installation folders.
+    This deliberately avoids a slow recursive search of the entire computer.
+    """
+    roots: list[Path] = []
+    explicit = os.environ.get("GFPAK_OODLE_DLL")
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if candidate.is_file() and re.fullmatch(r"oo2core_.*\\.dll", candidate.name, re.I):
+            return candidate.resolve()
+        if candidate.is_dir():
+            roots.append(candidate)
+    if archive is not None:
+        root = Path(archive).expanduser().resolve()
+        roots.extend((root.parent, root.parent / "bin", root.parent / "tools",
+                      root.parent.parent, root.parent.parent / "bin"))
+    roots.append(Path.cwd())
+    roots.extend(Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p)
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        parent = os.environ.get(env)
+        if parent:
+            roots.append(Path(parent) / "GFPAK-OPEN")
+    seen = set()
+    for folder in roots:
+        if str(folder).lower() in seen:
+            continue
+        seen.add(str(folder).lower())
+        try:
+            candidates = sorted(folder.glob("oo2core_*.dll"), reverse=True)
+            for candidate in candidates:
+                if candidate.is_file():
+                    return candidate.resolve()
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def decompress_oodle(packed: bytes, expected_size: int, dll: Path) -> bytes:
