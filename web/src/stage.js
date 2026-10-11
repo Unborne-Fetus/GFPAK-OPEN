@@ -24,6 +24,7 @@ export class ModelStage {
     this.controls.minDistance = 0.01;
     this.controls.maxDistance = 20000;
     this.controls.target.set(0, 1, 0);
+    this.userAdjustedCamera = false;
 
     this.scene.add(new THREE.HemisphereLight(0xc2e8ff, 0x2d4959, 2.2));
     const key = new THREE.DirectionalLight(0xfff6e7, 3.5);
@@ -56,18 +57,33 @@ export class ModelStage {
     this.frameBounds = { radius: 2.5, target: new THREE.Vector3(0, 1, 0) };
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
+    this.resizeObserver.observe(container.parentElement);
+    this.viewportWidth = 0;
+    this.viewportHeight = 0;
+    this.onWindowResize = () => this.resize();
+    window.addEventListener('resize', this.onWindowResize);
+    document.addEventListener('fullscreenchange', this.onWindowResize);
     this.loop = this.loop.bind(this);
     this.animationId = requestAnimationFrame(this.loop);
     this.resize();
   }
 
   resize() {
-    const width = Math.max(1, this.container.clientWidth);
-    const height = Math.max(1, this.container.clientHeight);
-    if (width <= 1 || height <= 1) return;
+    // Measure the actual on-screen canvas, not stale dimensions from the first render.
+    const rect = this.container.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    if (width < 2 || height < 2) return;
+    if (width === this.viewportWidth && height === this.viewportHeight) return;
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    // When the viewport changes shape substantially, reframe rather than
+    // leaving the model off-center or cropped in a fullscreen/ultrawide view.
+    if (this.root && !this.userAdjustedCamera) this.frame();
   }
 
   setModel(root, animations = []) {
@@ -91,6 +107,7 @@ export class ModelStage {
     }
     this.mixer = animations.length ? new THREE.AnimationMixer(root) : null;
     if (this.mixer && animations[0]) this.playAnimation(0);
+    this.userAdjustedCamera = false;
     this.frame();
   }
 
@@ -127,7 +144,7 @@ export class ModelStage {
     const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * this.camera.aspect);
     const minFov = Math.max(Math.min(verticalFov, horizontalFov), 0.1);
-    const dist = (radius / Math.sin(minFov / 2)) * 1.45;
+    const dist = (radius / Math.sin(minFov / 2)) * 1.27;
     this.camera.near = Math.max(dist / 10000, 0.0001);
     this.camera.far = Math.max(dist * 100, 100);
     this.camera.updateProjectionMatrix();
@@ -138,6 +155,7 @@ export class ModelStage {
     this.floor.scale.setScalar(Math.max(radius / 4, 0.005));
     this.axes.scale.setScalar(Math.max(radius / 2, 0.005));
     this.controls.update();
+    this.userAdjustedCamera = false;
   }
 
   clear() {
@@ -159,6 +177,11 @@ export class ModelStage {
   setSpin(value) { this.controls.autoRotate = value; this.controls.autoRotateSpeed = 1.4; }
 
   loop() {
+    // Some embedded WebViews fail to deliver ResizeObserver notifications for
+    // fullscreen/window transitions; keep projection and drawing buffer in sync.
+    const w = Math.round(this.container.getBoundingClientRect().width);
+    const h = Math.round(this.container.getBoundingClientRect().height);
+    if (w !== this.viewportWidth || h !== this.viewportHeight) this.resize();
     const delta = Math.min(this.clock.getDelta(), 0.1);
     if (this.mixer && this.playing) this.mixer.update(delta);
     this.controls.update();
@@ -169,6 +192,8 @@ export class ModelStage {
   dispose() {
     cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
+    window.removeEventListener('resize', this.onWindowResize);
+    document.removeEventListener('fullscreenchange', this.onWindowResize);
     this.controls.dispose();
     this.clear();
     this.renderer.dispose();
