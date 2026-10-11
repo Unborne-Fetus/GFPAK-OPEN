@@ -245,3 +245,9 @@
  .desktop-app .asset-table td{padding:8px}
  .desktop-app .asset-table th{padding:10px}
 }
+
+.desktop-app .native-result-row{
+ display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,1fr);gap:9px;
+ padding:9px;border:1px solid #2d5060;background:#0b2432;border-radius:8px;
+}
+.desktop-app .native-result-row .button{min-width:0;white-space:normal;font-size:11px}
