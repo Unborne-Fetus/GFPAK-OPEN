@@ -474,6 +474,14 @@ class AssetBrowser:
         analyzer, index = self.nsp_entry(node_id)
         return analyzer.inspect(index, offset=offset, length=length)
 
+    def _nca_virtual_file(self, node: dict):
+        position = self._nca_virtual_nodes.get(node["id"])
+        if not position:
+            raise ValueError("The selected NCA file is no longer available")
+        index, section, name = position
+        reader = self.nsp_reader(Path(node["path"]))
+        return reader, index, section, name
+
     def export_item(self, id_: str, target: str | Path) -> Path:
         """Export an explicitly selected supported member without modifying sources.
 
@@ -486,13 +494,16 @@ class AssetBrowser:
         dest = Path(target)
         if not dest.parent.is_dir():
             raise ValueError("Choose an existing destination directory")
-        if kind not in {"file", "zipfile", "gfpak_resource", "nspfile"}:
+        if kind not in {"file", "zipfile", "gfpak_resource", "nspfile", "nca_file"}:
             raise ValueError("Select a file or resource, not a folder")
         if kind == "file" and dest.resolve() == source.resolve():
             raise ValueError("Cannot replace the source file")
         if kind == "nspfile":
             reader, index = self.nsp_entry(id_)
             return reader.export_raw(index, dest)
+        if kind == "nca_file":
+            reader, index, section, name = self._nca_virtual_file(node)
+            return self._nca_sections.extract_one(reader, index, section, name, dest)
         with dest.open("xb") as output:
             try:
                 if kind == "file":
@@ -533,7 +544,7 @@ class AssetBrowser:
             "thumbnail": None,
             "notes": [],
         }
-        if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_locked"}:
+        if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_dir", "nca_locked"}:
             result["notes"].append("Directory - expand it to inspect files.")
             return result
         if kind == "nspfile":
@@ -546,7 +557,11 @@ class AssetBrowser:
             return result
         data = b""
         try:
-            if kind == "gfpak_resource":
+            if kind == "nca_file":
+                reader, index, section, name = self._nca_virtual_file(node)
+                data = self._nca_sections.preview_bytes(reader, index, section, name)
+                result["notes"].append("Read directly from NCA filesystem without bulk extraction.")
+            elif kind == "gfpak_resource":
                 resource = self._archive(path).resources[node["index"]]
                 result["size"] = resource.size
                 result["compression"] = resource.compression
@@ -605,6 +620,15 @@ class AssetBrowser:
             return source
         if kind == "gfpak_resource" and node["category"] == "model":
             return source
+        if kind == "nca_file" and Path(node["name"]).suffix.lower() in PREVIEW:
+            reader, index, section, name = self._nca_virtual_file(node)
+            info = self._nca_sections.file_info(reader, index, section, name)
+            if info.size > 512 * 1024 * 1024:
+                raise ValueError("Model is too large for temporary preview; export it explicitly.")
+            directory = self._nca_sections.workspace / "preview"
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / (uuid.uuid4().hex + Path(node["name"]).suffix.lower())
+            return self._nca_sections.extract_one(reader, index, section, name, target)
         raise ValueError(
             "This entry cannot be previewed directly yet. Choose a .gfpak, .trmdl, "
             ".gfbmdl or .glb from an extracted directory. Encrypted NSP/NCA contents "
