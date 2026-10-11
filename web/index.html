@@ -261,10 +261,9 @@
             <button type="button" id="assetScan" class="button button-secondary" disabled>⌕ Scan assets</button>
           </div>
           <div id="ncaReaderBar" class="nca-reader-bar" hidden>
-            <span class="nca-reader-label">NCA SECTION BROWSER</span>
-            <button id="ncaSelectReader" type="button" class="button button-secondary">Choose NCA reader</button>
-            <button id="ncaSelectKeyset" type="button" class="button button-secondary">Choose local keyset</button>
-            <span id="ncaReaderStatus" class="nca-reader-status" aria-live="polite">Sections need a compatible local reader.</span>
+            <span class="nca-reader-label">BUILT-IN NCA / ROMFS READER</span>
+            <button id="ncaSelectKeyset" type="button" class="button button-secondary">Select existing keys file (encrypted NCAs)</button>
+            <span id="ncaReaderStatus" class="nca-reader-status" aria-live="polite">Native NCA reading is included in GFPAK-OPEN. No other application needed.</span>
           </div>
           <div class="asset-filterbar">
             <input id="assetSearch" class="field" type="search" placeholder="Filter filenames, hashes, Pokémon IDs…" aria-label="Filter discovered assets" />
