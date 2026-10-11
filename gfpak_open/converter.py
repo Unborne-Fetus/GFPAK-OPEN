@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from .core import GFPak, GFPakError, Resource, find_oodle_dll
+from .model_discovery import infer_model_resources
 
 
 class ConversionError(GFPakError):
@@ -307,33 +308,55 @@ def convert_model(options: ConversionOptions,
                 log("Automatically found filename dictionary: " + str(dictionary))
             mapping = HashDictionary(dictionary)
             found = read_resource_names(archive, mapping)
-            if not any(Path(name).suffix.lower() in MODEL_SUFFIXES for name in found.values()) and not dictionary:
+            model_names = [name for name in found.values()
+                           if Path(name).suffix.lower() in MODEL_SUFFIXES]
+            if not model_names:
+                # Trinity files frequently share the same FNV-1a hash prefix.
+                # Undoing only their known extensions identifies model families
+                # without guessing the original filenames or fetching a dictionary.
+                inferred = infer_model_resources(archive.resources, src.stem)
+                if inferred:
+                    existing_names = set(found.values())
+                    for index, name in inferred.items():
+                        if index not in found and name not in existing_names:
+                            found[index] = name
+                            existing_names.add(name)
+                    model_names = [name for name in found.values()
+                                   if Path(name).suffix.lower() in MODEL_SUFFIXES]
+                    group = sorted(
+                        (index, name) for index, name in inferred.items()
+                        if Path(name).suffix.lower() in MODEL_SUFFIXES
+                    )
+                    log(f"Identified {len(inferred)} Trinity resource types by matching "
+                        "FNV-1a filename suffixes (original names remain unknown).")
+                    for index, name in group[:12]:
+                        log(f"  GFPAK resource {index}: {name}")
+            if not model_names and not dictionary:
                 _public_dictionary, auto_found = community_dictionary(archive, log)
                 if auto_found:
                     found = auto_found
+                    model_names = [name for name in found.values()
+                                   if Path(name).suffix.lower() in MODEL_SUFFIXES]
                     dictionary = "community Legends: Arceus list"
-            model_names = [name for name in found.values()
-                           if Path(name).suffix.lower() in MODEL_SUFFIXES]
             if not model_names:
                 codecs = archive.summary()["compression_types"]
                 raise ConversionError(
                     f"Opened {len(archive.resources)} GFPAK resources (compression {codecs}), "
-                    "but none resolved to a .trmdl or .gfbmdl model. "
-                    + ("No companion filename dictionary was found. "
-                       if not dictionary else "No model hashes matched the available dictionary. ")
-                    + "Place a matching gfpak.txt or gfpak.json alongside the archive, "
-                    "or select one under Advanced converter settings. "
-                    "The original model names and companion resource paths are hashed; "
-                    "they cannot yet be reconstructed reliably from this archive alone. "
-                    + ("Oodle decoding will also require a compatible locally supplied DLL. "
-                       if "3" in codecs and not detected_oodle else "")
+                    "but no complete model family could be identified from its hashes. "
+                    + ("No matching filename dictionary was found. "
+                       if not dictionary else "The selected dictionary did not match the model hashes. ")
+                    + "Select an appropriate gfpak.txt or JSON hash list under Advanced Settings."
                 )
             if "3" in archive.summary()["compression_types"] and not detected_oodle:
-                raise ConversionError(
-                    f"Found {len(model_names)} model resource(s), but all required archive data "
-                    "uses Oodle compression. No compatible oo2core_*.dll was found locally. "
-                    "Select one you already have in Advanced Settings; GFPAK-OPEN does not download DLLs."
-                )
+                try:
+                    import ooz  # noqa: F401 - optional open-source decoder
+                except ImportError as exc:
+                    raise ConversionError(
+                        f"Identified {len(model_names)} model descriptor(s), but Oodle "
+                        "decompression is unavailable. Install the optional open-source "
+                        "decoder (pip install pyooz==0.0.8) or configure a compatible "
+                        "oo2core_*.dll. Hash identification already succeeded."
+                    ) from exc
             log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
             unpack_named(archive, workspace, found, oodle=detected_oodle, progress=log)
         if options.texture_folder:
