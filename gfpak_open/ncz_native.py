@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import shutil
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -179,6 +180,15 @@ def restore_ncz(package: str | Path, source_offset: int, source_size: int,
         sections = header.sections
         if header.expanded_size > MAX_EXPANDED_BYTES:
             raise NCZError("Expanded NCZ would exceed size limit")
+        # An NSZ can be tiny relative to its expanded NCA. Refuse cleanly
+        # before filling the user's system disk with a giant temporary file.
+        free = shutil.disk_usage(destination.parent).free
+        if header.expanded_size + 64 * 1024 * 1024 > free:
+            raise NCZError(
+                "Not enough temporary storage to open this NCZ. "
+                f"Needs about {header.expanded_size / (1024 ** 3):.1f} GiB "
+                "plus free-space margin; select a drive with more free space."
+            )
         with destination.open("xb") as out:
             try:
                 out.write(initial)
