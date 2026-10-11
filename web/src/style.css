@@ -254,3 +254,6 @@
 
 /* Hidden tab panels must stay hidden even when layout rules use display:flex. */
 .desktop-app #assetBrowser[hidden], .desktop-app #desktopTools[hidden]{display:none!important}
+
+/* Native-only tabs never appear in the hosted browser without a desktop bridge. */
+#tabAssets[hidden], #tabConverter[hidden], #assetBrowser[hidden]{display:none!important}
