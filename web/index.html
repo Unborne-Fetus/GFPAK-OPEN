@@ -88,11 +88,34 @@
           <button id="frameModel" class="text-button full" type="button">◎ Center camera on model</button>
         </section>
 
-        <section id="desktopTools" class="side-section" hidden>
-          <div class="section-heading"><span class="step-number">04</span><h2>DESKTOP TOOLS</h2><span class="section-line"></span></div>
-          <p>Batch conversion, Blender import, advanced archive settings, and native exports.</p>
-          <button id="openDesktopConverter" class="button button-primary" type="button">Open Blender converter ↗</button>
-          <p id="desktopBlenderStatus" class="helper-copy"></p>
+        <section id="desktopTools" class="side-section desktop-native" hidden>
+          <div class="section-heading"><span class="step-number">04</span><h2>BLENDER CONVERSION</h2><span class="section-line"></span></div>
+          <p class="helper-copy">Advanced native conversion, right here alongside your 3D preview. Runs on your PC.</p>
+          <div class="native-state" id="nativeBlenderStatus">Checking Blender…</div>
+          <div class="native-state" id="nativeAddonStatus">Checking Pokémon importer…</div>
+          <div class="native-button-row">
+            <button type="button" id="nativeChoose" class="button button-secondary">Select model files</button>
+            <button type="button" id="nativeFolder" class="button button-secondary">Select folder</button>
+          </div>
+          <p id="nativeSources" class="helper-copy">No native conversion sources selected.</p>
+          <details class="native-advanced">
+            <summary>Advanced converter settings</summary>
+            <label class="input-label" for="nativeBlender">Blender executable</label>
+            <div class="native-path"><input class="field" id="nativeBlender" readonly /><button type="button" data-native-pick="blender" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeAddon">Switch Blender importer folder</label>
+            <div class="native-path"><input class="field" id="nativeAddon" readonly /><button type="button" data-native-pick="addon" class="button button-secondary">Browse</button></div>
+            <button type="button" id="nativeRetryAddon" class="text-button">Retry automatic importer download</button>
+            <label class="input-label" for="nativeHashes">GFPAK filename dictionary</label>
+            <div class="native-path"><input class="field" id="nativeHashes" readonly /><button type="button" data-native-pick="hashes" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeOodle">Oodle DLL (optional, supply locally)</label>
+            <div class="native-path"><input class="field" id="nativeOodle" readonly /><button type="button" data-native-pick="oodle" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeTextures">Decoded texture folder (optional)</label>
+            <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button></div>
+            <label class="toggle-row"><input id="nativeAnimations" type="checkbox" /><span>Import compatible animations</span></label>
+          </details>
+          <button type="button" id="nativeConvert" class="button button-primary">Convert with Blender to GLB ↗</button>
+          <div id="nativeProgress" class="helper-copy" role="status" aria-live="polite"></div>
+          <div id="nativeResults" class="native-results" aria-live="polite"></div>
         </section>
         <div class="sidebar-footer">GFPAK OPEN <span>V0.3 / WEB</span><br />NO UPLOADS • NO GAME FILES BUNDLED</div>
       </aside>
@@ -198,25 +221,6 @@
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>
-  <script>
-    window.addEventListener("pywebviewready", async () => {
-      const tools = document.getElementById("desktopTools");
-      if (!tools || !window.pywebview?.api) return;
-      tools.hidden = false;
-      document.querySelector(".top-context").textContent = "POKÉMON 3D / DESKTOP STUDIO";
-      document.getElementById("openDesktopConverter").addEventListener("click", async () => {
-        try { await window.pywebview.api.open_converter(); }
-        catch (error) { document.getElementById("desktopBlenderStatus").textContent = String(error); }
-      });
-      try {
-        const blender = await window.pywebview.api.find_blender();
-        document.getElementById("desktopBlenderStatus").textContent = blender
-          ? "Blender detected: " + blender
-          : "Blender not found — install it, then open the converter to refresh detection.";
-      } catch (error) {
-        document.getElementById("desktopBlenderStatus").textContent = "Blender detection unavailable.";
-      }
-    });
-  </script>
+  <script type="module" src="/src/desktop-integration.js"></script>
 </body>
 </html>
