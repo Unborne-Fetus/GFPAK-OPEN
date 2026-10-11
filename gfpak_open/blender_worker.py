@@ -27,11 +27,13 @@ def main():
         sys.path.insert(0, str(dependencies))
     try:
         import flatbuffers  # noqa: F401
+        import requests  # noqa: F401
     except ImportError as exc:
         raise RuntimeError(
-            "FlatBuffers is unavailable to Blender's Python. Update GFPAK-OPEN "
-            "so it supplies a managed --deps directory automatically."
+            "Blender cannot import the Pokémon add-on's Python dependencies "
+            f"({exc}). Update GFPAK-OPEN to supply its managed --deps directory."
         ) from exc
+    print("GFPAK_BLENDER_DEPENDENCIES_READY", flush=True)
     addon = Path(opts.addon).resolve()
     spec = importlib.util.spec_from_file_location(
         "pokemon_switch_importer", addon / "__init__.py",
