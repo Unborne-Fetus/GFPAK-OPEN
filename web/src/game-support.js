@@ -67,3 +67,19 @@ export function describeSource(gameId,names){
  return {kind:'unknown',title:'No renderable models detected',
    message:'Open a converted GLB, GLTF, FBX, OBJ, DAE, PLY, STL or 3DS model, or the ZIP containing its dependencies.'};
 }
+
+/** Separates file browsing from genuine native 3D rendering support. */
+export const GAME_CAPABILITIES = Object.freeze({
+  auto: {archives:'Generic NSP/XCI/NSZ/XCZ inspection',models:'Unknown engine',textures:'Decoded images and DDS',animations:'Unverified'},
+  lgpe: {archives:'Browse supported game archive structures',models:'GFBMDL geometry (partial)',textures:'Decoded images and DDS; BNTX incomplete',animations:'Selected matching GFBANM clips'},
+  swsh: {archives:'Browse supported game archive structures',models:'GFBMDL geometry (partial)',textures:'Decoded images and DDS; BNTX incomplete',animations:'Selected matching GFBANM clips'},
+  pla: {archives:'Browse supported game archive structures',models:'Trinity TRMDL mesh geometry (partial)',textures:'Decoded images and DDS; BNTX incomplete',animations:'Selected matching TRANM clips'},
+  sv: {archives:'Browse supported game archive structures',models:'Trinity TRMDL mesh geometry (partial)',textures:'Decoded images and DDS; BNTX incomplete',animations:'Selected matching TRANM clips'},
+  za: {archives:'Browse supported game archive structures',models:'Revised Trinity format (experimental)',textures:'Decoded images and DDS; BNTX incomplete',animations:'TRANM playback experimental'},
+  bdsp: {archives:'Browse supported game archive structures',models:'Unity native assets not yet decoded',textures:'Unity bundles not yet decoded',animations:'Unity clips not yet decoded'},
+  snap: {archives:'Browse supported game archive structures',models:'NUSRCMDLB native decoding not yet supported',textures:'NUTEXB native decoding not yet supported',animations:'Original motion tracks not yet supported'},
+  other: {archives:'Browse supported game archive structures',models:'Game-specific native decoding needed',textures:'Game-specific decoding needed',animations:'Game-specific decoding needed'}
+});
+export function gameCapabilities(id) {
+  return GAME_CAPABILITIES[id] || GAME_CAPABILITIES.other;
+}
