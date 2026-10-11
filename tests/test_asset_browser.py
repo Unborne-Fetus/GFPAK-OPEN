@@ -201,6 +201,36 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertTrue(info["thumbnail"].startswith("data:image/png;base64,"))
             self.assertTrue(info["hex_lines"])
 
+    def test_large_local_folder_and_zip_show_every_file_via_pagination(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            directory = root / "large"
+            directory.mkdir()
+            for i in range(503):
+                (directory / f"pm{i:04d}_00_00.trmdl").write_bytes(b"model")
+            bundle = root / "models.zip"
+            with zipfile.ZipFile(bundle, "w") as archive:
+                for i in range(503):
+                    archive.writestr(f"pokemon/pm{i:04d}_00_00.trmdl", b"model")
+            browser = AssetBrowser()
+            for source in (directory, bundle):
+                top = browser.open(source)
+                node = top
+                if source == bundle:
+                    node = browser.children(top["id"])["entries"][0]
+                rows, cursor = [], None
+                while True:
+                    page = browser.children(node["id"], cursor=cursor)
+                    rows.extend(page["entries"])
+                    cursor = page.get("next_cursor")
+                    if not cursor:
+                        break
+                self.assertEqual(len(rows), 503)
+                self.assertEqual(len({row["id"] for row in rows}), 503)
+                self.assertEqual(rows[-1]["name"], "pm0502_00_00.trmdl")
+                with self.assertRaisesRegex(ValueError, "cursor"):
+                    browser.children(node["id"], "o:ffffffffff")
+
     def test_zip_image_thumbnail_and_session_cache_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
