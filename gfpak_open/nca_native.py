@@ -376,6 +376,10 @@ class RomFS:
         self.dir_table_off, self.dir_table_size = offset + dir_table_off, dir_table_size
         self.file_table_off, self.file_table_size = offset + file_table_off, file_table_size
         self.file_data_off = offset + data_off
+        # Cache only the small bounded filesystem tables, not gigabytes of
+        # encrypted model/texture payload. Tree expansion is much faster.
+        self._directory_table = section.read(self.dir_table_off, self.dir_table_size)
+        self._file_table = section.read(self.file_table_off, self.file_table_size)
         self._directories = {"": 0}
         self._files: dict[str, FileInfo] = {}
         self._children: dict[str, list[dict]] = {}
@@ -383,21 +387,21 @@ class RomFS:
     def _directory(self, at: int):
         if at == NONE or at > self.dir_table_size - 24:
             raise NativeNCAError("Invalid RomFS directory table pointer.")
-        data = self.section.read(self.dir_table_off + at, 24)
-        parent, sibling, child_dir, child_file, hashed, name_size = struct.unpack("<6I", data)
+        data = self._directory_table
+        parent, sibling, child_dir, child_file, hashed, name_size = struct.unpack_from("<6I", data, at)
         if name_size > 4096 or 24 + name_size > self.dir_table_size - at:
             raise NativeNCAError("Invalid RomFS directory name size.")
-        name = self.section.read(self.dir_table_off + at + 24, name_size)
+        name = data[at + 24:at + 24 + name_size]
         return (_filename(name) if name else "", sibling, child_dir, child_file)
 
     def _file(self, at: int):
         if at == NONE or at > self.file_table_size - 32:
             raise NativeNCAError("Invalid RomFS file table pointer.")
-        data = self.section.read(self.file_table_off + at, 32)
-        parent, sibling, begin, size, hashed, name_length = struct.unpack("<IIQQII", data)
+        data = self._file_table
+        parent, sibling, begin, size, hashed, name_length = struct.unpack_from("<IIQQII", data, at)
         if name_length > 4096 or 32 + name_length > self.file_table_size - at:
             raise NativeNCAError("Invalid RomFS filename length.")
-        name = _filename(self.section.read(self.file_table_off + at + 32, name_length))
+        name = _filename(data[at + 32:at + 32 + name_length])
         if (self.file_data_off > self.section.size or
                 begin > self.section.size - self.file_data_off or
                 size > self.section.size - self.file_data_off - begin):
