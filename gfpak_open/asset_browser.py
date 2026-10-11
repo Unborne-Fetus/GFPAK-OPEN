@@ -15,9 +15,10 @@ import zipfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
 
-from .core import GFPak
+from .core import GFPak, GFPakError
 from .model_discovery import infer_model_resources
-from .converter import HashDictionary, discover_dictionary, read_resource_names
+from .converter import (HashDictionary, discover_dictionary, read_resource_names,
+                        fnv1a64, REFERENCE_RE, safe_path, ConversionError)
 
 MODEL = {".trmdl", ".gfbmdl", ".glb", ".gltf", ".fbx", ".obj", ".dae"}
 MESH = {".trmsh", ".trmbf"}
@@ -165,8 +166,42 @@ class AssetBrowser:
             names = infer_model_resources(archive.resources, path.stem)
             dictionary = discover_dictionary(path)
             if dictionary:
-                resolved = read_resource_names(archive, HashDictionary(dictionary))
-                names.update(resolved)
+                try:
+                    names.update(read_resource_names(archive, HashDictionary(dictionary)))
+                except (OSError, ValueError):
+                    # A bad optional dictionary should not disable browsing.
+                    pass
+            # Decode only known model descriptors/materials. Their verified file
+            # references can identify texture/skeleton/animation entries that
+            # are otherwise indistinguishable hashed FlatBuffer resources.
+            hashes = {}
+            for resource in archive.resources:
+                for key in (resource.path_hash, resource.file_hash):
+                    if key:
+                        hashes.setdefault(key, []).append(resource)
+            for index, guessed in list(names.items()):
+                if Path(guessed).suffix.lower() not in {".trmdl", ".trmtr", ".trmsh"}:
+                    continue
+                resource = archive.resources[index]
+                if resource.size > 16 * 1024 * 1024:
+                    continue
+                try:
+                    content = archive.read_resource(resource)
+                except (GFPakError, OSError, ImportError):
+                    continue
+                for match in set(REFERENCE_RE.findall(content)):
+                    try:
+                        original = safe_path(match.decode("ascii")).as_posix()
+                    except (UnicodeError, ConversionError):
+                        continue
+                    basename = original.rsplit("/", 1)[-1]
+                    found = {}
+                    for value in (fnv1a64(original), fnv1a64(basename)):
+                        for target in hashes.get(value, []):
+                            found[target.index] = target
+                    if len(found) == 1:
+                        target = next(iter(found.values()))
+                        names.setdefault(target.index, original)
             self._inferred[path] = names
         return self._inferred[path]
 
