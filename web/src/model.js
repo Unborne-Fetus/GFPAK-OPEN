@@ -279,6 +279,7 @@ export function demoModel() {
     new THREE.IcosahedronGeometry(1.25, 1),
     new THREE.MeshStandardMaterial({ color: 0x58e0bb, metalness: 0.38, roughness: 0.26, flatShading: true })
   );
+  center.name = 'DemoCrystal';
   center.position.y = 1.55;
   center.castShadow = true;
   root.add(center);
@@ -286,9 +287,26 @@ export function demoModel() {
     new THREE.TorusGeometry(1.7, 0.045, 6, 96),
     new THREE.MeshStandardMaterial({ color: 0xe5b977, metalness: 0.5, roughness: 0.28 })
   );
+  ring.name = 'DemoOrbit';
   ring.position.y = 1.55;
   ring.rotation.x = Math.PI * 0.38;
   ring.castShadow = true;
   root.add(ring);
-  return { root, animations: [], selected: 'Demo geometry (not a Pokémon)' };
+  // Real glTF-exportable animation tracks, not a viewer-only visual effect.
+  // Subtle floating and orbiting motions repeat seamlessly every four seconds.
+  const times = [0, 1, 2, 3, 4];
+  const heights = [1.55, 1.69, 1.55, 1.43, 1.55];
+  const bob = new THREE.VectorKeyframeTrack(
+    'DemoCrystal.position', times, heights.flatMap(y => [0, y, 0])
+  );
+  const angles = [0, 0.24, 0.42, 0.18, 0];
+  const orientations = angles.flatMap(angle => {
+    const quaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(Math.PI * 0.38, angle, 0, 'XYZ')
+    );
+    return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+  });
+  const orbit = new THREE.QuaternionKeyframeTrack('DemoOrbit.quaternion', times, orientations);
+  const animations = [new THREE.AnimationClip('Gentle Float & Orbit', 4, [bob, orbit])];
+  return { root, animations, selected: 'Demo geometry (not a Pokémon)' };
 }
