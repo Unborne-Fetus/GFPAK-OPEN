@@ -26,6 +26,8 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Test JavaScript parsers and lazy GFPAK resource extraction
+        run: npm test
       - name: Install Playwright browser
         run: npx playwright install chromium --with-deps
       - name: Test 3D demo, OBJ ZIP import and GFPAK archive
