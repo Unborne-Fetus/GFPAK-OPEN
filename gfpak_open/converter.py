@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
-from .core import GFPak, GFPakError, Resource
+from .core import GFPak, GFPakError, Resource, find_oodle_dll
 
 
 class ConversionError(GFPakError):
@@ -252,6 +252,9 @@ def convert_model(options: ConversionOptions,
                 raise ConversionError("Failed to stage native model for conversion")
         else:
             archive = GFPak(src)
+            detected_oodle = options.oodle or find_oodle_dll(src)
+            if detected_oodle and not options.oodle:
+                log("Found locally installed Oodle runtime: " + str(detected_oodle))
             dictionary = options.dictionary or discover_dictionary(src)
             if dictionary and not options.dictionary:
                 log("Automatically found filename dictionary: " + str(dictionary))
@@ -271,10 +274,10 @@ def convert_model(options: ConversionOptions,
                     "The original model names and companion resource paths are hashed; "
                     "they cannot yet be reconstructed reliably from this archive alone. "
                     + ("Oodle decoding will also require a compatible locally supplied DLL. "
-                       if "3" in codecs and not options.oodle else "")
+                       if "3" in codecs and not detected_oodle else "")
                 )
             log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
-            unpack_named(archive, workspace, found, oodle=options.oodle, progress=log)
+            unpack_named(archive, workspace, found, oodle=detected_oodle, progress=log)
         if options.texture_folder:
             source_textures = Path(options.texture_folder)
             for texture in source_textures.rglob("*"):
