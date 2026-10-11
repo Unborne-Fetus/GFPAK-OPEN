@@ -390,6 +390,10 @@ class DesktopAPI:
                 raise ValueError("Package changed; select the file again")
         return str(browser.export_item(node_id, Path(selected[0])))
 
+    def browse_asset_family(self, node_id: str):
+        with self._lock:
+            return self._browser.asset_family(node_id)
+
     def browse_item_details(self, node_id: str):
         with self._lock:
             return self._browser.item_details(node_id)
