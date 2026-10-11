@@ -106,3 +106,5 @@ def main():
             webview.start(gui="edgechromium")
         finally:
             server.shutdown()
+            server.server_close()
+            api.close()  # Remove app-owned temporary previews.
