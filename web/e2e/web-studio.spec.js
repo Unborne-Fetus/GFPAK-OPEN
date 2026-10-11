@@ -119,3 +119,62 @@ test('WebGL canvas and model scale with a wide desktop viewport', async ({ page 
   expect(Math.abs(wide.hostH - wide.canvasH)).toBeLessThan(3);
 });
 
+
+test('desktop explorer browses extracted folders and filters animations/textures', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.pywebview = {
+      api: {
+        setup_status: async () => ({
+          blender: 'C:/Blender/blender.exe',
+          addon: 'C:/GFPAK/addons/pokemon',
+          setup: {state: 'ready', error: ''},
+          sources: [],
+          settings: { hashes: '', oodle: '', textures: '' },
+          animations: true
+        }),
+        browse_choose: async () => ({
+          root: {id:'root', name:'Pokemon Legends Arceus', category:'folder',
+                 kind:'directory', expandable:true, size:0},
+          children: {
+            root: {id:'root', name:'Pokemon Legends Arceus'},
+            entries: [
+              {id:'p', name:'pokemon', category:'folder', kind:'directory', expandable:true, size:0},
+              {id:'a', name:'idle.tranm', category:'animation', kind:'file', expandable:false, size:12},
+              {id:'t', name:'body.bntx', category:'texture', kind:'file', expandable:false, size:24},
+              {id:'m', name:'pm0025_00_00.gfpak', category:'model archive', kind:'gfpak', expandable:true, size:900}
+            ],
+            counts: {'folder':1, 'animation':1, 'texture':1, 'model archive':1},
+            truncated:false, note:''
+          }
+        }),
+        browse_children: async () => ({
+          root:{id:'p',name:'pokemon'},
+          entries:[{id:'another', name:'pm0026_00_00.gfpak',
+                    kind:'gfpak', category:'model archive', expandable:true, size:1300}],
+          counts:{'model archive':1}, truncated:false, note:''
+        }),
+        browse_scan_status: async () => ({running:false, result:null, error:''})
+      }
+    };
+  });
+  await page.goto('/');
+  await expect(page.locator('#tabAssets')).toBeVisible();
+  await page.locator('#tabAssets').click();
+  await expect(page.locator('#assetBrowser')).toBeVisible();
+  await expect(page.locator('#viewerPanel')).toBeHidden();
+  await page.locator('#assetOpenFolder').click();
+  await expect(page.locator('#assetCountAnimation')).toHaveText('1');
+  await expect(page.locator('#assetCountTexture')).toHaveText('1');
+  await page.locator('#assetCategory').selectOption('animation');
+  await expect(page.locator('#assetRows tr')).toHaveCount(1);
+  await expect(page.locator('#assetRows tr')).toContainText('idle.tranm');
+  await page.locator('#assetCategory').selectOption('all');
+  await page.locator('#assetRows tr').filter({hasText:'pokemon'}).first().locator('button').click();
+  await expect(page.locator('#assetBreadcrumb')).toContainText('pokemon');
+  await page.locator('#assetBack').click();
+  await expect(page.locator('#assetRows')).toContainText('body.bntx');
+  await page.locator('#tabViewer').click();
+  await expect(page.locator('#assetBrowser')).toBeHidden();
+  await expect(page.locator('#viewerPanel')).toBeVisible();
+});
+
