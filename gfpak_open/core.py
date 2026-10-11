@@ -141,13 +141,26 @@ class GFPak:
             except Exception as exc:
                 raise GFPakError(f"LZ4 decompression failed for resource {resource.index}: {exc}") from exc
         elif resource.compression == 3:
-            if not oodle_dll:
-                raise GFPakError(
-                    "Compression 3 requires an Oodle runtime DLL. Select a legitimate "
-                    "oo2core_*.dll using --oodle or File > Select Oodle DLL. "
-                    "You can still save the raw compressed blocks."
-                )
-            data = decompress_oodle(block, resource.size, Path(oodle_dll))
+            if oodle_dll:
+                data = decompress_oodle(block, resource.size, Path(oodle_dll))
+            else:
+                # pyooz is an independently maintained open-source Oodle
+                # decoder. It can read compatible blocks without a vendor DLL.
+                try:
+                    import ooz
+                except ImportError as exc:
+                    raise GFPakError(
+                        "Oodle decoder missing. Install pyooz (pip install pyooz==0.0.8) "
+                        "or select a compatible locally installed oo2core_*.dll. "
+                        "The official proprietary DLL is never downloaded."
+                    ) from exc
+                try:
+                    data = ooz.decompress(block, resource.size)
+                except Exception as exc:
+                    raise GFPakError(
+                        f"Open-source Oodle decoder could not decode resource "
+                        f"{resource.index}: {exc}. Try a compatible local oo2core DLL."
+                    ) from exc
         else:
             raise GFPakError(f"Unsupported compression type: {resource.compression}")
         if len(data) != resource.size:
