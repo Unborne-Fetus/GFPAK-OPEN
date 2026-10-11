@@ -551,6 +551,8 @@ async function nxLoadDetails(row) {
     ['Container / location', info.location],
     ...(info.hash ? [['Resource hash', info.hash]] : []),
     ...(info.compression !== undefined ? [['Compression', String(info.compression)]] : []),
+    ...(info.packed_size !== undefined ? [['Stored bytes', formatSize(info.packed_size)]] : []),
+    ...(info.offset !== undefined ? [['Archive offset', '0x' + Number(info.offset).toString(16).toUpperCase()]] : []),
   ];
   for (const [term, value] of entries) {
     const dt = document.createElement('dt');
@@ -612,6 +614,8 @@ function select(row) {
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
   id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
+  id('assetSavePacked').hidden = row?.kind !== 'gfpak_resource';
+  id('assetSavePacked').disabled = row?.kind !== 'gfpak_resource';
   id('assetAttachNCA').disabled = !(row?.kind === 'nspfile' && /\.nca$/i.test(row.name));
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
   nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
@@ -834,7 +838,7 @@ async function openSource(mode) {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
-async function nxSaveSelectedFile() {
+async function nxSaveSelectedFile(packed = false) {
   if (!selected) return;
   const row = selected;
   if (row.kind === 'nspfile') {
@@ -842,7 +846,7 @@ async function nxSaveSelectedFile() {
     return;
   }
   try {
-    const result = await api.browse_save_item(row.id);
+    const result = await api.browse_save_item(row.id, packed);
     if (result) showNotice('Saved: ' + result);
   } catch (error) { showNotice(error.message || String(error), true); }
 }
@@ -982,7 +986,8 @@ function initialize() {
     if (page && page.page + 1 < page.pages) loadNSPPage(page.page + 1);
   });
   id('assetPreview').addEventListener('click', () => preview());
-  id('assetSaveFile').addEventListener('click', nxSaveSelectedFile);
+  id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
+  id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
   id('assetScan').addEventListener('click', scanFolder);
   const menuActions = {
     nxMenuOpenPackage: () => id('assetOpenFile').click(),
