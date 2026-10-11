@@ -144,19 +144,32 @@ function decodeBC(packed,width,height,alphaMode) {
   }
   return out;
 }
-/** Decode the first 2D image layer to RGBA8; no external codecs needed. */
+/** Decode basic textures to RGBA8, or deswizzle BC7/ASTC blocks for GPU playback.
+ * BC7 and ASTC still require GPU compression extensions in the browser. */
 export function decodeBntxTexture(container,index=0) {
   const texture=container.textures[index];
   if(!texture)throw new BntxError('Texture index outside container');
   if(texture.arrayLength>1)throw new BntxError('Texture arrays are not supported');
   const id=texture.format>>>8;
+  const astc = {
+    0x2d:[4,4],0x2e:[5,4],0x2f:[5,5],0x30:[6,5],
+    0x31:[6,6],0x32:[8,5],0x33:[8,6],0x34:[8,8],
+    0x35:[10,5],0x36:[10,6],0x37:[10,8],
+    0x38:[10,10],0x39:[12,10],0x3a:[12,12]
+  };
   let blockWidth=1,blockHeight=1,blockBytes=4,mode='rgba';
   if(id===0x0b||id===0x0c){mode=id===0x0c?'bgra':'rgba';}
   else if(id===0x1a){blockWidth=blockHeight=4;blockBytes=8;mode='bc1';}
   else if(id===0x1c){blockWidth=blockHeight=4;blockBytes=16;mode='bc3';}
+  else if(id===0x20){blockWidth=blockHeight=4;blockBytes=16;mode='bc7';}
+  else if(astc[id]){[blockWidth,blockHeight]=astc[id];blockBytes=16;mode='astc';}
   else throw new BntxError('Unsupported BNTX texture format 0x'+texture.format.toString(16));
   const source=container.bytes.subarray(texture.dataOffset,texture.dataOffset+texture.imageSize);
   const packed=unswizzle(texture,source,blockWidth,blockHeight,blockBytes);
+  if(mode==='bc7'||mode==='astc') {
+    return {name:texture.name,width:texture.width,height:texture.height,
+      data:packed,compressed:mode,blockWidth,blockHeight};
+  }
   let rgba;
   if(mode==='bc1'||mode==='bc3')rgba=decodeBC(packed,texture.width,texture.height,mode==='bc3');
   else {
