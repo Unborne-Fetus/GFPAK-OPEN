@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import struct
+import tempfile
 import uuid
 import zipfile
 from collections import Counter
@@ -19,6 +20,7 @@ from pathlib import Path, PurePosixPath
 
 from .core import GFPak, GFPakError
 from .nsp_explorer import NSPAnalyzer
+from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
                         fnv1a64, REFERENCE_RE, safe_path, ConversionError)
@@ -73,7 +75,7 @@ def pfs0_entries(source: Path) -> list[dict]:
 
 
 class AssetBrowser:
-    def __init__(self):
+    def __init__(self, nca_workspace: Path | None = None):
         self._nodes: dict[str, dict] = {}
         self._keys: dict[tuple, str] = {}
         self._archives: dict[Path, GFPak] = {}
@@ -83,6 +85,8 @@ class AssetBrowser:
         self.root_id: str | None = None
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
+        self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
+        self._section_nodes: dict[str, tuple[int, int]] = {}
 
     def _node(self, kind: str, path: Path, *, inner: str = "",
               index: int = -1, name: str | None = None,
@@ -98,10 +102,13 @@ class AssetBrowser:
         result = {"id": id_, "kind": kind, "path": str(path), "name": name,
                   "category": category, "size": size if size is not None else 0,
                   "inner": inner, "index": index,
-                  "expandable": kind in {"directory", "linked_dir", "gfpak", "zip", "zipdir", "nsp"}}
+                  "expandable": kind in {"directory", "linked_dir", "nca_section", "gfpak", "zip", "zipdir", "nsp"}}
         self._keys[key] = id_
         self._nodes[id_] = result
         return result
+
+    def configure_nca_reader(self, executable: str | Path = "", keyset: str | Path = ""):
+        self._nca_sections.configure(executable, keyset)
 
     def open(self, path: str | Path) -> dict:
         candidate = Path(path).expanduser().resolve(strict=True)
@@ -113,6 +120,7 @@ class AssetBrowser:
         self._zip_lists.clear()
         self._inferred.clear()
         self._pfs.clear()
+        self._section_nodes.clear()
         self._linked_extracted = None
         self.root_path = candidate
         root = self._fs_node(candidate)
@@ -258,6 +266,7 @@ class AssetBrowser:
             item = self._node('nspfile', Path(node['path']), index=entry.index,
                               name=entry.name, size=entry.size)
             item['category'] = classify(entry.name)
+            item['expandable'] = entry.name.lower().endswith('.nca')
             item['role'] = entry.role
             item['format'] = entry.format
             item['content_id'] = entry.content_id
@@ -278,6 +287,10 @@ class AssetBrowser:
         path = Path(node["path"])
         if kind == "nsp":
             return self.nsp_page(id_)
+        if kind == "nspfile" and node["name"].lower().endswith(".nca"):
+            return self._nca_children(node)
+        if kind == "nca_section":
+            return self._section_children(node)
         results = []
         if kind in {"directory", "linked_dir"}:
             for entry in sorted(path.iterdir(),
@@ -422,7 +435,7 @@ class AssetBrowser:
             "thumbnail": None,
             "notes": [],
         }
-        if kind in {"directory", "linked_dir", "zipdir"}:
+        if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_locked"}:
             result["notes"].append("Directory - expand it to inspect files.")
             return result
         if kind == "nspfile":
