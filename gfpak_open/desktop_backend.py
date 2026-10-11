@@ -398,9 +398,9 @@ class DesktopAPI:
         with self._lock:
             return self._browser.item_details(node_id)
 
-    def browse_children(self, node_id: str):
+    def browse_children(self, node_id: str, cursor: str | None = None):
         with self._lock:
-            return self._browser.children(node_id)
+            return self._browser.children(node_id, cursor=cursor)
 
     def browse_start_scan(self):
         with self._lock:
