@@ -331,6 +331,7 @@ function nxAddTreeNode(row, depth, lineage, target) {
     event.stopPropagation();
     nxHighlightTree(row);
     if (row.expandable) {
+      select(row);
       nxNavigateTree(row).catch(error => showNotice(error.message || String(error), true));
     } else {
       select(row);
@@ -508,6 +509,7 @@ function select(row) {
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
   id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile'].includes(row.kind);
+  id('assetAttachNCA').disabled = !(row?.kind === 'nspfile' && /\.nca$/i.test(row.name));
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
   nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
 }
@@ -700,6 +702,33 @@ async function nxSaveSelectedFile() {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+async function nxAttachToSelectedNCA() {
+  const row = selected;
+  if (row?.kind !== 'nspfile' || !/\.nca$/i.test(row.name)) {
+    showNotice('Select an NCA entry in the left tree first.', true);
+    return;
+  }
+  try {
+    showNotice('Choose an existing extracted folder for this NCA.');
+    const result = await api.browse_attach_extracted_nca(row.id);
+    if (!result) return;
+    nxTreeListings.set(row.id, result.children);
+    const view = nxTreeItems.get(row.id);
+    if (view) {
+      nxPopulateChildren(row, result.children);
+      view.expanded = true;
+      view.children.hidden = false;
+      view.toggle.textContent = '▾';
+      view.node.setAttribute('aria-expanded', 'true');
+    }
+    showNotice('Linked an existing extraction beneath ' + row.name +
+      '. Expand Extracted files (linked) to browse actual folders.');
+    await nxNavigateTree(row);
+  } catch (error) {
+    showNotice(error.message || String(error), true);
+  }
+}
+
 async function nxAttachExtractedFolder() {
   try {
     const attached = await api.browse_attach_extracted();
@@ -783,6 +812,7 @@ function initialize() {
   }
   id('assetOpenFolder').addEventListener('click', () => openSource('folder'));
   id('assetAttach').addEventListener('click', nxAttachExtractedFolder);
+  id('assetAttachNCA').addEventListener('click', nxAttachToSelectedNCA);
   id('ncaSelectReader').addEventListener('click', () => selectNCASetting('reader'));
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
