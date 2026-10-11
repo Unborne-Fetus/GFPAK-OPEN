@@ -96,6 +96,21 @@ class HashDictionary:
         return None
 
 
+
+def discover_dictionary(source: Path) -> Path | None:
+    """Find an adjacent GFPAK hash dictionary without searching unrelated files."""
+    roots = [source.parent, source.parent / "hashes", source.parent / "dictionaries"]
+    names = [source.stem + ".json", source.stem + ".txt",
+             "gfpak.txt", "gfpak.json", "hashes.txt", "hashes.json",
+             "filenames.txt", "filenames.json"]
+    for folder in roots:
+        for name in names:
+            candidate = folder / name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def read_resource_names(archive: GFPak, mapping: HashDictionary) -> dict[int, str]:
     names: dict[int, str] = {}
     used: set[str] = set()
@@ -237,15 +252,26 @@ def convert_model(options: ConversionOptions,
                 raise ConversionError("Failed to stage native model for conversion")
         else:
             archive = GFPak(src)
-            mapping = HashDictionary(options.dictionary)
+            dictionary = options.dictionary or discover_dictionary(src)
+            if dictionary and not options.dictionary:
+                log("Automatically found filename dictionary: " + str(dictionary))
+            mapping = HashDictionary(dictionary)
             found = read_resource_names(archive, mapping)
             model_names = [name for name in found.values()
                            if Path(name).suffix.lower() in MODEL_SUFFIXES]
             if not model_names:
+                codecs = archive.summary()["compression_types"]
                 raise ConversionError(
-                    f"Opened {len(archive.resources)} archive entries, but no TRMDL/GFBMDL "
-                    "filenames were resolved. Select a compatible GFPAK filename dictionary "
-                    "(gfpak.txt or JSON). Hashed blocks cannot be safely guessed into a model."
+                    f"Opened {len(archive.resources)} GFPAK resources (compression {codecs}), "
+                    "but none resolved to a .trmdl or .gfbmdl model. "
+                    + ("No companion filename dictionary was found. "
+                       if not dictionary else "The selected dictionary does not match this archive. ")
+                    + "Place a matching gfpak.txt or gfpak.json alongside the archive, "
+                    "or select one under Advanced converter settings. "
+                    "The original model names and companion resource paths are hashed; "
+                    "they cannot yet be reconstructed reliably from this archive alone. "
+                    + ("Oodle decoding will also require a compatible locally supplied DLL. "
+                       if "3" in codecs and not options.oodle else "")
                 )
             log(f"Identified {len(model_names)} model entry(s); decompressing {len(found)} known resources…")
             unpack_named(archive, workspace, found, oodle=options.oodle, progress=log)
