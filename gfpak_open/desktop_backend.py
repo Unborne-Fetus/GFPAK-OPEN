@@ -321,7 +321,7 @@ class DesktopAPI:
             raise ValueError("Unknown browser source mode")
         paths = (self._dialog("folder", "Choose an extracted game directory") if mode == "folder"
                  else self._dialog("open", "Choose a package or archive",
-                                   ("Game packages (*.nsp;*.gfpak;*.zip;*.xci)",
+                                   ("Game packages (*.nsp;*.nsz;*.xci;*.xcz;*.gfpak;*.zip)",
                                     "All files (*.*)")))
         if not paths:
             return None
