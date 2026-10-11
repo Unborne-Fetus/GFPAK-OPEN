@@ -695,9 +695,9 @@ class AssetBrowser:
                 if features["update_patch"]:
                     statuses.append("BKTR update/DLC patch data detected; base NCA overlay not yet implemented")
                 if features["sparse"]:
-                    statuses.append("Sparse storage layer detected; remapping is not yet implemented")
+                    statuses.append("Sparse BucketTree detected; plaintext mappings work, encrypted sparse IV handling remains limited")
                 if features["compressed_storage"]:
-                    statuses.append("Compressed NCA storage detected; block mapping is not yet implemented")
+                    statuses.append("Compressed BucketTree detected; stored, zero and LZ4 blocks supported for compatible unpatched sections")
                 result["notes"].extend(statuses or ["Compatible filesystem section"])
                 result["capabilities"] = features
             else:
