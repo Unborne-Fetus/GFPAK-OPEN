@@ -288,6 +288,11 @@ class AssetBrowserTests(unittest.TestCase):
             pack_output = root / "saved-resource.bin"
             browser.export_item(resource["id"], pack_output)
             self.assertEqual(pack_output.read_bytes(), b"HELLO")
+            packed_output = root / "saved-resource.bin.packed"
+            browser.export_item(resource["id"], packed_output, packed=True)
+            self.assertEqual(packed_output.read_bytes(), b"HELLO")
+            with self.assertRaisesRegex(ValueError, "Packed export"):
+                browser.export_item(animation["id"], root / "not-a-packed-file", packed=True)
             self.assertTrue(pack.read_bytes().startswith(b"GFLXPACK"))
             with self.assertRaisesRegex(ValueError, "Select a file"):
                 browser.export_item(category["id"], root / "cannot-export-folder")
