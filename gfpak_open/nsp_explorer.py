@@ -43,8 +43,10 @@ def describe_entry(name: str) -> tuple[str, str]:
         return ("Nested package", "PFS0 candidate")
     if lower.endswith(".gfpak"):
         return ("GFPAK asset archive", "GFLXPACK candidate")
-    if lower.endswith(".ncz") or lower.endswith(".nsz"):
-        return ("Compressed content", "Unsupported compressed content")
+    if lower.endswith(".ncz"):
+        return ("Compressed NCA (NCZ)", "Zstandard NCZ")
+    if lower.endswith(".nsz"):
+        return ("Compressed package", "NSP/NSZ")
     return ("Other resource", "Unknown")
 
 
