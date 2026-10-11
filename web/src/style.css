@@ -680,3 +680,10 @@
 @media(max-width:770px){
   .desktop-app .nx-fileviewer .nx-menu:last-child .nx-menu-items{right:0;left:auto}
 }
+
+.desktop-app .nx-fileviewer .nx-selection-actions{
+  display:grid;grid-template-columns:1fr;gap:7px;
+}
+.desktop-app .nx-fileviewer .nx-selection-actions .button{
+  width:100%;text-align:center;white-space:normal;
+}
