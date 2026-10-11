@@ -401,3 +401,47 @@ test('selected NCA expands linked Section 1, bin, archive and pokemon in left tr
   }
   await expect(page.locator('#assetTree')).toContainText('pokemon');
 });
+
+test('huge native NCA folder adds subsequent pages to both left tree and file list', async ({page}) => {
+  await page.addInitScript(() => {
+    const root = {id:'root',name:'Synthetic Pokémon game',kind:'directory',
+      category:'folder',size:0,expandable:true};
+    const section = {id:'section',name:'Section 1',kind:'nca_section',
+      category:'folder',size:0,expandable:true};
+    const entry = i => ({id:'file'+i,name:'asset_'+String(i).padStart(4,'0')+'.gfpak',
+      kind:'nca_file',category:'model archive',size:1024,expandable:false});
+    const first = Array.from({length:250},(_,i)=>entry(i));
+    const second = Array.from({length:70},(_,i)=>entry(i+250));
+    const listing = (node, entries, more=null) => ({
+      root:node,entries,counts:{'model archive':entries.length},
+      next_cursor:more,truncated:Boolean(more),note:'Synthetic paginated NCA index'
+    });
+    let lastCursor;
+    window.pywebview={api:{
+      setup_status:async()=>({blender:'',addon:'',setup:{state:'ready',error:''},
+        sources:[],settings:{hashes:'',oodle:'',textures:''},animations:true}),
+      browse_choose:async()=>({root,children:listing(root,[section])}),
+      browse_children:async(id,cursor)=>{
+        if(id==='root')return listing(root,[section]);
+        if(id!=='section')return listing(section,[]);
+        lastCursor=cursor;
+        if(!cursor)return listing(section,first,'f:000003e8');
+        if(cursor!=='f:000003e8')throw new Error('Unexpected continuation cursor');
+        return listing(section,second);
+      },
+      browse_item_details:async()=>({category:'folder',size:0,
+        location:'test section',hex_lines:[],notes:[]})
+    }};
+  });
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFolder').click();
+  await page.locator('#assetTree .nx-tree-name').filter({hasText:'Section 1'}).click();
+  await expect(page.locator('#assetRows tr.asset-row')).toHaveCount(250);
+  await expect(page.locator('#assetRows .nx-pagination-button')).toBeVisible();
+  await page.locator('#assetRows .nx-pagination-button').click();
+  await expect(page.locator('#assetRows tr.asset-row')).toHaveCount(320);
+  await expect(page.locator('#assetRows')).toContainText('asset_0319.gfpak');
+  await expect(page.locator('#assetRows .nx-pagination-button')).toHaveCount(0);
+  await expect(page.locator('#assetTree')).toContainText('asset_0319.gfpak');
+});
