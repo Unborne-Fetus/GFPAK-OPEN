@@ -67,9 +67,15 @@ class DesktopAPI:
         path.write_text(json.dumps(self.settings, indent=2), encoding="utf-8")
 
     def _configure_nca_browser(self):
-        # Native parser is built in; only an optional user-supplied keyset
-        # is consulted. No keys are bundled or exposed to the web interface.
-        self._browser.configure_nca_reader(self.settings.get("nca_keyset") or "")
+        # The native parser is always available. If a keys file was moved or
+        # deleted, continue in plaintext/metadata-only mode instead of making
+        # the entire app fail to start.
+        selected = self.settings.get("nca_keyset") or ""
+        try:
+            self._browser.configure_nca_reader(selected)
+        except (OSError, ValueError):
+            self._browser.configure_nca_reader("")
+            self.settings.pop("nca_keyset", None)
 
     def browse_nca_settings(self):
         with self._lock:
