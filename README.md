@@ -48,15 +48,19 @@ Local development requires Node.js 22+:
 
 The production build uses npm run build and outputs dist-web/.
 
-## Windows converter
+## Windows desktop studio — viewer and converter together
 
-Get the executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml).
+Get the executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml), or run `run.bat` from the source checkout.
 
-1. Select a .gfbmdl file for Let's Go / Sword / Shield, a .trmdl file for Trinity games, a decoded model folder, or a .gfpak.
-2. Choose your installed Blender executable and the [Pokémon Switch V3 Blender addon](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender).
-3. For raw GFPAK, supply a matching filename hash dictionary and, when required, a compatible legitimately obtained Oodle DLL. Neither is bundled.
-4. Optionally provide decoded PNG textures or animation resources.
-5. Convert to GLB and load the result on the GitHub Pages viewer.
+The desktop application now opens **one studio window** with the same 3D viewer and archive tools as the web version, plus the **Blender Conversion** panel in its sidebar. It does not launch a separate converter app.
+
+1. Blender is detected automatically, including supported Microsoft Store installations. Blender itself is **not** automatically downloaded.
+2. On first start, the app checks for the open-source [Pokémon Switch Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender). If missing, it downloads it from the upstream GitHub repository into your local GFPAK-OPEN application data directory, validates the required importer files and reuses it on later runs. This one-time download requires an internet connection; use the Retry control if it fails. You can still choose a manually installed add-on folder in Advanced Settings.
+3. Under **Blender Conversion**, choose individual native model files or a decoded model folder, or select multiple GFPAKs for batch conversion. Choose the destination through the native save dialog and click Convert.
+4. The successful GLB output appears as a **Preview** action directly in the same 3D viewer; a single completed export opens automatically.
+5. For raw GFPAK, provide a matching filename hash dictionary and, if needed, a compatible legitimately obtained Oodle DLL under Advanced Settings. Neither is bundled or downloaded.
+
+Model fidelity still depends on the upstream importer and the supplied assets; missing shaders, textures, codecs and animation variants are not automatically restored.
 
 The legacy GFBMDL addon path does not automatically restore original shaders/textures. Models from newer Legends: Z-A revisions may need a current [GFTool/Trinity Model Viewer](https://github.com/pkZukan/gftool) glTF export.
 
