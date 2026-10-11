@@ -11,6 +11,11 @@ let selectionRevision = 0;
 let nspTaskPolling = false;
 let nspPageRevision = 0;
 let nspSearchTimeout = null;
+const nxTreeItems = new Map();
+const nxTreeListings = new Map();
+const nxTreePaths = new Map();
+let nxSelectedTree = null;
+let nxDetailRevision = 0;
 const categories = {
   model: 'Model', 'model archive': 'Model archive',
   animation: 'Animation', texture: 'Texture', skeleton: 'Skeleton',
@@ -222,6 +227,223 @@ async function startNSPTask(kind, row) {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+
+function nxTreeIcon(row) {
+  if (row.kind === 'nsp') return '▣';
+  if (row.kind === 'nspfile') return '▣';
+  if (row.kind === 'linked_dir') return '▤';
+  if (row.kind === 'directory' || row.kind === 'zipdir') return '▤';
+  if (row.category === 'animation') return '▶';
+  if (row.category === 'texture') return '▧';
+  if (row.category === 'model' || row.category === 'mesh') return '◇';
+  if (row.kind === 'gfpak' || row.kind === 'zip') return '▣';
+  return '▯';
+}
+
+function nxHighlightTree(row) {
+  if (nxSelectedTree) nxSelectedTree.classList.remove('nx-selected');
+  const node = row ? nxTreeItems.get(row.id) : null;
+  nxSelectedTree = node?.line || null;
+  if (nxSelectedTree) nxSelectedTree.classList.add('nx-selected');
+}
+
+function nxAddTreeNode(row, depth, lineage, target) {
+  if (!row || !row.id) return;
+  const node = document.createElement('div');
+  node.className = 'nx-tree-node';
+  node.setAttribute('role', 'treeitem');
+  const expanded = !!row.expandable && depth === 0;
+  if (row.expandable) node.setAttribute('aria-expanded', String(expanded));
+  const line = document.createElement('div');
+  line.className = 'nx-tree-line';
+  line.style.paddingLeft = (7 + depth * 15) + 'px';
+  line.dataset.node = row.id;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'nx-tree-toggle';
+  toggle.textContent = row.expandable ? (expanded ? '▾' : '▸') : '';
+  toggle.disabled = !row.expandable;
+  toggle.setAttribute('aria-label', row.expandable ? 'Expand or collapse ' + row.name : 'File');
+  const icon = document.createElement('span');
+  icon.className = 'nx-node-icon nx-node-' + row.kind;
+  icon.textContent = nxTreeIcon(row);
+  const label = document.createElement('button');
+  label.type = 'button';
+  label.className = 'nx-tree-name';
+  label.textContent = row.name;
+  label.title = row.name;
+  const children = document.createElement('div');
+  children.className = 'nx-tree-children';
+  children.setAttribute('role', 'group');
+  children.hidden = !expanded;
+  line.append(toggle, icon, label);
+  node.append(line, children);
+  target.append(node);
+  nxTreeItems.set(row.id, {row, node, line, toggle, children, expanded, loaded: false});
+  nxTreePaths.set(row.id, [...lineage, row]);
+
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    nxToggleTree(row).catch(error => showNotice(error.message || String(error), true));
+  });
+  label.addEventListener('click', event => {
+    event.stopPropagation();
+    nxHighlightTree(row);
+    if (row.expandable) {
+      nxNavigateTree(row).catch(error => showNotice(error.message || String(error), true));
+    } else {
+      select(row);
+    }
+  });
+  label.addEventListener('dblclick', event => {
+    event.stopPropagation();
+    if (row.expandable) {
+      nxToggleTree(row).catch(error => showNotice(error.message || String(error), true));
+    } else if (canPreview(row)) {
+      preview(row);
+    }
+  });
+  label.addEventListener('keydown', event => {
+    if (event.key === 'ArrowRight' && row.expandable) {
+      event.preventDefault();
+      nxToggleTree(row, true).catch(error => showNotice(error.message || String(error), true));
+    }
+    if (event.key === 'ArrowLeft' && row.expandable) {
+      event.preventDefault();
+      nxToggleTree(row, false).catch(error => showNotice(error.message || String(error), true));
+    }
+  });
+}
+
+function nxPopulateChildren(row, listing) {
+  const node = nxTreeItems.get(row.id);
+  if (!node) return;
+  node.children.replaceChildren();
+  const ancestry = nxTreePaths.get(row.id) || [row];
+  for (const child of listing.entries || []) {
+    nxAddTreeNode(child, ancestry.length, ancestry, node.children);
+  }
+  node.loaded = true;
+  if (row.kind === 'nsp' && listing.pagination && listing.pagination.total > 250) {
+    const hint = document.createElement('div');
+    hint.className = 'nx-tree-more';
+    hint.textContent = 'More package entries: use Search and Next →';
+    node.children.append(hint);
+  }
+}
+
+function nxResetTree(root, listing) {
+  nxTreeItems.clear();
+  nxTreeListings.clear();
+  nxTreePaths.clear();
+  nxSelectedTree = null;
+  const target = id('assetTree');
+  target.replaceChildren();
+  if (!root) {
+    target.textContent = 'Open a package or folder to start browsing.';
+    id('nxTreeStatus').textContent = 'No source loaded';
+    return;
+  }
+  nxTreeListings.set(root.id, listing);
+  nxAddTreeNode(root, 0, [], target);
+  nxPopulateChildren(root, listing);
+  nxHighlightTree(root);
+  id('nxTreeStatus').textContent =
+    (listing.entries || []).length + ' items at this location';
+}
+
+async function nxToggleTree(row, force = null) {
+  const view = nxTreeItems.get(row.id);
+  if (!view || !row.expandable) return;
+  const expanded = force === null ? !view.expanded : !!force;
+  if (expanded && !view.loaded) {
+    view.toggle.textContent = '⋯';
+    const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
+    nxTreeListings.set(row.id, listing);
+    nxPopulateChildren(row, listing);
+  }
+  view.expanded = expanded;
+  view.children.hidden = !expanded;
+  view.toggle.textContent = expanded ? '▾' : '▸';
+  view.node.setAttribute('aria-expanded', String(expanded));
+}
+
+async function nxNavigateTree(row) {
+  const lineage = nxTreePaths.get(row.id) || [row];
+  const stack = [];
+  for (const node of lineage) {
+    const listing = nxTreeListings.get(node.id) || await api.browse_children(node.id);
+    nxTreeListings.set(node.id, listing);
+    stack.push({root: node, listing});
+  }
+  pathStack = stack;
+  scanListing = null;
+  renderListing();
+  nxHighlightTree(row);
+  id('nxTreeStatus').textContent = row.name + ' · ' +
+    (stack.at(-1)?.listing.entries || []).length + ' visible items';
+}
+
+async function nxRevealExistingBranch(row) {
+  const path = nxTreePaths.get(row.id);
+  if (!path) return;
+  for (const parent of path.slice(0, -1)) {
+    const view = nxTreeItems.get(parent.id);
+    if (view && !view.expanded) await nxToggleTree(parent, true);
+  }
+  nxHighlightTree(row);
+}
+
+async function nxLoadDetails(row) {
+  const revision = ++nxDetailRevision;
+  const properties = id('assetFileMetadata');
+  const hex = id('assetGeneralHex');
+  const thumbnail = id('assetThumbnail');
+  const signature = id('assetSignature');
+  properties.replaceChildren();
+  hex.hidden = true;
+  hex.textContent = '';
+  thumbnail.hidden = true;
+  thumbnail.removeAttribute('src');
+  signature.textContent = '';
+  if (!row) return;
+  let info;
+  try {
+    info = await api.browse_item_details(row.id);
+  } catch (error) {
+    if (revision === nxDetailRevision) signature.textContent = String(error.message || error);
+    return;
+  }
+  if (revision !== nxDetailRevision || selected?.id !== row.id) return;
+  const entries = [
+    ['Type', info.category || info.kind],
+    ['Size', formatSize(info.size)],
+    ['Container / location', info.location],
+    ...(info.hash ? [['Resource hash', info.hash]] : []),
+    ...(info.compression !== undefined ? [['Compression', String(info.compression)]] : []),
+  ];
+  for (const [term, value] of entries) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = term;
+    dd.textContent = value;
+    properties.append(dt, dd);
+  }
+  signature.textContent = (info.signature || '') +
+    (info.notes?.length ? ' · ' + info.notes.join(' · ') : '');
+  if (info.thumbnail) {
+    thumbnail.src = info.thumbnail;
+    thumbnail.hidden = false;
+  }
+  if (info.hex_lines?.length && row.kind !== 'nspfile') {
+    hex.textContent = info.hex_lines.map(line =>
+      line.offset.toString(16).padStart(8, '0') + '   ' +
+      line.hex.padEnd(47, ' ') + '  |' + line.ascii + '|'
+    ).join('\n');
+    hex.hidden = false;
+  }
+}
+
 function select(row) {
   selected = row;
   id('assetSelected').textContent = row?.name || 'Nothing selected';
@@ -234,6 +456,7 @@ function select(row) {
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
+  nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
 }
 
 function renderRows(rows) {
