@@ -461,8 +461,9 @@ function attachEvents() {
     const item = state.project?.items.find(entry => entry.path.toLowerCase().endsWith('.gfpak'));
     if (!item) return;
     try {
-      const buffer = await item.getBytes();
-      await loadArchive({name: item.path.split('/').pop(), arrayBuffer: async () => buffer});
+      const blob = new Blob([await item.getBytes()]);
+      const file = Object.assign(blob, {name: item.path.split('/').pop()});
+      await loadArchive(file);
     } catch (error) { errorMessage(error); }
   });
   el('chooseFiles').addEventListener('click', event => { event.stopPropagation(); el('fileInput').click(); });
