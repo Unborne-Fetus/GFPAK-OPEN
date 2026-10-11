@@ -85,6 +85,7 @@ class AssetBrowser:
         self.root_id: str | None = None
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
+        self._linked_nca: dict[int, dict] = {}
         self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
         self._section_nodes: dict[str, tuple[int, int]] = {}
 
@@ -122,6 +123,7 @@ class AssetBrowser:
         self._pfs.clear()
         self._section_nodes.clear()
         self._linked_extracted = None
+        self._linked_nca.clear()
         self.root_path = candidate
         root = self._fs_node(candidate)
         self.root_id = root["id"]
@@ -230,6 +232,25 @@ class AssetBrowser:
         node["linked"] = True
         self._linked_extracted = node
         return self._public(node)
+
+    def attach_extracted_nca(self, node_id: str, path: str | Path) -> dict:
+        """Link an existing extracted filesystem under its selected NCA entry.
+
+        The folder contents come from the user's chosen directory, not from
+        automatic NCA decryption. Do not fabricate section numbers.
+        """
+        node = self.node(node_id)
+        if node["kind"] != "nspfile" or not node["name"].lower().endswith(".nca"):
+            raise ValueError("Select an NCA from the file tree")
+        folder = Path(path).expanduser().resolve(strict=True)
+        if not folder.is_dir():
+            raise ValueError("The linked extracted content must be an existing folder")
+        linked = self._node("linked_dir", folder,
+                            inner="nca-" + str(node["index"]),
+                            name="Extracted files (linked)")
+        linked["category"] = "folder"
+        self._linked_nca[node["index"]] = linked
+        return self._public(linked)
 
     def nsp_page(self, id_: str, page: int = 0, query: str = '',
                  category: str = 'all', limit: int = 250) -> dict:
@@ -375,6 +396,11 @@ class AssetBrowser:
                 message = f"Identified {len(entries)} actual NCA filesystem sections."
             except (OSError, RuntimeError, ValueError) as error:
                 message = str(error)
+        linked = self._linked_nca.get(index)
+        if linked:
+            entries.insert(0, linked)
+            message = ("Linked files were provided from a separate extracted folder. "
+                       "No encrypted NCA contents were decoded by this link. " + message)
         if not entries:
             locked = self._node("nca_locked", reader.path, inner=str(index),
                                 name="Sections unavailable")
