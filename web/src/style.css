@@ -320,3 +320,13 @@
  .desktop-app .nsp-breakdown{grid-template-columns:1fr}
 }
 #nspWorkbench[hidden],#nspSelection[hidden],#nspTaskPanel[hidden]{display:none!important}
+
+.desktop-app .nsp-titles{border:1px solid #315366;border-radius:9px;background:#0d2435;padding:13px}
+.desktop-app .nsp-titles h4{margin:0 0 10px;color:#a8e7d0;font:700 13px "Space Grotesk",sans-serif}
+.desktop-app #nspTitleRecords{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.desktop-app .nsp-title-record{background:#0b1b2b;border:1px solid #2b4454;border-radius:7px;padding:11px;min-width:0}
+.desktop-app .nsp-title-record strong{font:700 12px "Space Grotesk",sans-serif;color:#e8f6f1;overflow-wrap:anywhere}
+.desktop-app .nsp-title-record p{font:11px/1.5 "DM Sans",sans-serif;margin:6px 0;color:#a9c3c5}
+.desktop-app .nsp-title-record small{font-size:10px;color:#849aac;overflow-wrap:anywhere}
+.desktop-app .nsp-titles>p{font:11px/1.5 "DM Sans",sans-serif;color:#8fabbb;margin:9px 0 0}
+#nspTitles[hidden]{display:none!important}
