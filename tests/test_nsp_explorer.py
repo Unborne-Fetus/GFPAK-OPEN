@@ -171,7 +171,8 @@ class NSPAnalyzerTests(unittest.TestCase):
 
     def test_file_type_classification(self):
         self.assertEqual(describe_entry("foo.cnmt.nca")[0], "Content metadata NCA")
-        self.assertEqual(describe_entry("foo.nsz")[1], "Unsupported compressed content")
+        self.assertEqual(describe_entry("foo.nsz")[1], "NSP/NSZ")
+        self.assertEqual(describe_entry("foo.ncz")[1], "Zstandard NCZ")
         self.assertEqual(describe_entry("control.xml")[1], "Text metadata")
 
     def test_bridge_hash_inspect_extract_and_report(self):
