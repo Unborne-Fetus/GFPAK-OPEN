@@ -18,7 +18,7 @@ test('animation companion selection prefers matching species from very large gam
   files.push({path:'bin/archive/pokemon/pm0025_motion.tranm',size:256});
   files.push({path:'bin/animation/pokemon/pm0025_attack.tranm',size:256});
   const selected = selectNativeAnimations(files, model);
-  assert.equal(selected.length, 2);
+  assert.equal(selected.length, 3);
   assert.ok(selected.every(row => row.path.includes('pm0025')));
 });
 
