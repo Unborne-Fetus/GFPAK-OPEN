@@ -367,13 +367,15 @@ class DesktopAPI:
             return {"linked": node, "root": browser._public(root),
                     "children": browser.children(root["id"])}
 
-    def browse_save_item(self, node_id: str):
+    def browse_save_item(self, node_id: str, packed: bool = False):
         """Save exactly one selected file with an explicit native dialog."""
         with self._lock:
             browser = self._browser
             node = browser.node(node_id)
             if node["kind"] not in {"file", "zipfile", "gfpak_resource", "nspfile", "nca_file"}:
                 raise ValueError("Select a file rather than a folder")
+            if packed and node["kind"] != "gfpak_resource":
+                raise ValueError("Packed export requires a GFPAK resource")
             name = node["name"].replace("\\", "/").rsplit("/", 1)[-1]
             if node["kind"] == "gfpak_resource":
                 name = name.split(" · ", 1)[-1] or "resource.bin"
@@ -382,13 +384,15 @@ class DesktopAPI:
             name = "".join(ch for ch in name if ch not in '<>:"/\\|?*')[:160]
             if not name or name.startswith("."):
                 name = "exported-resource.bin"
+            if packed:
+                name += ".packed"
         selected = self._dialog("save", name, ("All files (*.*)",))
         if not selected:
             return False
         with self._lock:
             if browser is not self._browser:
                 raise ValueError("Package changed; select the file again")
-        return str(browser.export_item(node_id, Path(selected[0])))
+        return str(browser.export_item(node_id, Path(selected[0]), packed=packed))
 
     def browse_asset_family(self, node_id: str):
         with self._lock:
