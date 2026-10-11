@@ -169,7 +169,7 @@ class AssetBrowser:
         # Expose metadata but not hidden backing paths.
         values = {key: node[key] for key in
                   ("id", "name", "kind", "category", "size", "expandable")}
-        for field in ("role", "format", "offset", "content_id"):
+        for field in ("role", "format", "offset", "content_id", "capabilities"):
             if field in node:
                 values[field] = node[field]
         return values
@@ -480,6 +480,7 @@ class AssetBrowser:
                 child = self._node("nca_section", reader.path, inner=str(index),
                                    index=number, name=f"Section {number}")
                 child["category"] = "folder"
+                child["capabilities"] = self._nca_sections.section_info(reader, index, number)
                 self._section_nodes[child["id"]] = (index, number)
                 self._nca_sources[child["id"]] = reader
                 entries.append(child)
@@ -628,7 +629,19 @@ class AssetBrowser:
             "notes": [],
         }
         if kind in {"directory", "linked_dir", "zipdir", "nca_section", "nca_dir", "nca_locked"}:
-            result["notes"].append("Directory - expand it to inspect files.")
+            features = node.get("capabilities")
+            if features:
+                statuses = []
+                if features["update_patch"]:
+                    statuses.append("BKTR update/DLC patch data detected; base NCA overlay not yet implemented")
+                if features["sparse"]:
+                    statuses.append("Sparse storage layer detected; remapping is not yet implemented")
+                if features["compressed_storage"]:
+                    statuses.append("Compressed NCA storage detected; block mapping is not yet implemented")
+                result["notes"].extend(statuses or ["Compatible filesystem section"])
+                result["capabilities"] = features
+            else:
+                result["notes"].append("Directory - expand it to inspect files.")
             return result
         if kind == "nspfile":
             inspected = self.nsp_inspect(id_, length=256)
