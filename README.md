@@ -52,11 +52,11 @@ The production build uses npm run build and outputs dist-web/.
 
 Get the executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml), or run `run.bat` from the source checkout.
 
-The desktop application now opens **one studio window** with the same 3D viewer and archive tools as the web version, plus the **Blender Conversion** panel in its sidebar. It does not launch a separate converter app.
+The desktop application now opens **one studio window** with the same 3D viewer and archive tools as the web version, plus a dedicated **Blender Converter** tab in the same window. It does not launch a separate converter app.
 
 1. Blender is detected automatically, including supported Microsoft Store installations. Blender itself is **not** automatically downloaded.
 2. On first start, the app checks for the open-source [Pokémon Switch Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender). If missing, it downloads it from the upstream GitHub repository into your local GFPAK-OPEN application data directory, validates the required importer files and reuses it on later runs. This one-time download requires an internet connection; use the Retry control if it fails. You can still choose a manually installed add-on folder in Advanced Settings.
-3. Under **Blender Conversion**, choose individual native model files or a decoded model folder, or select multiple GFPAKs for batch conversion. Choose the destination through the native save dialog and click Convert.
+3. Under **Blender Converter**, choose individual native model files or a decoded model folder, or select multiple GFPAKs for batch conversion. Choose the destination through the native save dialog and click Convert.
 4. The successful GLB output appears as a **Preview** action directly in the same 3D viewer; a single completed export opens automatically.
 5. For raw GFPAK, provide a matching filename hash dictionary and, if needed, a compatible legitimately obtained Oodle DLL under Advanced Settings. Neither is bundled or downloaded.
 
