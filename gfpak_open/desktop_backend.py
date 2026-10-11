@@ -44,6 +44,8 @@ class DesktopAPI:
         self._checked_blender: str | None = None
         self._browser = AssetBrowser()
         self._scan_job = {"running": False, "error": "", "result": None}
+        self._nsp_job = {"running": False, "kind": "", "done": 0, "total": 0, "result": None, "error": ""}
+        self._nsp_cancel = threading.Event()
 
     def close(self):
         """Best-effort shutdown; only delete files the app owns in its temp cache."""
@@ -316,6 +318,128 @@ class DesktopAPI:
                         self._scan_job["running"] = False
         threading.Thread(target=run, daemon=True).start()
         return True
+
+    def browse_nsp_summary(self, node_id: str):
+        with self._lock:
+            node = self._browser.node(node_id)
+            if node["kind"] != "nsp":
+                raise ValueError("Open an NSP file before viewing package analysis")
+            return self._browser.nsp_reader(Path(node["path"])).summary()
+
+    def browse_nsp_inspect(self, node_id: str, offset: int = 0, length: int = 256):
+        with self._lock:
+            return self._browser.nsp_inspect(node_id, offset=int(offset), length=int(length))
+
+    def browse_nsp_manifest(self, node_id: str):
+        with self._lock:
+            node = self._browser.node(node_id)
+            if node["kind"] != "nsp":
+                raise ValueError("Select the NSP package first")
+            analyzer = self._browser.nsp_reader(Path(node["path"]))
+        selected = self._dialog("save", analyzer.path.stem + "-inventory.json",
+                                ("JSON files (*.json)",))
+        if not selected:
+            return False
+        output = Path(selected[0])
+        if output.suffix.lower() != ".json":
+            output = output.with_suffix(".json")
+        return str(analyzer.write_manifest(output))
+
+    def browse_nsp_start_task(self, operation: str, node_id: str):
+        """Hash, audit or raw-export a selected PFS0 entry in a worker thread."""
+        if operation not in {"hash", "extract", "audit"}:
+            raise ValueError("Unsupported NSP operation")
+        with self._lock:
+            if self._nsp_job["running"]:
+                raise ValueError("Another package operation is running")
+            if operation == "audit":
+                node = self._browser.node(node_id)
+                if node["kind"] != "nsp":
+                    raise ValueError("Select an NSP package to audit")
+                analyzer = self._browser.nsp_reader(Path(node["path"]))
+                index = None
+                label = analyzer.path.name
+                total = sum(row.size for row in analyzer.entries)
+            else:
+                analyzer, index = self._browser.nsp_entry(node_id)
+                label = analyzer.get(index).name
+                total = analyzer.get(index).size
+            origin = self._browser
+        target = None
+        if operation == "extract":
+            # User picks an explicit path. An NSP filename is never trusted as an
+            # extraction destination, and an existing file cannot be overwritten.
+            safe_name = Path(label.replace("\\", "/")).name or "nsp-resource.bin"
+            chosen = self._dialog("save", safe_name, ("All files (*.*)",))
+            if not chosen:
+                return False
+            target = Path(chosen[0])
+            if target.is_file():
+                raise ValueError("Destination already exists; choose another filename")
+        with self._lock:
+            if origin is not self._browser:
+                raise ValueError("Explorer changed; select the file again")
+            self._nsp_cancel.clear()
+            self._nsp_job = {"running": True, "kind": operation,
+                             "name": label, "done": 0, "total": total,
+                             "result": None, "error": ""}
+        def progress(done, ignored_total):
+            if self._nsp_cancel.is_set():
+                raise RuntimeError("Operation cancelled")
+            with self._lock:
+                self._nsp_job["done"] = min(self._nsp_job["total"], done)
+
+        def job():
+            try:
+                if operation == "hash":
+                    result = analyzer.sha256(index, progress=progress)
+                elif operation == "extract":
+                    saved = analyzer.export_raw(index, target, progress=progress)
+                    result = {"file": saved.name, "saved": str(saved),
+                              "message": "Raw package file saved unchanged. Encrypted NCA data is not decrypted."}
+                else:
+                    files = len(analyzer.entries)
+                    warnings = []
+                    hashed_bytes = 0
+                    mismatches = 0
+                    for count, entry in enumerate(analyzer.entries, 1):
+                        if self._nsp_cancel.is_set():
+                            raise RuntimeError("Operation cancelled")
+                        # Convert per-entry progress into a package-wide progress bar.
+                        def progress_all(done, ignored_total):
+                            progress(hashed_bytes + done, total)
+                        digest = analyzer.sha256(entry.index, progress=progress_all)
+                        hashed_bytes += entry.size
+                        if digest["content_id_comparison"] == "differs":
+                            mismatches += 1
+                            if len(warnings) < 40:
+                                warnings.append(entry.name)
+                    result = {"files_checked": files, "bytes_hashed": hashed_bytes,
+                              "content_id_differences": mismatches,
+                              "sample_differences": warnings,
+                              "warning": "Content-ID comparisons are advisory; a difference is not always corruption."}
+                with self._lock:
+                    self._nsp_job["result"] = result
+                    self._nsp_job["done"] = total
+            except Exception as exc:
+                with self._lock:
+                    self._nsp_job["error"] = str(exc)
+            finally:
+                with self._lock:
+                    self._nsp_job["running"] = False
+        threading.Thread(target=job, daemon=True).start()
+        return True
+
+    def browse_nsp_cancel_task(self):
+        with self._lock:
+            if not self._nsp_job["running"]:
+                return False
+            self._nsp_cancel.set()
+        return True
+
+    def browse_nsp_task_status(self):
+        with self._lock:
+            return dict(self._nsp_job)
 
     def browse_scan_status(self):
         with self._lock:
