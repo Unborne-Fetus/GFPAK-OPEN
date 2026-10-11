@@ -178,3 +178,73 @@ test('desktop explorer browses extracted folders and filters animations/textures
   await expect(page.locator('#viewerPanel')).toBeVisible();
 });
 
+
+test('NSP package workbench displays roles, hex and integrity results without exposing keys', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.pywebview = {
+      api: {
+        setup_status: async () => ({
+          blender: 'C:/Blender/blender.exe', addon: 'C:/addons/pokemon',
+          setup: {state:'ready',error:''}, sources:[],
+          settings: {hashes:'',oodle:'',textures:''}, animations:true
+        }),
+        browse_choose: async () => ({
+          root: {id:'pkg',kind:'nsp',name:'pokemon-demo.nsp',
+                 category:'archive',expandable:true,size:4096},
+          children: {
+            root:{id:'pkg',kind:'nsp',name:'pokemon-demo.nsp'},
+            entries:[
+              {id:'nca',kind:'nspfile',name:'0123456789abcdef0123456789abcdef.nca',
+               category:'encrypted container',role:'Content archive NCA',
+               format:'Encrypted NCA',content_id:'0123456789abcdef0123456789abcdef',
+               offset:128,size:64,expandable:false},
+              {id:'art',kind:'nspfile',name:'cover.png',
+               category:'texture',role:'Artwork',format:'Image',
+               offset:192,size:8,expandable:false}
+            ],
+            counts:{'encrypted container':1,texture:1},
+            truncated:false,note:'Outer NSP package only'
+          }
+        }),
+        browse_nsp_summary: async () => ({
+          filename:'pokemon-demo.nsp',bytes:4096,files:2,header_bytes:128,
+          formats:{'Encrypted NCA':1,Image:1},
+          roles:{'Content archive NCA':1,Artwork:1},
+          role_bytes:{'Content archive NCA':64,Artwork:8},
+          warnings:[],content_ids:1
+        }),
+        browse_nsp_inspect: async (node, offset, length) => ({
+          name:'0123456789abcdef0123456789abcdef.nca',
+          hex_lines:[{offset:0,hex:'50 46 53 30',ascii:'PFS0'}],
+          signature:'Encrypted NCA (opaque; header cannot be decoded here)',
+          note:'Raw encrypted bytes',sample_size:4
+        }),
+        browse_nsp_start_task: async () => true,
+        browse_nsp_task_status: async () => ({
+          running:false,done:64,total:64,error:'',
+          result:{sha256:'a'.repeat(64),content_id_comparison:'differs',
+                  bytes_hashed:64}
+        }),
+        browse_nsp_cancel_task: async () => true,
+        browse_nsp_manifest: async () => 'C:/Downloads/package-index.json',
+        browse_children: async () => ({root:{id:'pkg'},entries:[],counts:{},note:''})
+      }
+    };
+  });
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFile').click();
+  await expect(page.locator('#nspWorkbench')).toBeVisible();
+  await expect(page.locator('#nspFiles')).toHaveText('2');
+  await expect(page.locator('#nspNcas')).toHaveText('1');
+  await expect(page.locator('#nspRoleBreakdown')).toContainText('Content archive NCA');
+  await page.locator('#assetRows tr').filter({hasText:'.nca'}).click();
+  await expect(page.locator('#nspSelection')).toBeVisible();
+  await expect(page.locator('#nspSignature')).toContainText('Encrypted NCA');
+  await expect(page.locator('#nspHexDump')).toContainText('50 46 53 30');
+  await page.locator('#nspHash').click();
+  await expect(page.locator('#nspHashResult')).toContainText('SHA-256:');
+  await expect(page.locator('#nspHashResult')).toContainText('advisory');
+  await page.locator('#nspManifest').click();
+  await expect(page.locator('#assetNotice')).toContainText('package-index.json');
+});
