@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from gfpak_open.converter import (
     ConversionError, ConversionOptions, HashDictionary, convert_model,
-    find_models, fnv1a64, safe_path, validate_glb,
+    find_models, fnv1a64, safe_path, validate_glb, discover_dictionary,
 )
 
 
@@ -37,6 +37,15 @@ class ConverterTests(unittest.TestCase):
             js = Path(tmp) / "map.json"
             js.write_text(json.dumps({"0123456789abcdef": "pokemon/model.trmdl"}))
             self.assertEqual(HashDictionary(js).mapping["0123456789abcdef"], "pokemon/model.trmdl")
+
+    def test_auto_discover_companion_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "pm0025_00_00.gfpak"
+            self.assertIsNone(discover_dictionary(source))
+            dictionary = root / "gfpak.txt"
+            dictionary.write_text("model.trmdl\\n")
+            self.assertEqual(discover_dictionary(source), dictionary)
 
     def test_safe_names(self):
         for name in ("../file.trmdl", "/tmp/file.trmdl", "C:/file.trmdl", "abc\\def", "x/../../oops"):
@@ -141,7 +150,7 @@ class ConverterTests(unittest.TestCase):
             addon.mkdir()
             (addon / "__init__.py").write_text("")
             target = root / "out.glb"
-            with self.assertRaisesRegex(ConversionError, "filenames were resolved"):
+            with self.assertRaisesRegex(ConversionError, "filename dictionary"):
                 convert_model(ConversionOptions(sample, target, root / "blender.exe", addon))
             self.assertFalse(target.exists())
 
