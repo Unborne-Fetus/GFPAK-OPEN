@@ -3,8 +3,9 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from gfpak_open.core import GFPak, GFPakError
+from gfpak_open.core import GFPak, GFPakError, find_oodle_dll
 
 
 class GFPakTests(unittest.TestCase):
@@ -32,6 +33,22 @@ class GFPakTests(unittest.TestCase):
             report = Path(temp) / "report.json"
             arc.save_report(report)
             self.assertEqual(json.loads(report.read_text())["resources"][0]["file_hash"], "00000000000000ab")
+
+    def test_auto_detect_nearby_oodle_dll(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "pm0025_00_00.gfpak"
+            archive.write_bytes(b"archive placeholder")
+            dll = Path(temp) / "oo2core_9_win64.dll"
+            dll.write_bytes(b"test stub, not loaded")
+            with patch.dict("os.environ", {"GFPAK_OODLE_DLL": ""}):
+                self.assertEqual(find_oodle_dll(archive), dll.resolve())
+
+    def test_explicit_oodle_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            dll = Path(temp) / "oo2core_9_win64.dll"
+            dll.write_bytes(b"test stub, not loaded")
+            with patch.dict("os.environ", {"GFPAK_OODLE_DLL": str(dll)}):
+                self.assertEqual(find_oodle_dll(), dll.resolve())
 
     def test_bad_magic(self):
         with tempfile.TemporaryDirectory() as temp:
