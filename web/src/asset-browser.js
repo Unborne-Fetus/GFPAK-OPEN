@@ -9,6 +9,8 @@ let scanListing = null;
 let activeNSP = null;
 let selectionRevision = 0;
 let nspTaskPolling = false;
+let nspPageRevision = 0;
+let nspSearchTimeout = null;
 const categories = {
   model: 'Model', 'model archive': 'Model archive',
   animation: 'Animation', texture: 'Texture', skeleton: 'Skeleton',
@@ -238,10 +240,12 @@ function renderRows(rows) {
   current = rows;
   const needle = id('assetSearch').value.trim().toLowerCase();
   const filter = id('assetCategory').value;
-  const visible = rows.filter(row => {
-    return (!needle || (row.name + ' ' + (row.relative || '')).toLowerCase().includes(needle)) &&
-      (filter === 'all' || row.category === filter);
-  });
+  const visible = pathStack.at(-1)?.root.kind === 'nsp'
+    ? rows
+    : rows.filter(row => {
+        return (!needle || (row.name + ' ' + (row.relative || '')).toLowerCase().includes(needle)) &&
+          (filter === 'all' || row.category === filter);
+      });
   const body = id('assetRows');
   body.replaceChildren();
   if (!visible.length) {
