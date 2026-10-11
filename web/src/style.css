@@ -687,3 +687,65 @@
 .desktop-app .nx-fileviewer .nx-selection-actions .button{
   width:100%;text-align:center;white-space:normal;
 }
+
+/* Avoid the right properties inspector being forced off-screen by wide hex or
+   long NCA filenames. Make all three panes shrink within the actual viewport. */
+.desktop-app .nx-fileviewer,
+.desktop-app .nx-fileviewer .asset-content,
+.desktop-app .nx-fileviewer .asset-table-wrap,
+.desktop-app .nx-fileviewer .asset-inspector {
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+}
+.desktop-app .nx-fileviewer .asset-content {
+  width:100%;
+  grid-template-columns:minmax(215px,25%) minmax(0,1fr) minmax(270px,29%);
+  overflow:hidden;
+}
+.desktop-app .nx-fileviewer .asset-inspector,
+.desktop-app .nx-fileviewer .asset-table-wrap{
+  overflow:auto;
+  overflow-wrap:anywhere;
+}
+.desktop-app .nx-fileviewer .asset-table{
+  min-width:0;width:100%;table-layout:fixed;
+}
+.desktop-app .nx-fileviewer .asset-table th:first-child{width:48%}
+.desktop-app .nx-fileviewer .asset-table th:nth-child(2){width:22%}
+.desktop-app .nx-fileviewer .asset-table th:nth-child(3){width:15%}
+.desktop-app .nx-fileviewer .asset-table th:nth-child(4){width:15%}
+.desktop-app .nx-fileviewer .asset-table td:first-child,
+.desktop-app .nx-fileviewer .asset-table td{
+  min-width:0;overflow-wrap:anywhere;
+}
+.desktop-app .nx-fileviewer .nsp-hexdump,
+.desktop-app .nx-fileviewer .nx-general-hex {
+  width:100%;max-width:100%;white-space:pre;
+  overflow-x:auto;box-sizing:border-box;
+}
+.desktop-app .nx-fileviewer .nsp-entry-metadata{min-width:0}
+@media (min-width:1101px) and (max-width:1450px) {
+  .desktop-app .nx-fileviewer .asset-content {
+    grid-template-columns:minmax(210px,27%) minmax(0,1fr) minmax(255px,27%);
+    max-height:73vh;
+  }
+  .desktop-app .nx-fileviewer .asset-inspector {
+    grid-column:auto;min-height:0;border-top:0;
+    border-left:1px solid #cfdae4;
+  }
+}
+@media (max-width:1100px) {
+  .desktop-app .nx-fileviewer .asset-content{
+    grid-template-columns:minmax(210px,37%) minmax(0,1fr);
+    max-height:none;
+  }
+  .desktop-app .nx-fileviewer .asset-inspector{
+    grid-column:1/-1;min-height:230px;border-left:0;
+    border-top:1px solid #cfdae4;
+  }
+}
+@media (max-width:770px) {
+  .desktop-app .nx-fileviewer .asset-content{grid-template-columns:minmax(0,1fr)}
+  .desktop-app .nx-fileviewer .asset-inspector{grid-column:1}
+}
