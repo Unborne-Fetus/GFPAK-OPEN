@@ -190,6 +190,40 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(native.sections[0].read(fs.file("main").offset, 23),
                              b"Test executable payload")
 
+    def test_update_patch_sparse_compressed_layers_are_identified_without_blocking_exefs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = bytearray(plain_nca([
+                ("pfs", pfs0_files([("main", b"readable exefs")])),
+                ("romfs", romfs_nested()),
+            ]))
+            # Mark the second NCA section as an update BKTR/CTR-Ex patch.
+            header = 0x400 + 0x200
+            archive[header + 4] = 4
+            struct.pack_into("<QQ", archive, header + 0x100, 0x1000, 0x800)
+            # Patch recognition must not hide the unaffected ExeFS section.
+            game = root / "update.nsp"
+            package(game, [("patch.nca", bytes(archive))])
+            reader = NativeNCA(NSPAnalyzer(game), 0)
+            self.assertEqual(reader.sections[0].filesystem().children()[0]["name"], "main")
+            self.assertTrue(reader.sections[1].compatibility()["update_patch"])
+            self.assertTrue(reader.sections[1].compatibility()["needs_base_nca"])
+            with self.assertRaisesRegex(NativeNCAError, "matching base NCA"):
+                reader.sections[1].filesystem()
+            # Sparse and compressed tables are recognized separately; neither is
+            # decoded as a normal RomFS because that would misrepresent contents.
+            archive[header + 4] = 1
+            struct.pack_into("<QQ", archive, header + 0x100, 0, 0)
+            struct.pack_into("<QQ", archive, header + 0x148, 0x2000, 0x180)
+            struct.pack_into("<QQ", archive, header + 0x178, 0x3000, 0x200)
+            package(game, [("patch.nca", bytes(archive))])
+            newer = NativeNCA(NSPAnalyzer(game), 0)
+            info = newer.sections[1].compatibility()
+            self.assertTrue(info["sparse"])
+            self.assertTrue(info["compressed_storage"])
+            with self.assertRaisesRegex(NativeNCAError, "sparse storage"):
+                newer.sections[1].filesystem()
+
     def test_locked_nca_has_help_and_no_fabricated_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
