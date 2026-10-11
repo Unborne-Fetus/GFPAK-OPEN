@@ -46,6 +46,162 @@ function summary(counts = {}) {
   );
 }
 
+async function loadNSPDashboard(root) {
+  if (!root || root.kind !== 'nsp') return;
+  activeNSP = root;
+  id('nspWorkbench').hidden = false;
+  const overview = await api.browse_nsp_summary(root.id);
+  if (activeNSP?.id !== root.id) return;
+  id('nspPackageTitle').textContent = overview.filename;
+  id('nspBytes').textContent = formatSize(overview.bytes);
+  id('nspFiles').textContent = overview.files.toLocaleString();
+  const ncaCount = (overview.formats['Encrypted NCA'] || 0);
+  id('nspNcas').textContent = ncaCount.toLocaleString();
+  id('nspHeader').textContent = formatSize(overview.header_bytes);
+  const breakdown = id('nspRoleBreakdown');
+  breakdown.replaceChildren();
+  const data = Object.entries(overview.roles).sort((a, b) => b[1] - a[1]);
+  const total = Math.max(1, overview.files);
+  for (const [role, count] of data) {
+    const card = document.createElement('div');
+    card.className = 'nsp-role-card';
+    const heading = document.createElement('div');
+    const name = document.createElement('span');
+    name.textContent = role;
+    const amount = document.createElement('strong');
+    amount.textContent = count + ' files · ' + formatSize(overview.role_bytes[role]);
+    heading.append(name, amount);
+    const bar = document.createElement('div');
+    bar.className = 'nsp-role-bar';
+    const fill = document.createElement('span');
+    fill.style.width = Math.max(1, (count / total * 100)).toFixed(1) + '%';
+    bar.append(fill);
+    card.append(heading, bar);
+    breakdown.append(card);
+  }
+  const warnings = overview.warnings || [];
+  id('nspWarningCount').textContent = warnings.length ? warnings.length + ' warnings' : 'No structural warnings';
+  const lines = id('nspWarnings');
+  lines.replaceChildren();
+  if (!warnings.length) {
+    lines.textContent = 'The PFS0 index passed structural checks. This does not validate encrypted NCA contents.';
+  } else {
+    for (const warning of warnings) {
+      const p = document.createElement('p');
+      p.textContent = warning;
+      lines.append(p);
+    }
+  }
+}
+
+async function showNSPSelection(row) {
+  const revision = ++selectionRevision;
+  const active = row?.kind === 'nspfile';
+  id('nspSelection').hidden = !active;
+  if (!active) return;
+  const list = id('nspEntryMetadata');
+  list.replaceChildren();
+  const fields = [
+    ['Role', row.role || 'Unidentified'],
+    ['Format', row.format || 'Opaque'],
+    ['File size', formatSize(row.size) + ' (' + row.size.toLocaleString() + ' bytes)'],
+    ['Absolute offset', '0x' + Number(row.offset || 0).toString(16).toUpperCase()],
+    ...(row.content_id ? [['Content ID', row.content_id]] : []),
+  ];
+  for (const [label, value] of fields) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = label;
+    dd.textContent = value;
+    list.append(dt, dd);
+  }
+  id('nspHexOffset').value = '0';
+  id('nspHashResult').textContent = '';
+  id('nspHexDump').textContent = 'Loading bounded preview…';
+  await readHexDump(revision);
+}
+
+async function readHexDump(revision = selectionRevision) {
+  if (!selected || selected.kind !== 'nspfile') return;
+  const row = selected;
+  const offset = Number(id('nspHexOffset').value);
+  const length = Number(id('nspHexLength').value);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error('Enter a nonnegative byte offset.');
+  }
+  const data = await api.browse_nsp_inspect(row.id, offset, length);
+  if (revision !== selectionRevision || selected?.id !== row.id) return;
+  const text = data.hex_lines.map(line => {
+    const offsetText = line.offset.toString(16).padStart(8, '0').toUpperCase();
+    return offsetText + '  ' + line.hex.padEnd(47, ' ') + '  |' + line.ascii + '|';
+  }).join('\n');
+  id('nspHexDump').textContent = text || '(No raw preview available for this entry)';
+  id('nspSignature').textContent = data.signature + ' · ' + data.note;
+}
+
+async function startNSPTask(kind, row) {
+  if (!row || nspTaskPolling) return;
+  const label = kind === 'hash' ? 'Computing SHA-256' :
+                kind === 'extract' ? 'Saving raw package entry' :
+                'Auditing every NSP entry';
+  try {
+    const accepted = await api.browse_nsp_start_task(kind, row.id);
+    if (!accepted) return;
+    nspTaskPolling = true;
+    id('nspTaskPanel').hidden = false;
+    id('nspProgressBar').style.width = '0%';
+    id('nspTaskLabel').textContent = label;
+    id('nspTaskDetails').textContent = 'Starting…';
+    id('nspCancel').disabled = false;
+    const poll = async () => {
+      try {
+        const status = await api.browse_nsp_task_status();
+        const pct = status.total
+          ? Math.min(100, Math.round(100 * status.done / status.total))
+          : (status.running ? 0 : 100);
+        id('nspProgressBar').style.width = pct + '%';
+        id('nspTaskDetails').textContent = pct + '% · ' + formatSize(status.done) +
+                                           ' / ' + formatSize(status.total);
+        if (status.running) {
+          window.setTimeout(poll, 350);
+          return;
+        }
+        nspTaskPolling = false;
+        id('nspCancel').disabled = true;
+        if (status.error) {
+          id('nspTaskDetails').textContent = 'Stopped: ' + status.error;
+          showNotice(status.error, true);
+          return;
+        }
+        if (kind === 'hash' && status.result) {
+          id('nspHashResult').textContent = 'SHA-256: ' + status.result.sha256 +
+            (status.result.content_id_comparison
+              ? '\nNCA content-ID prefix: ' + status.result.content_id_comparison +
+                ' (advisory, not an authenticity guarantee)' : '');
+          showNotice('Selected file SHA-256 computed successfully.');
+        } else if (kind === 'extract' && status.result) {
+          id('nspTaskDetails').textContent = status.result.message +
+                                             '\nSaved: ' + status.result.saved;
+          showNotice('Raw file saved successfully. No data was decrypted.');
+        } else if (kind === 'audit' && status.result) {
+          const result = status.result;
+          id('nspTaskDetails').textContent =
+            result.files_checked + ' files hashed · ' +
+            formatSize(result.bytes_hashed) + ' examined · ' +
+            result.content_id_differences +
+            ' advisory content-ID differences. ' + result.warning;
+          showNotice('Full PFS0 payload audit finished. All files were read for SHA-256.');
+        }
+      } catch (error) {
+        nspTaskPolling = false;
+        id('nspCancel').disabled = true;
+        showNotice(error.message || String(error), true);
+      }
+    };
+    await poll();
+  } catch (error) { showNotice(error.message || String(error), true); }
+}
+
 function select(row) {
   selected = row;
   id('assetSelected').textContent = row?.name || 'Nothing selected';
