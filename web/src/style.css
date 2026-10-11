@@ -652,3 +652,31 @@
  .desktop-app .nx-fileviewer .asset-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
  .desktop-app .nx-fileviewer .asset-filterbar{grid-template-columns:minmax(0,1fr)}
 }
+
+.desktop-app .nx-fileviewer .nx-top-menu{display:flex;align-items:center;gap:2px}
+.desktop-app .nx-fileviewer .nx-menu{position:relative}
+.desktop-app .nx-fileviewer .nx-menu summary{
+  list-style:none;cursor:pointer;padding:7px 10px;
+  color:#476171;border:1px solid transparent;border-radius:3px;
+  font:12px "Segoe UI",sans-serif;
+}
+.desktop-app .nx-fileviewer .nx-menu summary::-webkit-details-marker{display:none}
+.desktop-app .nx-fileviewer .nx-menu summary:hover,
+.desktop-app .nx-fileviewer .nx-menu[open] summary{
+  background:#dcebf5;border-color:#bad4e4
+}
+.desktop-app .nx-fileviewer .nx-menu-items{
+  z-index:50;position:absolute;top:100%;right:auto;min-width:225px;
+  background:#fff;border:1px solid #becbd4;border-radius:4px;
+  padding:5px;box-shadow:0 6px 16px #2a405333;
+}
+.desktop-app .nx-fileviewer .nx-menu-items button{
+  display:block;width:100%;text-align:left;border:0;border-radius:3px;
+  background:transparent;color:#38536a;
+  padding:8px 11px;font:12px "Segoe UI",sans-serif;
+  white-space:normal;
+}
+.desktop-app .nx-fileviewer .nx-menu-items button:hover{background:#dceefa}
+@media(max-width:770px){
+  .desktop-app .nx-fileviewer .nx-menu:last-child .nx-menu-items{right:0;left:auto}
+}
