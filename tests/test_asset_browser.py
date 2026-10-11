@@ -162,6 +162,31 @@ class AssetBrowserTests(unittest.TestCase):
                              (models / "pm0025_00_00.gfpak").resolve())
             self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
 
+    def test_link_real_extracted_files_under_selected_nca(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "game.nsp"
+            create_pfs0(package)
+            extraction = root / "extracted"
+            section = extraction / "Section 1" / "bin" / "archive" / "pokemon"
+            section.mkdir(parents=True)
+            (section / "pm0025_00_00.gfpak").write_bytes(b"sample")
+            browser = AssetBrowser(nca_workspace=root / "staging")
+            pkg = browser.open(package)
+            ncafile = browser.children(pkg["id"])["entries"][0]
+            self.assertTrue(ncafile["expandable"])
+            child = browser.attach_extracted_nca(ncafile["id"], extraction)
+            self.assertEqual(child["category"], "folder")
+            folders = browser.children(ncafile["id"])
+            self.assertEqual(folders["entries"][0]["id"], child["id"])
+            for name in ("Section 1", "bin", "archive", "pokemon"):
+                rows = browser.children(child["id"])
+                child = next(row for row in rows["entries"] if row["name"] == name)
+            model = browser.children(child["id"])["entries"][0]
+            self.assertEqual(model["name"], "pm0025_00_00.gfpak")
+            self.assertEqual(model["category"], "model archive")
+            self.assertTrue(package.read_bytes().startswith(b"PFS0"))
+
     def test_detailed_inspection_returns_bounded_bytes_and_png_preview(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
