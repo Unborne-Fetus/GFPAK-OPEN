@@ -1,3 +1,4 @@
+import { detectGameFromNames, gameCapabilities } from './game-support.js';
 /** Desktop-only NX-style read-only archive and extracted-asset explorer. */
 const id = name => document.getElementById(name);
 let api;
@@ -698,11 +699,26 @@ async function openNode(row) {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+function updateGameCompatibility(result) {
+  const filenames = [result.root?.name || '', result.directory || '',
+                     ...(result.children?.entries || []).slice(0, 30).map(row => row.name)];
+  const detected = detectGameFromNames(filenames);
+  const support = gameCapabilities(detected.id);
+  id('assetGameProfile').hidden = false;
+  id('assetGameName').textContent = detected.id === 'auto'
+    ? 'Game unknown · engine detection pending' : detected.name;
+  id('assetGameEngine').textContent = detected.engine || 'Unidentified engine';
+  id('assetGameSupport').textContent =
+    'Models: ' + support.models + ' · Textures: ' + support.textures +
+    ' · Animations: ' + support.animations;
+}
+
 async function openSource(mode) {
   try {
     showNotice('Opening selected files…');
     const result = await api.browse_choose(mode);
     if (!result) return;
+    updateGameCompatibility(result);
     scanListing = null;
     activeNSP = null;
     pathStack = [{root: result.root, listing: result.children}];
