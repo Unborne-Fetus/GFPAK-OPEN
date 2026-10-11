@@ -16,20 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Build offline 3D studio assets
-        run: |
-          npm install
-          $env:GFPAK_DESKTOP = '1'
-          npm run build
-      - name: Bundle Blender Python dependencies
-        run: |
-          python -m pip install --disable-pip-version-check --only-binary=:all: --platform any --implementation py --python-version 3.11 --abi none --target blender_deps flatbuffers==25.2.10 requests==2.32.5
-          python -c "from gfpak_open.blender_dependencies import has_dependencies; assert has_dependencies('blender_deps')"
-      - name: Build Windows GUI EXE
-        run: |
-          python -m pip install pyinstaller pywebview pyooz==0.0.8
-          python -c "import ooz; assert hasattr(ooz, 'decompress')"
-          python -m PyInstaller --onefile --windowed --name GFPAK-OPEN --collect-all webview --hidden-import ooz --add-data "blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open/blender_worker.py;gfpak_open" launch.py
+      - name: Build portable EXE through run.bat
+        shell: cmd
+        run: call run.bat --build-only
       - uses: actions/upload-artifact@v4
         with:
           name: GFPAK-OPEN-Windows
