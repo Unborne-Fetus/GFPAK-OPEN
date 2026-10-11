@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import struct
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -386,101 +387,218 @@ class PartitionFS:
         return self.files[name]
 
 
+class _RomFSMetadataTable:
+    """Random-access RomFS metadata, cached in a bounded number of 64 KiB pages.
+
+    RomFS file/directory tables can be hundreds of MiB in large games. Do not
+    load the entire table, even once; only fetch the bytes needed to display the
+    current directory, and reuse those pages for sibling entries.
+    """
+
+    PAGE_BYTES = 64 * 1024
+    CACHE_PAGES = 32
+
+    def __init__(self, section: NativeSection, offset: int, size: int):
+        if size < 0 or offset < 0 or offset > section.size or size > section.size - offset:
+            raise NativeNCAError("RomFS metadata table exceeds its NCA section.")
+        self.section = section
+        self.offset = offset
+        self.size = size
+        self._pages: OrderedDict[int, bytes] = OrderedDict()
+
+    def _page(self, page: int) -> bytes:
+        if page in self._pages:
+            self._pages.move_to_end(page)
+            return self._pages[page]
+        start = page * self.PAGE_BYTES
+        length = min(self.PAGE_BYTES, self.size - start)
+        data = self.section.read(self.offset + start, length)
+        if len(data) != length:
+            raise NativeNCAError("Truncated RomFS metadata page.")
+        self._pages[page] = data
+        if len(self._pages) > self.CACHE_PAGES:
+            self._pages.popitem(last=False)
+        return data
+
+    def read(self, at: int, size: int) -> bytes:
+        if at < 0 or size < 0 or at > self.size or size > self.size - at:
+            raise NativeNCAError("RomFS metadata entry is outside its table.")
+        pieces = []
+        remaining = size
+        while remaining:
+            page, column = divmod(at, self.PAGE_BYTES)
+            block = self._page(page)
+            take = min(remaining, len(block) - column)
+            if take <= 0:
+                raise NativeNCAError("Invalid RomFS metadata page boundary.")
+            pieces.append(block[column:column + take])
+            at += take
+            remaining -= take
+        return b"".join(pieces)
+
+
 class RomFS:
-    """Lazy Nintendo Switch RomFS directory/file tables with loop protection."""
+    """On-demand RomFS filesystem traversal with a paginated directory tree.
+
+    A section's *size* is not a reason to reject it. All metadata comes from
+    bounded page reads; directories containing more than 3,000 entries expose
+    continuation cursors instead of being rejected or silently truncated.
+    """
+
+    PAGE_SIZE = 250
+    MAX_PAGE_SIZE = 500
+    MAX_VISITED_ENTRIES = 2_000_000
 
     def __init__(self, section: NativeSection, offset: int):
         self.section = section
         self.offset = offset
         header = section.read(offset, 0x50)
-        fields = struct.unpack_from("<10Q", header)
+        if len(header) != 0x50:
+            raise NativeNCAError("Truncated RomFS header.")
         (header_size, dir_hash_off, dir_hash_size, dir_table_off, dir_table_size,
-         file_hash_off, file_hash_size, file_table_off, file_table_size, data_off) = fields
+         file_hash_off, file_hash_size, file_table_off, file_table_size, data_off) = (
+            struct.unpack("<10Q", header))
         if header_size != 0x50:
             raise NativeNCAError("RomFS header does not have the expected 0x50-byte structure.")
+        if offset < 0 or offset > section.size:
+            raise NativeNCAError("RomFS image begins outside the NCA section.")
+        remaining = section.size - offset
         for begin, length in ((dir_hash_off, dir_hash_size),
                               (dir_table_off, dir_table_size),
                               (file_hash_off, file_hash_size),
                               (file_table_off, file_table_size)):
-            if begin > section.size - offset or length > section.size - offset - begin:
+            if begin > remaining or length > remaining - begin:
                 raise NativeNCAError("RomFS metadata is outside the section.")
-        if dir_table_size < 0x18 or dir_table_size > MAX_META or file_table_size > MAX_META:
-            raise NativeNCAError("RomFS directory tables exceed safety limits.")
-        if data_off > section.size - offset:
+        if dir_table_size < 0x18:
+            raise NativeNCAError("RomFS directory metadata is incomplete.")
+        if data_off > remaining:
             raise NativeNCAError("RomFS file data area lies outside the section.")
         self.dir_table_off, self.dir_table_size = offset + dir_table_off, dir_table_size
         self.file_table_off, self.file_table_size = offset + file_table_off, file_table_size
         self.file_data_off = offset + data_off
-        # Cache only the small bounded filesystem tables, not gigabytes of
-        # encrypted model/texture payload. Tree expansion is much faster.
-        self._directory_table = section.read(self.dir_table_off, self.dir_table_size)
-        self._file_table = section.read(self.file_table_off, self.file_table_size)
-        self._directories = {"": 0}
+        self._directory_table = _RomFSMetadataTable(
+            section, self.dir_table_off, self.dir_table_size)
+        self._file_table = _RomFSMetadataTable(
+            section, self.file_table_off, self.file_table_size)
+        self._directories: dict[str, int] = {"": 0}
         self._files: dict[str, FileInfo] = {}
-        self._children: dict[str, list[dict]] = {}
+        # Only pages requested by the user are remembered, not complete folders.
+        self._page_cache: dict[tuple[str, str], dict] = {}
+        self._issued: dict[str, set[str]] = {}
+        self._seen: dict[str, dict[str, set[int]]] = {}
 
     def _directory(self, at: int):
-        if at == NONE or at > self.dir_table_size - 24:
+        if at == NONE or at < 0 or at > self.dir_table_size - 24:
             raise NativeNCAError("Invalid RomFS directory table pointer.")
-        data = self._directory_table
-        parent, sibling, child_dir, child_file, hashed, name_size = struct.unpack_from("<6I", data, at)
+        data = self._directory_table.read(at, 24)
+        parent, sibling, child_dir, child_file, hashed, name_size = struct.unpack(
+            "<6I", data)
         if name_size > 4096 or 24 + name_size > self.dir_table_size - at:
             raise NativeNCAError("Invalid RomFS directory name size.")
-        name = data[at + 24:at + 24 + name_size]
+        name = self._directory_table.read(at + 24, name_size)
         return (_filename(name) if name else "", sibling, child_dir, child_file)
 
     def _file(self, at: int):
-        if at == NONE or at > self.file_table_size - 32:
+        if at == NONE or at < 0 or at > self.file_table_size - 32:
             raise NativeNCAError("Invalid RomFS file table pointer.")
-        data = self._file_table
-        parent, sibling, begin, size, hashed, name_length = struct.unpack_from("<IIQQII", data, at)
+        data = self._file_table.read(at, 32)
+        parent, sibling, begin, size, hashed, name_length = struct.unpack(
+            "<IIQQII", data)
         if name_length > 4096 or 32 + name_length > self.file_table_size - at:
             raise NativeNCAError("Invalid RomFS filename length.")
-        name = _filename(data[at + 32:at + 32 + name_length])
+        name = _filename(self._file_table.read(at + 32, name_length))
         if (self.file_data_off > self.section.size or
                 begin > self.section.size - self.file_data_off or
                 size > self.section.size - self.file_data_off - begin):
             raise NativeNCAError("RomFS file extends beyond NCA section.")
         return name, sibling, self.file_data_off + begin, size
 
-    def children(self, folder: str = "") -> list[dict]:
-        if folder in self._children:
-            return list(self._children[folder])
+    def children_page(self, folder: str = "", cursor: str | None = None,
+                      limit: int = PAGE_SIZE) -> dict:
+        """Return one bounded page and an opaque continuation cursor, if any."""
         if folder not in self._directories:
             raise NativeNCAError("Unknown RomFS folder.")
+        if not isinstance(limit, int) or not 1 <= limit <= self.MAX_PAGE_SIZE:
+            raise NativeNCAError("Invalid RomFS page size.")
+        if cursor is not None and (
+            not isinstance(cursor, str) or cursor not in self._issued.get(folder, set())
+        ):
+            raise NativeNCAError("Invalid or expired RomFS directory cursor.")
+        key = (folder, cursor or "")
+        if key in self._page_cache:
+            cached = self._page_cache[key]
+            return {"entries": list(cached["entries"]),
+                    "next_cursor": cached["next_cursor"]}
+
         _, _, first_dir, first_file = self._directory(self._directories[folder])
+        if cursor is None:
+            phase = "d" if first_dir != NONE else "f"
+            offset = first_dir if phase == "d" else first_file
+        else:
+            phase, encoded = cursor.split(":", 1)
+            if phase not in ("d", "f") or len(encoded) != 8:
+                raise NativeNCAError("Invalid RomFS page cursor.")
+            try:
+                offset = int(encoded, 16)
+            except ValueError as error:
+                raise NativeNCAError("Invalid RomFS page cursor.") from error
+
+        seen = self._seen.setdefault(folder, {"d": set(), "f": set()})
         listing = []
-        seen = set()
-        cursor = first_dir
-        while cursor != NONE:
-            if cursor in seen or len(seen) >= MAX_CHILDREN:
-                raise NativeNCAError("RomFS directory chain is cyclic or too large.")
-            seen.add(cursor)
-            name, sibling, _, _ = self._directory(cursor)
-            if not name:
-                raise NativeNCAError("Unexpected empty nested RomFS directory.")
-            child_path = (folder + "/" + name).strip("/")
-            self._directories[child_path] = cursor
-            listing.append({"name": name, "path": child_path, "type": "directory", "size": 0})
-            cursor = sibling
-        seen.clear()
-        cursor = first_file
-        while cursor != NONE:
-            if cursor in seen or len(seen) + len(listing) >= MAX_CHILDREN:
-                raise NativeNCAError("RomFS file chain is cyclic or too large.")
-            seen.add(cursor)
-            name, sibling, begin, size = self._file(cursor)
-            child_path = (folder + "/" + name).strip("/")
-            self._files[child_path] = FileInfo(name, child_path, begin, size)
-            listing.append({"name": name, "path": child_path, "type": "file", "size": size})
-            cursor = sibling
-        self._children[folder] = listing
-        return list(listing)
+        while len(listing) < limit:
+            if phase == "d" and offset == NONE:
+                phase, offset = "f", first_file
+            if offset == NONE:
+                break
+            if offset in seen[phase]:
+                raise NativeNCAError("RomFS directory contains a cycle in its entry pointers.")
+            if len(seen["d"]) + len(seen["f"]) >= self.MAX_VISITED_ENTRIES:
+                raise NativeNCAError("RomFS folder has an unsupported number of entries.")
+            seen[phase].add(offset)
+            if phase == "d":
+                name, sibling, _, _ = self._directory(offset)
+                if not name:
+                    raise NativeNCAError("Unexpected unnamed nested RomFS directory.")
+                child_path = (folder + "/" + name).strip("/")
+                if child_path in self._directories:
+                    raise NativeNCAError("RomFS directory contains duplicate entries.")
+                self._directories[child_path] = offset
+                listing.append({"name": name, "path": child_path,
+                                "type": "directory", "size": 0})
+            else:
+                name, sibling, begin, size = self._file(offset)
+                child_path = (folder + "/" + name).strip("/")
+                if child_path in self._files:
+                    raise NativeNCAError("RomFS folder contains duplicate filenames.")
+                self._files[child_path] = FileInfo(name, child_path, begin, size)
+                listing.append({"name": name, "path": child_path,
+                                "type": "file", "size": size})
+            offset = sibling
+
+        if phase == "d" and offset == NONE:
+            phase, offset = "f", first_file
+        next_cursor = f"{phase}:{offset:08x}" if offset != NONE else None
+        if next_cursor:
+            self._issued.setdefault(folder, set()).add(next_cursor)
+        response = {"entries": listing, "next_cursor": next_cursor}
+        self._page_cache[key] = response
+        return {"entries": list(listing), "next_cursor": next_cursor}
+
+    def children(self, folder: str = "") -> list[dict]:
+        """Compatibility API: return first page; use children_page to continue."""
+        return self.children_page(folder)["entries"]
 
     def file(self, name: str) -> FileInfo:
         if name not in self._files:
             parent = name.rpartition("/")[0]
-            self.children(parent)
+            cursor = None
+            while True:
+                page = self.children_page(parent, cursor)
+                if name in self._files:
+                    break
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
         if name not in self._files:
             raise NativeNCAError("RomFS file is not part of the selected directory.")
         return self._files[name]
