@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 from gfpak_open.asset_browser import AssetBrowser, classify, pfs0_entries
+from gfpak_open.converter import fnv1a64
 
 
 def create_gfpak(path):
@@ -17,6 +18,38 @@ def create_gfpak(path):
     data += struct.pack("<QII", 0xAB, 0, 0)
     data += struct.pack("<HHIIIII", 0, 0, 5, 5, 0, 112, 0)
     path.write_bytes(data + b"HELLO")
+
+
+def create_resolved_gfpak(path):
+    """Synthetic model family with verified texture/animation references."""
+    contents = [
+        b"model description body.bntx\\x00pikachu_idle.tranm\\x00",
+        b"triangle indices", b"vertex buffers", b"fake BNTX", b"fake animation",
+    ]
+    names = ["pm0025_00_00.trmdl", "pm0025_00_00.trmsh",
+             "pm0025_00_00.trmbf", "body.bntx", "pikachu_idle.tranm"]
+    count = len(names)
+    paths = 48
+    folder_offset = paths + 8 * count
+    table_offset = folder_offset + 16 + count * 16
+    data_start = table_offset + count * 24
+    output = bytearray(data_start + sum(len(part) for part in contents))
+    output[:8] = b"GFLXPACK"
+    struct.pack_into("<4I", output, 8, 0x1000, 0, count, 1)
+    struct.pack_into("<QQ", output, 24, table_offset, paths)
+    struct.pack_into("<Q", output, 40, folder_offset)
+    struct.pack_into("<QII", output, folder_offset, 0xABCDEF, count, 0)
+    offset = data_start
+    for index, (name, part) in enumerate(zip(names, contents)):
+        hash_ = int(fnv1a64(name), 16)
+        struct.pack_into("<Q", output, paths + index * 8, hash_)
+        struct.pack_into("<QII", output, folder_offset + 16 + index * 16,
+                         hash_, index, 0)
+        struct.pack_into("<HHIIIII", output, table_offset + index * 24,
+                         0, 0, len(part), len(part), 0, offset, 0)
+        output[offset:offset + len(part)] = part
+        offset += len(part)
+    path.write_bytes(output)
 
 
 def create_pfs0(path):
@@ -86,6 +119,18 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertTrue(archive.is_file())
             with self.assertRaises(ValueError):
                 browser.preview_source(report["entries"][0]["id"])
+
+    def test_gfpak_hash_verified_metadata_labels_textures_animations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "pm0025_00_00.gfpak"
+            create_resolved_gfpak(archive)
+            browser = AssetBrowser()
+            root = browser.open(archive)
+            listing = browser.children(root["id"])
+            self.assertEqual(listing["counts"]["model"], 1)
+            self.assertEqual(listing["counts"]["mesh"], 2)
+            self.assertEqual(listing["counts"]["texture"], 1)
+            self.assertEqual(listing["counts"]["animation"], 1)
 
     def test_zip_tree_rejects_traversal_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
