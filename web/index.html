@@ -259,6 +259,12 @@
             <div id="assetBreadcrumb" class="asset-breadcrumb">No game source selected</div>
             <button type="button" id="assetScan" class="button button-secondary" disabled>⌕ Scan assets</button>
           </div>
+          <div id="ncaReaderBar" class="nca-reader-bar" hidden>
+            <span class="nca-reader-label">NCA SECTION BROWSER</span>
+            <button id="ncaSelectReader" type="button" class="button button-secondary">Choose NCA reader</button>
+            <button id="ncaSelectKeyset" type="button" class="button button-secondary">Choose local keyset</button>
+            <span id="ncaReaderStatus" class="nca-reader-status" aria-live="polite">Sections need a compatible local reader.</span>
+          </div>
           <div class="asset-filterbar">
             <input id="assetSearch" class="field" type="search" placeholder="Filter filenames, hashes, Pokémon IDs…" aria-label="Filter discovered assets" />
             <select id="assetCategory" class="field" aria-label="Filter type">
