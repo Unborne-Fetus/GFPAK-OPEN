@@ -23,7 +23,7 @@ def create_gfpak(path):
 def create_resolved_gfpak(path):
     """Synthetic model family with verified texture/animation references."""
     contents = [
-        b"model description body.bntx\\x00pikachu_idle.tranm\\x00",
+        b"model description body.bntx\x00pikachu_idle.tranm\x00",
         b"triangle indices", b"vertex buffers", b"fake BNTX", b"fake animation",
     ]
     names = ["pm0025_00_00.trmdl", "pm0025_00_00.trmsh",
