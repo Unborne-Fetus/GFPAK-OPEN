@@ -600,6 +600,16 @@ async function openNode(row) {
     const listing = await api.browse_children(row.id);
     scanListing = null;
     pathStack.push({root: row, listing});
+    nxTreeListings.set(row.id, listing);
+    if (nxTreeItems.has(row.id)) {
+      nxPopulateChildren(row, listing);
+      const item = nxTreeItems.get(row.id);
+      item.expanded = true;
+      item.children.hidden = false;
+      item.toggle.textContent = '▾';
+      item.node.setAttribute('aria-expanded', 'true');
+      nxRevealExistingBranch(row).catch(() => {});
+    }
     renderListing();
   } catch (error) { showNotice(error.message || String(error), true); }
 }
@@ -610,12 +620,28 @@ async function openSource(mode) {
     const result = await api.browse_choose(mode);
     if (!result) return;
     scanListing = null;
+    activeNSP = null;
     pathStack = [{root: result.root, listing: result.children}];
+    nxResetTree(result.root, result.children);
+    id('assetAttach').disabled = result.root.kind !== 'nsp';
     id('assetSearch').value = '';
     id('assetCategory').value = 'all';
     id('assetScan').disabled = mode !== 'folder';
     id('assetScanSummary').textContent = 'Browse directories or scan extracted files for model, texture and animation references.';
     renderListing();
+  } catch (error) { showNotice(error.message || String(error), true); }
+}
+
+async function nxAttachExtractedFolder() {
+  try {
+    const attached = await api.browse_attach_extracted();
+    if (!attached) return;
+    activeNSP = null;
+    scanListing = null;
+    pathStack = [{root: attached.root, listing: attached.children}];
+    nxResetTree(attached.root, attached.children);
+    renderListing();
+    showNotice('Existing extracted directory linked under the NSP. Expand the folder in the tree to browse its files.');
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -688,6 +714,7 @@ function initialize() {
     });
   }
   id('assetOpenFolder').addEventListener('click', () => openSource('folder'));
+  id('assetAttach').addEventListener('click', nxAttachExtractedFolder);
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   id('assetBack').addEventListener('click', () => {
     if (scanListing) scanListing = null;
