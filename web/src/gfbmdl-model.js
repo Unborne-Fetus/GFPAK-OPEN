@@ -1,3 +1,4 @@
+import { selectNativeAnimations } from './animation-association.js';
 /**
  * Turn decoded legacy Game Freak GFBMDL mesh data into an actual Three.js scene.
  * Uses independent FlatBuffers geometry reader; no Blender/Python/remote service.
@@ -146,13 +147,12 @@ function buildLegacyRig(root, entries) {
   return { bones, skeleton, deformingIndices };
 }
 
-async function readLegacyAnimations(project, rig, report) {
+async function readLegacyAnimations(project, selected, rig, report) {
   if (!rig?.bones?.length) return [];
-  const sources = project.items.filter(item => getExtension(item.path) === '.gfbanm');
-  if (sources.length > 96) {
-    report('Import fewer GFBANM files at once to avoid decoding unrelated game animations.');
-    return [];
-  }
+  const sources = selectNativeAnimations(project.items, selected, 64)
+    .filter(item => getExtension(item.path) === '.gfbanm');
+  if (sources.length < project.items.filter(item => getExtension(item.path) === '.gfbanm').length)
+    report('Prioritizing ' + sources.length + ' matching GFBANM clips from this project.');
   const clips = [];
   for (const source of sources) {
     try {
@@ -220,7 +220,7 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
     }
   }
 
-  const animations = await readLegacyAnimations(project, rig, report);
+  const animations = await readLegacyAnimations(project, selected, rig, report);
   report('Decoded ' + model.stats.meshCount + ' real GFBMDL meshes and ' +
     model.stats.vertexCount.toLocaleString() + ' vertices, ' +
     (rig?.bones.length || 0) + ' bones and ' + animations.length + ' animation clips. ' +
