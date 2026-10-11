@@ -7,6 +7,7 @@ them. The original assets are never modified.
 """
 from __future__ import annotations
 
+import base64
 import os
 import re
 import struct
@@ -80,6 +81,7 @@ class AssetBrowser:
         self._pfs: dict[Path, NSPAnalyzer] = {}
         self.root_id: str | None = None
         self.root_path: Path | None = None
+        self._linked_extracted: dict | None = None
 
     def _node(self, kind: str, path: Path, *, inner: str = "",
               index: int = -1, name: str | None = None,
@@ -90,12 +92,12 @@ class AssetBrowser:
         id_ = uuid.uuid4().hex
         if name is None:
             name = path.name
-        category = ("folder" if kind in {"directory", "zipdir"} else
+        category = ("folder" if kind in {"directory", "zipdir", "linked_dir"} else
                     classify(name) if kind != "gfpak_resource" else classify(name))
         result = {"id": id_, "kind": kind, "path": str(path), "name": name,
                   "category": category, "size": size if size is not None else 0,
                   "inner": inner, "index": index,
-                  "expandable": kind in {"directory", "gfpak", "zip", "zipdir", "nsp"}}
+                  "expandable": kind in {"directory", "linked_dir", "gfpak", "zip", "zipdir", "nsp"}}
         self._keys[key] = id_
         self._nodes[id_] = result
         return result
@@ -110,6 +112,7 @@ class AssetBrowser:
         self._zip_lists.clear()
         self._inferred.clear()
         self._pfs.clear()
+        self._linked_extracted = None
         self.root_path = candidate
         root = self._fs_node(candidate)
         self.root_id = root["id"]
@@ -201,6 +204,24 @@ class AssetBrowser:
                 self._zip_lists[path] = (sorted(items), items)
         return self._zip_lists[path]
 
+    def attach_extracted(self, path: str | Path) -> dict:
+        """Attach a user-chosen, already-extracted directory under an NSP root.
+
+        This does not decrypt NCA data or claim these files came from one
+        particular NCA section. Only the directory chosen by the user is read.
+        """
+        if self.root_path is None or self.root_path.suffix.lower() != ".nsp":
+            raise ValueError("Open an NSP package before linking extracted game files")
+        folder = Path(path).expanduser().resolve(strict=True)
+        if not folder.is_dir():
+            raise ValueError("The linked extraction must be a directory")
+        node = self._node("linked_dir", folder,
+                          name="Extracted game files (linked)")
+        node["category"] = "folder"
+        node["linked"] = True
+        self._linked_extracted = node
+        return self._public(node)
+
     def nsp_page(self, id_: str, page: int = 0, query: str = '',
                  category: str = 'all', limit: int = 250) -> dict:
         """Paginate/filter all NSP entries, including those past the UI row cap."""
@@ -241,6 +262,9 @@ class AssetBrowser:
             item['content_id'] = entry.content_id
             item['offset'] = entry.offset
             output.append(self._public(item))
+        if self._linked_extracted and page == 0 and not query and category == "all":
+            output.insert(0, self._public(self._linked_extracted))
+            counts["folder"] += 1
         return {'root': self._public(node), 'entries': output,
                 'counts': dict(counts), 'truncated': total > limit,
                 'pagination': {'page': page, 'pages': pages, 'page_size': limit,
@@ -254,7 +278,7 @@ class AssetBrowser:
         if kind == "nsp":
             return self.nsp_page(id_)
         results = []
-        if kind == "directory":
+        if kind in {"directory", "linked_dir"}:
             for entry in sorted(path.iterdir(),
                                 key=lambda item: (not item.is_dir(), item.name.lower())):
                 if entry.is_symlink():
@@ -337,6 +361,86 @@ class AssetBrowser:
     def nsp_inspect(self, node_id: str, offset: int = 0, length: int = 256) -> dict:
         analyzer, index = self.nsp_entry(node_id)
         return analyzer.inspect(index, offset=offset, length=length)
+
+    def item_details(self, id_: str) -> dict:
+        """Bounded content sniffing for the selected file in the native tree."""
+        node = self.node(id_)
+        kind = node["kind"]
+        path = Path(node["path"])
+        result = {
+            "name": node["name"],
+            "kind": kind,
+            "category": node["category"],
+            "size": node.get("size", 0),
+            "location": str(path if kind in {"file", "directory", "linked_dir"} else path.name),
+            "hex_lines": [],
+            "signature": "",
+            "thumbnail": None,
+            "notes": [],
+        }
+        if kind in {"directory", "linked_dir", "zipdir"}:
+            result["notes"].append("Directory - expand it to inspect files.")
+            return result
+        if kind == "nspfile":
+            inspected = self.nsp_inspect(id_, length=256)
+            result.update({
+                "size": inspected["size"], "hex_lines": inspected["hex_lines"],
+                "signature": inspected["signature"],
+                "notes": [inspected["note"]],
+            })
+            return result
+        data = b""
+        try:
+            if kind == "gfpak_resource":
+                resource = self._archive(path).resources[node["index"]]
+                result["size"] = resource.size
+                result["compression"] = resource.compression
+                result["hash"] = resource.path_hash
+                if resource.size <= 8 * 1024 * 1024:
+                    data = self._archive(path).read_resource(resource)[:512]
+                else:
+                    result["notes"].append("Resource too large for inline preview.")
+            elif kind == "zipfile":
+                with zipfile.ZipFile(path) as archive:
+                    entry = archive.getinfo(node["inner"])
+                    if entry.file_size > 256 * 1024 * 1024:
+                        result["notes"].append("Large ZIP member - preview limited.")
+                    with archive.open(entry) as stream:
+                        data = stream.read(512)
+            elif kind == "file":
+                with path.open("rb") as stream:
+                    data = stream.read(512)
+            else:
+                result["notes"].append("Select a contained file for inspection.")
+                return result
+        except (OSError, ValueError, GFPakError, zipfile.BadZipFile) as exc:
+            result["notes"].append("Preview unavailable: " + str(exc)[:250])
+            return result
+        for i in range(0, min(len(data), 256), 16):
+            segment = data[i:i+16]
+            result["hex_lines"].append({
+                "offset": i,
+                "hex": " ".join(f"{part:02X}" for part in segment),
+                "ascii": "".join(chr(part) if 32 <= part < 127 else "." for part in segment),
+            })
+        signatures = [
+            (b"GFLXPACK", "Game Freak GFPAK archive"),
+            (b"PFS0", "Nintendo Switch PFS0 file table"),
+            (b"glTF", "Binary glTF model"),
+            (b"\x89PNG\r\n\x1a\n", "PNG image"),
+            (b"\xff\xd8\xff", "JPEG image"),
+            (b"DDS ", "DDS texture"),
+            (b"BNTX", "BNTX texture container"),
+            (b"PK\x03\x04", "ZIP container"),
+        ]
+        result["signature"] = next((name for magic, name in signatures
+                                    if data.startswith(magic)), "Unrecognized binary data")
+        if node["category"] == "texture" and kind == "file" and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+            if path.stat().st_size < 2 * 1024 * 1024:
+                mime = {"png": "image/png", "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg", "webp": "image/webp"}[path.suffix.lower()[1:]]
+                result["thumbnail"] = "data:" + mime + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+        return result
 
     def preview_source(self, id_: str) -> Path:
         node = self.node(id_)
