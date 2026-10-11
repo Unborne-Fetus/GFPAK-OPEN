@@ -202,17 +202,31 @@ test('NSP package workbench displays roles, hex and integrity results without ex
                category:'texture',role:'Artwork',format:'Image',
                offset:192,size:8,expandable:false}
             ],
-            counts:{'encrypted container':1,texture:1},
-            truncated:false,note:'Outer NSP package only'
+            counts:{'encrypted container':1,texture:1,metadata:1},
+            pagination:{page:0,pages:2,page_size:2,total:3,first:1,last:2},
+            truncated:true,note:'Outer NSP package only'
           }
         }),
         browse_nsp_summary: async () => ({
-          filename:'pokemon-demo.nsp',bytes:4096,files:2,header_bytes:128,
+          filename:'pokemon-demo.nsp',bytes:4096,files:3,header_bytes:128,
           formats:{'Encrypted NCA':1,Image:1},
-          roles:{'Content archive NCA':1,Artwork:1},
-          role_bytes:{'Content archive NCA':64,Artwork:8},
+          roles:{'Content archive NCA':1,Artwork:1,Ticket:1},
+          role_bytes:{'Content archive NCA':64,Artwork:8,Ticket:128},
           warnings:[],content_ids:1
         }),
+        browse_nsp_page: async (root, page, query, category) => {
+          const metadata = {id:'ticket',kind:'nspfile',name:'license.tik',
+                            category:'metadata',role:'Ticket',format:'Ticket',
+                            offset:200,size:128,expandable:false};
+          return {
+            root:{id:'pkg',kind:'nsp',name:'pokemon-demo.nsp'},
+            entries: query || category === 'metadata' ? [metadata] : page === 1 ? [metadata] : [],
+            counts:{'encrypted container':1,texture:1,metadata:1},
+            pagination:{page:page||0,pages:2,page_size:2,total:3,
+                        first:page===1?3:1,last:page===1?3:2},
+            note:'Outer index'
+          };
+        },
         browse_nsp_inspect: async (node, offset, length) => ({
           name:'0123456789abcdef0123456789abcdef.nca',
           hex_lines:[{offset:0,hex:'50 46 53 30',ascii:'PFS0'}],
@@ -235,7 +249,7 @@ test('NSP package workbench displays roles, hex and integrity results without ex
   await page.locator('#tabAssets').click();
   await page.locator('#assetOpenFile').click();
   await expect(page.locator('#nspWorkbench')).toBeVisible();
-  await expect(page.locator('#nspFiles')).toHaveText('2');
+  await expect(page.locator('#nspFiles')).toHaveText('3');
   await expect(page.locator('#nspNcas')).toHaveText('1');
   await expect(page.locator('#nspRoleBreakdown')).toContainText('Content archive NCA');
   await page.locator('#assetRows tr').filter({hasText:'.nca'}).click();
@@ -247,4 +261,10 @@ test('NSP package workbench displays roles, hex and integrity results without ex
   await expect(page.locator('#nspHashResult')).toContainText('advisory');
   await page.locator('#nspManifest').click();
   await expect(page.locator('#assetNotice')).toContainText('package-index.json');
+  await expect(page.locator('#nspPager')).toBeVisible();
+  await page.locator('#nspNext').click();
+  await expect(page.locator('#assetRows')).toContainText('license.tik');
+  await page.locator('#assetCategory').selectOption('metadata');
+  await expect(page.locator('#assetRows')).toContainText('license.tik');
+
 });
