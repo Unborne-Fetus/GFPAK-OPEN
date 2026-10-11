@@ -764,29 +764,38 @@ class AssetBrowser:
                         }
                         total = 0
                         added = 0
-                        for row in fs.children(parent):
-                            if added >= 48 or total >= 128 * 1024 * 1024:
+                        # Walk bounded directory pages, not just the first
+                        # 250 files; model companions often sort much later.
+                        cursor = None
+                        for _ in range(32):
+                            batch = fs.children_page(parent, cursor=cursor, limit=250)
+                            for row in batch["entries"]:
+                                if added >= 48 or total >= 128 * 1024 * 1024:
+                                    break
+                                if row["type"] != "file" or row["path"] == name:
+                                    continue
+                                if pokemon_id(row["path"]) != token:
+                                    continue
+                                companion_name = row["name"]
+                                if Path(companion_name).suffix.lower() not in companion_types:
+                                    continue
+                                size = row["size"]
+                                if (size <= 0 or size > 64 * 1024 * 1024 or
+                                        total + size > 128 * 1024 * 1024):
+                                    continue
+                                sibling_target = directory / companion_name
+                                if sibling_target.is_file():
+                                    continue
+                                try:
+                                    self._nca_sections.extract_one(
+                                        reader, index, section, row["path"], sibling_target)
+                                except (OSError, ValueError):
+                                    continue
+                                total += size
+                                added += 1
+                            cursor = batch["next_cursor"]
+                            if not cursor or added >= 48 or total >= 128 * 1024 * 1024:
                                 break
-                            if row["type"] != "file" or row["path"] == name:
-                                continue
-                            if pokemon_id(row["path"]) != token:
-                                continue
-                            companion_name = row["name"]
-                            if Path(companion_name).suffix.lower() not in companion_types:
-                                continue
-                            size = row["size"]
-                            if size <= 0 or size > 64 * 1024 * 1024 or total + size > 128 * 1024 * 1024:
-                                continue
-                            sibling_target = directory / companion_name
-                            if sibling_target.is_file():
-                                continue
-                            try:
-                                self._nca_sections.extract_one(
-                                    reader, index, section, row["path"], sibling_target)
-                            except (OSError, ValueError):
-                                continue
-                            total += size
-                            added += 1
                     except (OSError, ValueError):
                         pass
             return output
