@@ -12,6 +12,7 @@ def archive_bytes():
     with zipfile.ZipFile(data, "w") as archive:
         for name in ("__init__.py", "gfbmdl_import.py", "gfbanm_importer.py"):
             archive.writestr("Pokemon-Switch-Model-Importer-Blender-main/" + name, "# test")
+        archive.writestr("Pokemon-Switch-Model-Importer-Blender-main/GFLib/parsers/model.py", "# nested")
     return data.getvalue()
 
 class ImporterSetupTests(unittest.TestCase):
@@ -31,6 +32,7 @@ class ImporterSetupTests(unittest.TestCase):
                 with patch.object(installer.urllib.request, "urlopen", return_value=io.BytesIO(archive_bytes())):
                     self.assertEqual(installer.ensure_addon(), str(target))
             self.assertTrue(installer.is_addon(target))
+            self.assertTrue((target / "GFLib" / "parsers" / "model.py").is_file())
 
 if __name__ == "__main__":
     unittest.main()
