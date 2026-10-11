@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .addon_manager import find_addon, ensure_addon
 from .asset_browser import AssetBrowser
+from .nca_sections import find_local_nca_reader
 from .blender_detection import find_blender, can_launch_blender
 from .converter import ConversionOptions, convert_model, validate_glb
 
@@ -42,7 +43,8 @@ class DesktopAPI:
         self.setup = {"state": "checking", "error": ""}
         self._setup_started = False
         self._checked_blender: str | None = None
-        self._browser = AssetBrowser()
+        self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
+        self._configure_nca_browser()
         self._scan_job = {"running": False, "error": "", "result": None}
         self._nsp_job = {"running": False, "kind": "", "done": 0, "total": 0, "result": None, "error": ""}
         self._nsp_cancel = threading.Event()
@@ -64,6 +66,41 @@ class DesktopAPI:
         path = settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.settings, indent=2), encoding="utf-8")
+
+    def _configure_nca_browser(self):
+        reader = self.settings.get("nca_reader") or find_local_nca_reader()
+        keyset = self.settings.get("nca_keyset") or ""
+        self._browser.configure_nca_reader(reader, keyset)
+
+    def browse_nca_settings(self):
+        with self._lock:
+            reader = self._browser._nca_sections.tool
+            keyset = self._browser._nca_sections.keyset
+            return {
+                "reader": reader.name if reader and reader.is_file() else "",
+                "keyset": keyset.name if keyset and keyset.is_file() else "",
+                "ready": self._browser._nca_sections.available(),
+                "note": ("NCA sections require a locally installed hactool or hactoolnet "
+                         "reader and a compatible local keyset. None are supplied or "
+                         "downloaded by GFPAK-OPEN.")
+            }
+
+    def browse_nca_select(self, option: str):
+        if option not in ("reader", "keyset"):
+            raise ValueError("Unknown NCA reader configuration")
+        title = ("Choose installed hactool / hactoolnet executable" if option == "reader"
+                 else "Choose your existing local NCA keyset file")
+        chosen = self._dialog("open", title, ("All files (*.*)",))
+        if not chosen:
+            return self.browse_nca_settings()
+        selected = Path(chosen[0])
+        if not selected.is_file():
+            raise ValueError("Selected file no longer exists")
+        with self._lock:
+            self.settings["nca_" + option] = str(selected)
+            self._save()
+            self._configure_nca_browser()
+        return self.browse_nca_settings()
 
     def _get_blender(self):
         blender = self.settings.get("blender", "")
@@ -284,7 +321,8 @@ class DesktopAPI:
         if not paths:
             return None
         with self._lock:
-            self._browser = AssetBrowser()
+            self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
+            self._configure_nca_browser()
             self._scan_job = {"running": False, "error": "", "result": None}
             root = self._browser.open(paths[0])
             return {"root": root, "directory": str(self._browser.root_path),
