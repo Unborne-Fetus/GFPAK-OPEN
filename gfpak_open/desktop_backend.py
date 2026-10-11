@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from .addon_manager import find_addon, ensure_addon
-from .blender_detection import find_blender
+from .blender_detection import find_blender, can_launch_blender
 from .converter import ConversionOptions, convert_model
 
 def settings_path():
@@ -40,7 +40,7 @@ class DesktopAPI:
                 self._setup_started = True
                 threading.Thread(target=self._install_addon, daemon=True).start()
             blender = self.settings.get("blender")
-            if not blender or not Path(blender).is_file():
+            if not blender or not can_launch_blender(blender):
                 blender = find_blender()
                 self.settings["blender"] = blender
             addon = find_addon(self.settings.get("addon"))
@@ -126,10 +126,17 @@ class DesktopAPI:
                 raise ValueError("Another conversion is already running")
             if not self.sources:
                 raise ValueError("Select model sources first")
-            blender = self.settings.get("blender") or find_blender()
+            blender = self.settings.get("blender")
+            if not can_launch_blender(blender):
+                blender = find_blender()
+                self.settings["blender"] = blender
+                self._save()
             addon = find_addon(self.settings.get("addon"))
             if not blender or not Path(blender).is_file():
-                raise ValueError("Blender was not found. Install Blender or select its executable.")
+                raise ValueError(
+                    "No launchable Blender executable found. The Microsoft Store copy "
+                    "may be access-restricted. Choose another blender.exe in Advanced Settings."
+                )
             if not addon:
                 raise ValueError("Blender importer is not installed yet. Wait for setup or retry.")
             sources = list(self.sources)
