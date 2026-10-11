@@ -78,7 +78,8 @@ def pfs0_entries(source: Path) -> list[dict]:
     files = []
     for i in range(count):
         offset, length, pos, _ = struct.unpack_from("<QQII", table_bytes, i * 24)
-        if pos >= len(strings) or offset > size or length > size or data_start > size - min(offset + length, size):
+        if (pos >= len(strings) or data_start > size or
+                offset > size - data_start or length > size - data_start - offset):
             raise ValueError("Invalid NSP index entry")
         end = strings.find(b"\0", pos)
         if end < 0:
