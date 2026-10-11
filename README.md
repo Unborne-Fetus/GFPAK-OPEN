@@ -50,16 +50,24 @@ The production build uses npm run build and outputs dist-web/.
 
 ## Windows desktop studio — viewer and converter together
 
-Get the executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml), or run `run.bat` from the source checkout.
+Get the portable executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml). On a Windows source checkout, double-click `run.bat`: it installs **build-time tools**, compiles the web interface, bundles its dependencies, creates **`dist/GFPAK-OPEN.exe`**, and launches that executable. It creates **no installer** and does not invoke the source-only `launch.py` as the final desktop app. `run.bat --build-only` builds without launching (used by CI). You need Python 3 and Node.js to build locally, but not to run the resulting EXE.
 
-The desktop application now opens **one studio window** with the same 3D viewer and archive tools as the web version, plus a dedicated **Blender Converter** tab in the same window. It does not launch a separate converter app.
+The desktop application opens **one studio window** with the web 3D viewer, GFPAK Inspector, **Blender Converter**, and **Game File Explorer** tabs. It does not launch a separate converter app. It detects installed Blender automatically; Blender and the optional importer are still required for native formats that cannot be decoded directly.
 
 1. Blender is detected automatically, including supported Microsoft Store installations. Blender itself is **not** automatically downloaded.
 2. On first start, the app checks for the open-source [Pokémon Switch Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender). If missing, it downloads it from the upstream GitHub repository into your local GFPAK-OPEN application data directory, validates the required importer files and reuses it on later runs. This one-time download requires an internet connection; use the Retry control if it fails. You can still choose a manually installed add-on folder in Advanced Settings.
-3. Under **Blender Converter**, choose individual native model files or a decoded model folder, or select multiple GFPAKs for batch conversion. Choose the destination through the native save dialog and click Convert.
-4. The successful GLB output appears as a **Preview** action directly in the same 3D viewer; a single completed export opens automatically.
+3. Under **Blender Converter**, choose individual native models, an extracted folder, or multiple GFPAKs, then click **Preview with Blender**. There is no mandatory file-save dialog: GLBs are generated into an app-owned temporary session directory and automatically shown in the same 3D viewer.
+4. Temporary previews are deleted when another preview begins or when the desktop app exits normally. Click **Save GLB** to explicitly copy the cached model to a permanent location (or export in the 3D Viewer tab). Your original input files are never removed.
 5. For supported Trinity GFPAKs, the desktop converter first identifies verified **TRMDL/TRMSH/TRMBF groups from the archive's FNV-1a hashes** without needing a filename dictionary. It then attempts to restore the exact companion filenames by reading strings from the decoded model and verifying their hashes. Unrecognized resources still benefit from an optional gfpak.txt/JSON dictionary.
 6. Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
+
+### Built-in Game File Explorer
+
+The Windows desktop studio has an integrated read-only **Game File Explorer** tab inspired by NX File Viewer. Use **Open game folder** to browse already extracted game resources and scan for models (`.trmdl`, `.gfbmdl`, GLB, etc.), animations (`.tranm`, `.gfbanm`), textures (`.bntx`, PNG, DDS, etc.), skeletons and materials. You can navigate subfolders, search and filter, inspect GFPAK resource hashes, and launch a temporary preview of compatible model files from the same tab.
+
+Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs have a safe nested-file view. GFPAK resources are labeled from verified hash groups and, when decoding works, from hash-verified embedded filenames. Unknown resources are labeled **unidentified**, not fabricated. An NSP can be inspected only at its **outer PFS0 index**: individual NCA payloads are encrypted, and this tool **does not decrypt NCA, bypass protection or directly traverse an NSP's internal `bin/archive` file tree**. For that level of browsing, open a directory that you have already extracted in a compatible tool. `.xci` is currently listed as a file, not an implemented container decoder. Unsupported textures/animations can be discovered without necessarily being decoded, skinned or rendered.
+
+The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
 **Blender 5.x / FlatBuffers:** The Pokémon Switch Blender importer also requires Python
 modules such as `flatbuffers` and `requests`. Blender may prohibit the importer's
