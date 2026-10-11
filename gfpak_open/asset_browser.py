@@ -19,7 +19,8 @@ from collections import Counter
 from pathlib import Path, PurePosixPath
 
 from .core import GFPak, GFPakError
-from .nsp_explorer import NSPAnalyzer
+from .nsp_explorer import NSPAnalyzer, NSPEntry
+from .ncz_native import restore_ncz
 from .xci_explorer import XCIImage, XCIPartition
 from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
@@ -77,6 +78,19 @@ def pfs0_entries(source: Path) -> list[dict]:
             for item in reader.entries]
 
 
+class _StandaloneNCA:
+    """Adapter exposing one cached NCZ-restored NCA to the native NCA reader."""
+    def __init__(self, path: Path):
+        self.path = path
+        self.entry = NSPEntry(0, path.name, 0, path.stat().st_size, 0, 0,
+                              "Content archive NCA", "NCA", None)
+
+    def get(self, index: int):
+        if index != 0:
+            raise ValueError("Invalid restored NCA index")
+        return self.entry
+
+
 class AssetBrowser:
     def __init__(self, nca_workspace: Path | None = None):
         self._nodes: dict[str, dict] = {}
@@ -88,6 +102,7 @@ class AssetBrowser:
         self._xci_images: dict[Path, XCIImage] = {}
         self._xci_partitions: dict[str, XCIPartition] = {}
         self._nca_sources: dict[str, NSPAnalyzer] = {}
+        self._ncz_restored: dict[str, object] = {}
         self.root_id: str | None = None
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
@@ -131,6 +146,7 @@ class AssetBrowser:
         self._xci_images.clear()
         self._xci_partitions.clear()
         self._nca_sources.clear()
+        self._ncz_restored.clear()
         self._section_nodes.clear()
         self._nca_virtual_nodes.clear()
         self._linked_extracted = None
@@ -297,7 +313,7 @@ class AssetBrowser:
                                inner=f"xci:{node['inner']}:{entry.index}",
                                index=entry.index, name=entry.name, size=entry.size)
             child["category"] = classify(entry.name)
-            child["expandable"] = entry.name.lower().endswith(".nca")
+            child["expandable"] = entry.name.lower().endswith((".nca", ".ncz"))
             child["role"] = entry.role
             child["format"] = entry.format
             child["offset"] = entry.offset
@@ -344,7 +360,7 @@ class AssetBrowser:
             item = self._node('nspfile', Path(node['path']), index=entry.index,
                               name=entry.name, size=entry.size)
             item['category'] = classify(entry.name)
-            item['expandable'] = entry.name.lower().endswith('.nca')
+            item['expandable'] = entry.name.lower().endswith(('.nca', '.ncz'))
             item['role'] = entry.role
             item['format'] = entry.format
             item['content_id'] = entry.content_id
@@ -369,7 +385,7 @@ class AssetBrowser:
             return self._xci_root_children(node)
         if kind == "xci_partition":
             return self._xci_partition_children(node)
-        if kind == "nspfile" and node["name"].lower().endswith(".nca"):
+        if kind == "nspfile" and node["name"].lower().endswith((".nca", ".ncz")):
             return self._nca_children(node)
         if kind == "nca_section":
             return self._section_children(node)
@@ -443,6 +459,16 @@ class AssetBrowser:
     def _nca_children(self, node: dict) -> dict:
         reader = self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"]))
         index = node["index"]
+        if node["name"].lower().endswith(".ncz"):
+            if node["id"] not in self._ncz_restored:
+                compressed = reader.get(index)
+                cache = self._nca_sections.workspace / "ncz"
+                cache.mkdir(parents=True, exist_ok=True)
+                output = cache / (uuid.uuid4().hex + ".nca")
+                restore_ncz(reader.path, compressed.offset, compressed.size, output)
+                self._ncz_restored[node["id"]] = _StandaloneNCA(output)
+            reader = self._ncz_restored[node["id"]]
+            index = 0
         entries = []
         linked = self._linked_nca.get(index)
         if linked:
