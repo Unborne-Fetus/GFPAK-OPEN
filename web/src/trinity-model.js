@@ -264,7 +264,7 @@ export function animationTracks(source, bones) {
           // q and -q encode the same pose, but sudden sign changes can
           // interpolate through the long rotation arc.
           if (previous && vector.reduce((sum, v, i) => sum + v * previous[i], 0) < 0) {
-            for (let i = 0; i < 4; i++) vector[i] = -vector[i];
+            for (let i = 0; i < 4; i++) vector[i] = vector[i] === 0 ? 0 : -vector[i];
           }
           previous = vector.slice();
         }
