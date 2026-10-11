@@ -62,7 +62,10 @@ def ensure_blender_dependencies(progress: Callable[[str], None] | None = None) -
         staged = Path(temp) / "packages"
         command = [
             sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
-            "--no-input", "--only-binary=:all:", "--target", str(staged),
+            "--no-input", "--only-binary=:all:",
+            "--platform", "any", "--implementation", "py",
+            "--python-version", "3.11", "--abi", "none",
+            "--target", str(staged),
             *REQUIREMENTS,
         ]
         try:
