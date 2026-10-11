@@ -356,6 +356,56 @@ class AssetBrowser:
                          "may contain additional textures or animations."
                          if kind == "gfpak" else "")}
 
+    def _nca_children(self, node: dict) -> dict:
+        reader = self.nsp_reader(Path(node["path"]))
+        index = node["index"]
+        entries = []
+        if not self._nca_sections.available():
+            message = ("NCA sections are protected. Select a local NCA reader and "
+                       "a compatible keyset in the toolbar. Sections will be "
+                       "displayed only when actually identified by the reader.")
+        else:
+            try:
+                for number in self._nca_sections.sections(reader, index):
+                    child = self._node("nca_section", reader.path, inner=str(index),
+                                       index=number, name=f"Section {number}")
+                    child["category"] = "folder"
+                    self._section_nodes[child["id"]] = (index, number)
+                    entries.append(child)
+                message = f"Identified {len(entries)} actual NCA filesystem sections."
+            except (OSError, RuntimeError, ValueError) as error:
+                message = str(error)
+        if not entries:
+            locked = self._node("nca_locked", reader.path, inner=str(index),
+                                name="Sections unavailable")
+            locked["category"] = "locked"
+            entries.append(locked)
+        return {"root": self._public(node),
+                "entries": [self._public(entry) for entry in entries],
+                "counts": dict(Counter(entry["category"] for entry in entries)),
+                "note": message, "truncated": False}
+
+    def _section_children(self, node: dict) -> dict:
+        pair = self._section_nodes.get(node["id"])
+        if not pair:
+            raise ValueError("This section is not registered in the opened NCA")
+        index, section = pair
+        reader = self.nsp_reader(Path(node["path"]))
+        folder = self._nca_sections.extract_section(reader, index, section)
+        rows = []
+        for entry in sorted(folder.iterdir(),
+                            key=lambda item: (not item.is_dir(), item.name.lower())):
+            if entry.is_symlink():
+                continue
+            if len(rows) >= MAX_ENTRIES:
+                break
+            rows.append(self._fs_node(entry))
+        return {"root": self._public(node),
+                "entries": [self._public(row) for row in rows],
+                "counts": dict(Counter(row["category"] for row in rows)),
+                "note": "Real extracted section files, cached temporarily until app exit.",
+                "truncated": len(rows) >= MAX_ENTRIES}
+
     def nsp_reader(self, path: Path | None = None) -> NSPAnalyzer:
         if path is None:
             if self.root_path is None or self.root_path.suffix.lower() != ".nsp":
