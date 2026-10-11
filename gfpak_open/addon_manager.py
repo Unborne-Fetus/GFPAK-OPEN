@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 UPSTREAM = "ChicoEevee/Pokemon-Switch-Model-Importer-Blender"
 ARCHIVE_URL = "https://github.com/" + UPSTREAM + "/archive/refs/heads/main.zip"
@@ -69,7 +69,7 @@ def ensure_addon(preferred: str | Path | None = None) -> str:
             if len(entries) > 4000 or sum(i.file_size for i in entries) > LIMIT * 6:
                 raise ValueError("Add-on archive contains too much data")
             for item in entries:
-                parts = Path(item.filename).parts
+                parts = PurePosixPath(item.filename).parts
                 if not parts or any(part in ("..", "") for part in parts):
                     raise ValueError("Unsafe path in Blender add-on archive")
                 if item.is_dir():
@@ -79,7 +79,7 @@ def ensure_addon(preferred: str | Path | None = None) -> str:
                 name = Path(*parts[1:])
                 if name.is_absolute() or ":" in str(name) or "\\" in str(name):
                     raise ValueError("Unsafe resource name in Blender add-on")
-                destination = staging / name
+                destination = staging.joinpath(*name.parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(item) as src, destination.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
