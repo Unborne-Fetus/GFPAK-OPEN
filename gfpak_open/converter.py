@@ -453,6 +453,12 @@ def convert_model(options: ConversionOptions,
                                     errors="replace", timeout=900, check=False)
         except subprocess.TimeoutExpired as exc:
             raise ConversionError("Blender conversion exceeded 15 minutes") from exc
+        except PermissionError as exc:
+            raise ConversionError(
+                "Windows denied access to Blender. The Microsoft Store installation "
+                "may have protected WindowsApps permissions. Select a launchable "
+                "blender.exe in Advanced Settings."
+            ) from exc
         except OSError as exc:
             raise ConversionError(f"Unable to launch Blender: {exc}") from exc
         if result.returncode:
