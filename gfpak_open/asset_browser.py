@@ -422,21 +422,24 @@ class AssetBrowser:
         if kind == "nca_dir":
             return self._virtual_nca_children(node, cursor)
         results = []
+        limit = 250
+        more = None
         if kind in {"directory", "linked_dir"}:
-            for entry in sorted(path.iterdir(),
-                                key=lambda item: (not item.is_dir(), item.name.lower())):
-                if entry.is_symlink():
-                    continue
-                if len(results) >= MAX_ENTRIES:
-                    break
+            paths = sorted((entry for entry in path.iterdir() if not entry.is_symlink()),
+                           key=lambda entry: (not entry.is_dir(), entry.name.lower()))
+            start = self._archive_page_start(cursor, len(paths))
+            for entry in paths[start:start + limit]:
                 try:
                     results.append(self._fs_node(entry))
                 except (OSError, PermissionError):
                     continue
+            end = min(len(paths), start + limit)
+            more = f"o:{end:08x}" if end < len(paths) else None
         elif kind == "gfpak":
             archive = self._archive(path)
             names = self._known_names(path)
-            for resource in archive.resources[:MAX_ENTRIES]:
+            start = self._archive_page_start(cursor, len(archive.resources))
+            for resource in archive.resources[start:start + limit]:
                 label = names.get(resource.index)
                 if label:
                     basename = label.rsplit("/", 1)[-1]
@@ -451,6 +454,8 @@ class AssetBrowser:
                 child["compression"] = resource.compression
                 child["hash"] = resource.path_hash
                 results.append(child)
+            end = start + len(results)
+            more = f"o:{end:08x}" if end < len(archive.resources) else None
         elif kind in {"zip", "zipdir"}:
             paths, meta = self._zip_data(path)
             prefix = node["inner"]
@@ -471,20 +476,20 @@ class AssetBrowser:
                     inner=identifier, name=first,
                     size=0 if isdir else meta[full].file_size
                 )
-                if len(names) >= MAX_ENTRIES:
-                    break
-            results = sorted(names.values(),
-                             key=lambda item: (not item["expandable"], item["name"].lower()))
+            sorted_nodes = sorted(names.values(),
+                                  key=lambda item: (not item["expandable"], item["name"].lower()))
+            start = self._archive_page_start(cursor, len(sorted_nodes))
+            results = sorted_nodes[start:start + limit]
+            end = start + len(results)
+            more = f"o:{end:08x}" if end < len(sorted_nodes) else None
 
         counts = dict(Counter(row["category"] for row in results))
         return {"root": self._public(node), "entries": [self._public(c) for c in results],
-                "counts": counts, "truncated": len(results) >= MAX_ENTRIES,
-                "note": ("NSP shows only outer PFS0 entries. NCA game content is encrypted "
-                         "and is not automatically decrypted or rendered."
-                         if kind == "nsp" else
-                         "Only hash-verified GFPAK resource types are labeled; unknown entries "
-                         "may contain additional textures or animations."
-                         if kind == "gfpak" else "")}
+                "counts": counts, "next_cursor": more, "truncated": bool(more),
+                "note": ("Loaded 250-item pages; use Load more for additional files. "
+                         "Unknown resource types stay unidentified until verified."
+                         if kind == "gfpak" else
+                         "Loaded a directory page; use Load more to browse the remaining items.")}
 
     def _nca_children(self, node: dict) -> dict:
         reader = self._nca_sources.get(node["id"]) or self.nsp_reader(Path(node["path"]))
