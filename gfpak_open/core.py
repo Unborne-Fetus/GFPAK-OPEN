@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import json
+import mmap
 import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -46,12 +47,41 @@ class GFPak:
 
     def __init__(self, source: str | Path):
         self.source = Path(source)
-        self._bytes = self.source.read_bytes()
+        self._handle = None
+        self._bytes = None
         self.version = 0
         self.relocated = 0
         self.resources: list[Resource] = []
         self.folder_count = 0
-        self._parse()
+        try:
+            self._handle = self.source.open("rb")
+            if self.source.stat().st_size < 40:
+                raise GFPakError("Truncated GFLXPACK header")
+            # Index tables are mapped read-only; huge payloads stay on disk.
+            self._bytes = mmap.mmap(self._handle.fileno(), 0, access=mmap.ACCESS_READ)
+            self._parse()
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Release a mapped source, including its Windows file handle."""
+        mapping, handle = self._bytes, self._handle
+        self._bytes, self._handle = None, None
+        if mapping is not None:
+            mapping.close()
+        if handle is not None:
+            handle.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def __del__(self):
+        if getattr(self, "_bytes", None) is not None or getattr(self, "_handle", None) is not None:
+            self.close()
 
     def _read(self, fmt: str, at: int) -> tuple:
         size = struct.calcsize(fmt)
@@ -86,8 +116,7 @@ class GFPak:
             level, compression, size, packed_size, _, offset, _ = self._read(
                 "<HHIIIII", table_offset + 24 * index
             )
-            if size > self.MAX_SINGLE_FILE:
-                raise GFPakError(f"Resource {index} exceeds 512 MiB safety limit")
+            # Oversized resources are valid for indexing or streaming extraction.
             if offset > len(self._bytes) or packed_size > len(self._bytes) - offset:
                 raise GFPakError(f"Resource {index} extends beyond the archive")
             folder = associations.get(index)
@@ -124,6 +153,11 @@ class GFPak:
                       packed: bool = False) -> bytes:
         if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
             raise GFPakError("Resource does not belong to this archive")
+        if resource.size > self.MAX_SINGLE_FILE or resource.packed_size > self.MAX_SINGLE_FILE:
+            raise GFPakError(
+                "Resource exceeds the 512 MiB in-memory limit; "
+                "export stored or packed data using streaming extraction."
+            )
         block = self._bytes[resource.offset:resource.offset + resource.packed_size]
         if packed:
             return block
@@ -175,6 +209,47 @@ class GFPak:
             raise GFPakError(f"Resource {resource.index}: decompressed size mismatch")
         return data
 
+    def peek_resource(self, resource: Resource, length: int = 512) -> tuple[bytes, bool]:
+        """Preview a few bytes; decode only small compressed resources."""
+        if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
+            raise GFPakError("Resource does not belong to this archive")
+        count = min(max(int(length), 0), 4096)
+        if resource.compression == 0:
+            return self._bytes[resource.offset:resource.offset + min(count, resource.size)], True
+        if resource.size <= 8 * 1024 * 1024:
+            return self.read_resource(resource)[:count], True
+        return self._bytes[resource.offset:resource.offset + min(count, resource.packed_size)], False
+
+    def copy_resource(self, resource: Resource, target: str | Path, *,
+                      packed: bool = False, oodle_dll: str | Path | None = None) -> Path:
+        """Stream undecoded bytes in 1 MiB chunks without replacing existing files."""
+        if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
+            raise GFPakError("Resource does not belong to this archive")
+        destination = Path(target)
+        if not destination.parent.is_dir():
+            raise GFPakError("Destination directory does not exist")
+        with destination.open("xb") as output:
+            try:
+                if packed or resource.compression == 0:
+                    if not packed and resource.size != resource.packed_size:
+                        raise GFPakError("Stored resource size mismatch")
+                    remaining = resource.packed_size
+                    with self.source.open("rb") as stream:
+                        stream.seek(resource.offset)
+                        while remaining:
+                            chunk = stream.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise GFPakError("Unexpected end of GFPAK resource")
+                            output.write(chunk)
+                            remaining -= len(chunk)
+                else:
+                    output.write(self.read_resource(resource, oodle_dll=oodle_dll))
+            except BaseException:
+                output.close()
+                destination.unlink(missing_ok=True)
+                raise
+        return destination
+
     def extract(self, target: str | Path, resources: list[Resource] | None = None,
                 *, oodle_dll: str | Path | None = None,
                 packed: bool = False) -> list[Path]:
@@ -182,11 +257,9 @@ class GFPak:
         selected = resources if resources is not None else self.resources
         paths: list[Path] = []
         for resource in selected:
-            contents = self.read_resource(resource, oodle_dll=oodle_dll, packed=packed)
             dest = target / resource.folder_name / (resource.filename + (".packed" if packed else ""))
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(contents)
-            paths.append(dest)
+            paths.append(self.copy_resource(resource, dest, packed=packed, oodle_dll=oodle_dll))
         return paths
 
 
