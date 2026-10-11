@@ -310,6 +310,27 @@ function renderRows(rows) {
   }
 }
 
+async function loadNSPPage(page = 0) {
+  if (!activeNSP) return;
+  const root = activeNSP;
+  const revision = ++nspPageRevision;
+  try {
+    const listing = await api.browse_nsp_page(
+      root.id, page, id('assetSearch').value, id('assetCategory').value
+    );
+    if (revision !== nspPageRevision || activeNSP?.id !== root.id) return;
+    const currentNode = pathStack.at(-1);
+    if (currentNode?.root.id !== root.id) return;
+    currentNode.listing = listing;
+    renderListing();
+  } catch (error) { showNotice(error.message || String(error), true); }
+}
+
+function scheduleNSPSearch() {
+  if (nspSearchTimeout) window.clearTimeout(nspSearchTimeout);
+  nspSearchTimeout = window.setTimeout(() => loadNSPPage(0), 170);
+}
+
 function renderListing() {
   const node = pathStack.at(-1);
   if (!node) return;
@@ -327,9 +348,24 @@ function renderListing() {
   showNotice(notice || (node.listing.truncated ? 'This directory has more files than the visible display limit.' : ''));
   select(null);
   if (node.root.kind === 'nsp') {
-    loadNSPDashboard(node.root).catch(error => showNotice(error.message || String(error), true));
+    if (activeNSP?.id !== node.root.id) {
+      loadNSPDashboard(node.root).catch(error => showNotice(error.message || String(error), true));
+    }
+    const page = node.listing.pagination;
+    id('nspPager').hidden = !page;
+    if (page) {
+      id('nspPagerLabel').textContent = page.total
+        ? 'Files ' + page.first.toLocaleString() + '–' + page.last.toLocaleString() +
+          ' of ' + page.total.toLocaleString() + ' · Page ' +
+          (page.page + 1) + ' / ' + page.pages
+        : 'No matching NSP entries';
+      id('nspPrev').disabled = page.page <= 0;
+      id('nspNext').disabled = page.page + 1 >= page.pages;
+    }
   } else {
     activeNSP = null;
+    ++nspPageRevision;
+    id('nspPager').hidden = true;
     id('nspWorkbench').hidden = true;
     id('nspSelection').hidden = true;
   }
