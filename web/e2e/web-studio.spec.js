@@ -268,3 +268,72 @@ test('NSP package workbench displays roles, hex and integrity results without ex
   await expect(page.locator('#assetRows')).toContainText('license.tik');
 
 });
+
+test('NX-style tree expands linked extracted NSP folders without fake NCA contents', async ({page}) => {
+  await page.addInitScript(() => {
+    const packageNode = {id:'pkg', name:'Pokemon Legends Arceus.nsp',
+      kind:'nsp',category:'archive',expandable:true,size:4096};
+    const linked = {id:'linked', name:'Extracted game files (linked)',
+      kind:'linked_dir',category:'folder',expandable:true,size:0};
+    const folder = (id,name) => ({id,name,kind:'directory',category:'folder',expandable:true,size:0});
+    const model = {id:'pikachu',name:'pm0025_00_00.gfpak',kind:'gfpak',
+      category:'model archive',expandable:true,size:950000};
+    const list = (root,entries) => ({
+      root,entries,counts:{folder:entries.filter(e=>e.category==='folder').length},
+      truncated:false,note:''
+    });
+    const metadata = {id:'outer',name:'program.nca',kind:'nspfile',
+      category:'encrypted container',expandable:false,size:1024,
+      role:'Content archive NCA',format:'Encrypted NCA',offset:80};
+    window.pywebview = {api:{
+      setup_status: async () => ({blender:'C:/Blender/blender.exe',
+        addon:'C:/addons/importer',setup:{state:'ready',error:''},
+        sources:[],settings:{hashes:'',oodle:'',textures:''},animations:true}),
+      browse_choose: async () => ({
+        root:packageNode,children:list(packageNode,[metadata])
+      }),
+      browse_attach_extracted: async () => ({
+        root:packageNode,linked,
+        children:list(packageNode,[linked,metadata])
+      }),
+      browse_children: async node => ({
+        linked:list(linked,[folder('bin','bin')]),
+        bin:list(folder('bin','bin'),[folder('archive','archive')]),
+        archive:list(folder('archive','archive'),[folder('pokemon','pokemon')]),
+        pokemon:list(folder('pokemon','pokemon'),[model])
+      })[node] || list(packageNode,[]),
+      browse_item_details: async node => ({
+        name:node,category:'folder',kind:'directory',size:0,
+        location:'C:/Extracted/bin',signature:'',notes:[],hex_lines:[]
+      }),
+      browse_nsp_summary: async () => ({
+        filename:'Pokemon Legends Arceus.nsp',bytes:4096,files:1,
+        header_bytes:80,formats:{'Encrypted NCA':1},
+        roles:{'Content archive NCA':1},role_bytes:{'Content archive NCA':1024},
+        warnings:[],plaintext_cnmt:[]
+      }),
+      browse_nsp_inspect: async () => ({
+        hex_lines:[],signature:'Encrypted NCA',note:'Raw opaque data'
+      }),
+      browse_nsp_page: async () => list(packageNode,[metadata])
+    }};
+  });
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFile').click();
+  await expect(page.locator('#assetTree')).toContainText('Pokemon Legends Arceus.nsp');
+  await expect(page.locator('#assetTree')).not.toContainText('Section 1');
+  await expect(page.locator('#assetAttach')).toBeEnabled();
+  await page.locator('#assetAttach').click();
+  await expect(page.locator('#assetTree')).toContainText('Extracted game files (linked)');
+  await page.locator('#assetTree .nx-tree-line').filter({hasText:'Extracted game files (linked)'})
+    .locator('.nx-tree-toggle').click();
+  await expect(page.locator('#assetTree')).toContainText('bin');
+  await page.locator('#assetTree .nx-tree-name').filter({hasText:'bin'}).click();
+  await expect(page.locator('#assetRows')).toContainText('archive');
+  await page.locator('#assetTree .nx-tree-line').filter({hasText:'bin'})
+    .locator('.nx-tree-toggle').click();
+  await expect(page.locator('#assetTree')).toContainText('archive');
+  await page.locator('#assetTree .nx-tree-name').filter({hasText:'archive'}).click();
+  await expect(page.locator('#assetRows')).toContainText('pokemon');
+});
