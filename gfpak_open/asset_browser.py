@@ -473,9 +473,9 @@ class AssetBrowser:
         entries = []
         linked = self._linked_nca.get(node["id"])
         if linked:
-            return {'root': self._public(node), 'entries': [self._public(linked)],
-                    'counts': {'folder': 1}, 'truncated': False,
-                    'note': 'Showing separately extracted files linked to this NCA; no NCA decryption was performed.'}
+            # An optional linked extraction must never hide sections that the
+            # built-in reader can already browse from this NCA.
+            entries.append(linked)
         try:
             for number in self._nca_sections.sections(reader, index):
                 child = self._node("nca_section", reader.path, inner=node["id"],
@@ -485,12 +485,13 @@ class AssetBrowser:
                 self._section_nodes[child["id"]] = (index, number)
                 self._nca_sources[child["id"]] = reader
                 entries.append(child)
-            message = ("Opened " + str(len(entries)) + " NCA section headers "
-                       "using GFPAK-OPEN's native parser.")
+            message = ("Identified " + str(len(entries) - int(bool(linked))) +
+                       " NCA sections with the built-in reader." +
+                       (" Linked files remain available separately." if linked else ""))
         except (OSError, RuntimeError, ValueError) as error:
             message = str(error)
         if not entries:
-            locked = self._node("nca_locked", reader.path, inner=str(index),
+            locked = self._node("nca_locked", reader.path, inner=node["id"],
                                 name="Sections unavailable")
             locked["category"] = "locked"
             entries.append(locked)
