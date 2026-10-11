@@ -170,7 +170,7 @@ class AssetBrowserTests(unittest.TestCase):
             file.write_bytes(b"PFS0" + struct.pack("<III", 1, 3, 0) +
                              struct.pack("<QQII", 0, 99999, 0, 0) +
                              b"a\0x")
-            with self.assertRaisesRegex(ValueError, "index entry"):
+            with self.assertRaisesRegex(ValueError, "entry .*outside"):
                 pfs0_entries(file)
 
 
