@@ -88,6 +88,7 @@ class AssetBrowser:
         self._linked_nca: dict[int, dict] = {}
         self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
         self._section_nodes: dict[str, tuple[int, int]] = {}
+        self._nca_virtual_nodes: dict[str, tuple[int, int, str]] = {}
 
     def _node(self, kind: str, path: Path, *, inner: str = "",
               index: int = -1, name: str | None = None,
@@ -98,18 +99,18 @@ class AssetBrowser:
         id_ = uuid.uuid4().hex
         if name is None:
             name = path.name
-        category = ("folder" if kind in {"directory", "zipdir", "linked_dir"} else
+        category = ("folder" if kind in {"directory", "zipdir", "linked_dir", "nca_dir"} else
                     classify(name) if kind != "gfpak_resource" else classify(name))
         result = {"id": id_, "kind": kind, "path": str(path), "name": name,
                   "category": category, "size": size if size is not None else 0,
                   "inner": inner, "index": index,
-                  "expandable": kind in {"directory", "linked_dir", "nca_section", "gfpak", "zip", "zipdir", "nsp"}}
+                  "expandable": kind in {"directory", "linked_dir", "nca_section", "nca_dir", "gfpak", "zip", "zipdir", "nsp"}}
         self._keys[key] = id_
         self._nodes[id_] = result
         return result
 
-    def configure_nca_reader(self, executable: str | Path = "", keyset: str | Path = ""):
-        self._nca_sections.configure(executable, keyset)
+    def configure_nca_reader(self, keyset: str | Path = ""):
+        self._nca_sections.configure(keyset)
 
     def open(self, path: str | Path) -> dict:
         candidate = Path(path).expanduser().resolve(strict=True)
@@ -122,6 +123,7 @@ class AssetBrowser:
         self._inferred.clear()
         self._pfs.clear()
         self._section_nodes.clear()
+        self._nca_virtual_nodes.clear()
         self._linked_extracted = None
         self._linked_nca.clear()
         self.root_path = candidate
@@ -312,6 +314,8 @@ class AssetBrowser:
             return self._nca_children(node)
         if kind == "nca_section":
             return self._section_children(node)
+        if kind == "nca_dir":
+            return self._virtual_nca_children(node)
         results = []
         if kind in {"directory", "linked_dir"}:
             for entry in sorted(path.iterdir(),
@@ -411,26 +415,44 @@ class AssetBrowser:
                 "counts": dict(Counter(entry["category"] for entry in entries)),
                 "note": message, "truncated": False}
 
+
     def _section_children(self, node: dict) -> dict:
         pair = self._section_nodes.get(node["id"])
         if not pair:
-            raise ValueError("This section is not registered in the opened NCA")
+            raise ValueError("This section does not exist in the selected NCA")
         index, section = pair
-        reader = self.nsp_reader(Path(node["path"]))
-        folder = self._nca_sections.extract_section(reader, index, section)
+        return self._virtual_children(index, section, "", node)
+
+    def _virtual_nca_children(self, node: dict) -> dict:
+        position = self._nca_virtual_nodes.get(node["id"])
+        if not position:
+            raise ValueError("Unknown native NCA directory")
+        index, section, path = position
+        return self._virtual_children(index, section, path, node)
+
+    def _virtual_children(self, index: int, section: int, folder: str,
+                          parent: dict) -> dict:
+        reader = self.nsp_reader(Path(parent["path"]))
+        fs = self._nca_sections.filesystem(reader, index, section)
+        children = fs.children(folder)
         rows = []
-        for entry in sorted(folder.iterdir(),
-                            key=lambda item: (not item.is_dir(), item.name.lower())):
-            if entry.is_symlink():
-                continue
-            if len(rows) >= MAX_ENTRIES:
-                break
-            rows.append(self._fs_node(entry))
-        return {"root": self._public(node),
-                "entries": [self._public(row) for row in rows],
-                "counts": dict(Counter(row["category"] for row in rows)),
-                "note": "Real extracted section files, cached temporarily until app exit.",
-                "truncated": len(rows) >= MAX_ENTRIES}
+        for child in children[:MAX_ENTRIES]:
+            is_dir = child["type"] == "directory"
+            kind = "nca_dir" if is_dir else "nca_file"
+            inner = f"{index}:{section}:{child['path']}"
+            item = self._node(kind, reader.path, inner=inner, name=child["name"],
+                              size=child["size"])
+            item["category"] = "folder" if is_dir else classify(child["name"])
+            self._nca_virtual_nodes[item["id"]] = (index, section, child["path"])
+            rows.append(item)
+        return {
+            "root": self._public(parent),
+            "entries": [self._public(item) for item in rows],
+            "counts": dict(Counter(item["category"] for item in rows)),
+            "note": ("Reading the NCA filesystem directly inside GFPAK-OPEN; "
+                     "no other application and no whole-section extraction."),
+            "truncated": len(children) > MAX_ENTRIES,
+        }
 
     def nsp_reader(self, path: Path | None = None) -> NSPAnalyzer:
         if path is None:
