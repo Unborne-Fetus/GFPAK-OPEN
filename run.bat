@@ -1,37 +1,77 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
+
+echo.
+echo ========================================================
+echo  GFPAK OPEN - BUILD AND LAUNCH PORTABLE WINDOWS EXE
+echo ========================================================
+echo  Output: %CD%\dist\GFPAK-OPEN.exe
+echo  No installer is created. The EXE runs directly.
+echo.
+
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (
     set "PYTHON=py -3"
 ) else (
     set "PYTHON=python"
 )
-echo Starting GFPAK Open...
-%PYTHON% -c "import webview" >nul 2>&1
-if errorlevel 1 (
-    echo Installing the Windows desktop viewer support...
-    %PYTHON% -m pip install pywebview
-    if errorlevel 1 (
-        echo.
-        echo Could not install pywebview. Check your Python and internet connection.
-        pause
-        exit /b 1
-    )
+
+%PYTHON% --version
+if errorlevel 1 goto :missing_python
+
+where npm >nul 2>&1
+if errorlevel 1 goto :missing_node
+
+echo [1/4] Preparing portable desktop build tools...
+%PYTHON% -m pip install --disable-pip-version-check pyinstaller pywebview pyooz==0.0.8
+if errorlevel 1 goto :failed
+
+echo [2/4] Building bundled offline 3D studio...
+if not exist "node_modules\vite" (
+    call npm install --no-audit --no-fund
+    if errorlevel 1 goto :failed
 )
-%PYTHON% -c "import ooz; assert hasattr(ooz, 'decompress')" >nul 2>&1
-if errorlevel 1 (
-    echo Installing open-source Oodle support for native Pokemon models...
-    %PYTHON% -m pip install --only-binary=:all: pyooz==0.0.8
-    if errorlevel 1 (
-        echo Warning: Oodle support could not be installed.
-        echo The app will still open, but Oodle GFPAKs may require an existing DLL.
-    )
+set "GFPAK_DESKTOP=1"
+call npm run build
+if errorlevel 1 goto :failed
+if not exist "dist-desktop\index.html" goto :failed
+
+echo [3/4] Bundling the Blender Python modules...
+if not exist "build\blender_deps\flatbuffers\__init__.py" (
+    if exist "build\blender_deps" rmdir /s /q "build\blender_deps"
+    %PYTHON% -m pip install --disable-pip-version-check --only-binary=:all: --platform any --implementation py --python-version 3.11 --abi none --target "build\blender_deps" flatbuffers==25.2.10 requests==2.32.5
+    if errorlevel 1 goto :failed
 )
-%PYTHON% launch.py
-if errorlevel 1 (
-    echo.
-    echo GFPAK Open could not start. Review the error above.
-    pause
-)
-endlocal
+%PYTHON% -c "from gfpak_open.blender_dependencies import has_dependencies; assert has_dependencies('build/blender_deps')"
+if errorlevel 1 goto :failed
+
+echo [4/4] Creating standalone GFPAK-OPEN.exe...
+%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
+if errorlevel 1 goto :failed
+if not exist "dist\GFPAK-OPEN.exe" goto :failed
+
+echo.
+echo ========================================================
+echo  SUCCESS - PORTABLE APPLICATION CREATED
+echo  %CD%\dist\GFPAK-OPEN.exe
+echo ========================================================
+echo  Run or copy this EXE. It is not an installer.
+echo  Blender is still needed for unsupported native models.
+echo.
+start "" "%CD%\dist\GFPAK-OPEN.exe"
+exit /b 0
+
+:missing_python
+echo ERROR: Python 3 is required to build the portable EXE.
+goto :failed
+
+:missing_node
+echo ERROR: Install Node.js LTS to build the bundled studio.
+goto :failed
+
+:failed
+echo.
+echo GFPAK OPEN BUILD FAILED. No working EXE was confirmed.
+pause
+exit /b 1
