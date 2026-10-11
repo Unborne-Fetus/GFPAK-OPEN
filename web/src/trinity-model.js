@@ -1,3 +1,4 @@
+import { loadDecodedTexture } from './texture-loader.js';
 import { selectNativeAnimations } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
@@ -14,7 +15,7 @@ import {
 import { parseNativeAnimation } from './trinity-animation.js';
 
 const MAX_BYTES = 450 * 1024 * 1024;
-const TEXTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const TEXTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.dds']);
 
 function normalized(s) {
   const stack = [];
@@ -108,7 +109,7 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
     { names: /^aomap$/i, property: 'aoMap', srgb: false },
     { names: /^(emissivemap|emissionmap)$/i, property: 'emissiveMap', srgb: true },
   ];
-  const imageCache = new Map();
+  const textureCache = new Map();
   for (const [materialName, definition] of lookup.entries()) {
     const textures = definition.textures ?? [];
     if (!textures.length) continue;
@@ -122,30 +123,25 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
         continue;
       }
       try {
-        let bitmap = imageCache.get(textureItem.path);
-        if (!bitmap) {
-          bitmap = await createImageBitmap(new Blob([await textureItem.getBytes()]));
-          imageCache.set(textureItem.path, bitmap);
+        const cacheKey = textureItem.path + '|' + channel.srgb;
+        let texture = textureCache.get(cacheKey);
+        if (!texture) {
+          texture = await loadDecodedTexture(textureItem, channel.srgb);
+          textureCache.set(cacheKey, texture);
+          created.push(texture);
         }
-        const texture = new THREE.Texture(bitmap);
         texture.name = selected.name || channel.property;
-        texture.colorSpace = channel.srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        texture.flipY = true;
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.needsUpdate = true;
         const material = definition.material;
         material[channel.property] = texture;
         if (channel.property === 'map') material.color.setRGB(1, 1, 1);
         if (channel.property === 'emissiveMap') material.emissive.setRGB(1, 1, 1);
         material.needsUpdate = true;
-        created.push(texture);
       } catch (error) {
         report('Could not decode texture ' + textureItem.path + ': ' + error.message);
       }
     }
   }
-  return Array.from(imageCache.values());
+  return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
 }
 
 function buildBones(trskl, sceneRoot) {
