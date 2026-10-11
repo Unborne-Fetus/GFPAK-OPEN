@@ -69,6 +69,14 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### NX File Viewer-style fourth tab
+
+**Game File Explorer** has been redesigned into a Windows-style, NX File Viewer-inspired interface based on the user's reference screenshots. It has a collapsible **Content tree** (left), file list (center), and type-sensitive **Properties/preview pane** (right), plus functioning File, View, Tools and Help menus. Click a folder name to navigate; click its triangle to expand/collapse without leaving the tree. Double-click compatible models to preview them. Open image files to see a bounded embedded thumbnail, or inspect a short hex and ASCII sample. Folder and GFPAK nodes are lazily opened so large trees do not need to be fully loaded.
+
+For a game that was already extracted using your own tools, use **Open package**, choose the NSP, then **Link extracted NSP files** to select its existing extracted folder. An **Extracted game files (linked)** node appears under the NSP. Expand it to browse your actual `bin/archive/pokemon`, `chara`, `effect`, animation and texture directories. The linked tree is not represented as decrypted data from the NSP itself; the source NSP is never changed.
+
+This is an independently implemented interface inspired by the [open-source NX File Viewer project](https://github.com/Myster-Tee/NxFileViewer), rather than a copy of its C#/.NET or GPL-3.0 code. Feature parity is incomplete: this application does **not** decrypt NCAs, auto-obtain keys or open protected RomFS directly. XCI/NSZ/XCZ extraction is not yet implemented.
+
 ### Advanced NSP package workbench
 
 When an NSP is selected, **Game File Explorer** now opens a full **read-only PFS0 analyzer** in the same desktop application:
