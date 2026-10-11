@@ -5,6 +5,7 @@ let seen = 0;
 let displayed = new Set();
 let polling = false;
 let lastSettings = null;
+let initialized = false;
 
 function notice(message, error = false) {
   const status = byId('nativeProgress');
@@ -72,8 +73,32 @@ async function pollConversion() {
 
 async function initialize() {
   if (!window.pywebview?.api) return;
+  if (initialized) return;
+  initialized = true;
   api = window.pywebview.api;
-  byId('desktopTools').hidden = false;
+  document.body.classList.add('desktop-app');
+  byId('tabConverter').hidden = false;
+  const converter = byId('desktopTools');
+  converter.hidden = true;
+  const tabConverter = byId('tabConverter');
+  tabConverter.addEventListener('click', () => {
+    byId('viewerPanel').hidden = true;
+    byId('archivePanel').hidden = true;
+    converter.hidden = false;
+    for (const id of ['tabViewer', 'tabArchive', 'tabConverter']) {
+      const button = byId(id);
+      const active = id === 'tabConverter';
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    }
+  });
+  for (const id of ['tabViewer', 'tabArchive']) {
+    byId(id).addEventListener('click', () => {
+      converter.hidden = true;
+      tabConverter.classList.remove('active');
+      tabConverter.setAttribute('aria-selected', 'false');
+    });
+  }
   document.querySelector('.top-context').textContent = 'POKÉMON 3D / DESKTOP STUDIO';
   await refreshSetup();
   // Installer runs in a desktop worker; status updates do not block the viewer.
