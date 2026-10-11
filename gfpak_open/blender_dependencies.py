@@ -28,7 +28,7 @@ def has_dependencies(directory: str | Path) -> bool:
 def dependency_cache() -> Path:
     appdata = os.environ.get("LOCALAPPDATA")
     base = Path(appdata) if appdata else Path.home() / ".local" / "share"
-    return base / "GFPAK-OPEN" / "blender-python-deps-v1"
+    return base / "GFPAK-OPEN" / "blender-python-deps-v2"
 
 
 def packaged_dependencies() -> Path | None:
