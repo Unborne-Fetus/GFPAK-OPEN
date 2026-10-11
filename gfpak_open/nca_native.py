@@ -213,6 +213,12 @@ class NativeSection:
             "sparse": bool(self.sparse_table_size),
             "compressed_storage": bool(self.compression_table_size),
             "needs_base_nca": bool(self.patch_indirect_size),
+            "bucket_tree_supported": (
+                not (self.patch_indirect_size or self.patch_crypto_size or self.encryption in (4, 6))
+                and not (self.sparse_table_size and self.compression_table_size)
+                and (not self.sparse_table_size or self.encryption == 1)
+                and (not self.compression_table_size or self.encryption in (1, 3))
+            ),
         }
 
     def filesystem(self):
