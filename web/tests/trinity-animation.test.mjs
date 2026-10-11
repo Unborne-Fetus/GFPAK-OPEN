@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseNativeAnimation, NativeAnimationError, unpackQuaternion } from '../src/trinity-animation.js';
 import { parseTrskl } from '../src/trinity.js';
+import { animationTracks } from '../src/trinity-model.js';
+import * as THREE from 'three';
 import { makeAnimatedTrinityTriangle } from './trinity-animation-fixture.mjs';
 
 function arrayBuffer(bytes) {
@@ -31,4 +33,27 @@ test('packed native quaternion decoder produces normalized XYZW orientation', ()
 
 test('malformed animation refuses fake playback', () => {
   assert.throws(() => parseNativeAnimation(new ArrayBuffer(5)), NativeAnimationError);
+});
+
+test('skeletal clips normalize opposite quaternion signs for smooth interpolation', () => {
+  const bone = new THREE.Bone();
+  bone.name = 'root';
+  const clip = animationTracks({
+    name:'Test',frameCount:11,frameRate:30,
+    tracks:[{bone:'root',rotation:[
+      {frame:0,value:[0,0,0,1]},
+      {frame:10,value:[0,0,0,-1]}
+    ]}]
+  },[bone]);
+  assert.ok(clip?.validate());
+  assert.deepEqual(Array.from(clip.tracks[0].values.slice(4,8)),[0,0,0,1]);
+});
+
+test('ambiguous bone names do not produce incorrectly bound animations', () => {
+  const a = new THREE.Bone(), b = new THREE.Bone();
+  a.name = 'root'; b.name = 'root';
+  assert.equal(animationTracks({
+    name:'Test',frameRate:30,frameCount:1,
+    tracks:[{bone:'root',translation:[{frame:0,value:[1,2,3]}]}]
+  },[a,b]),null);
 });
