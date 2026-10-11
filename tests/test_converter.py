@@ -94,15 +94,20 @@ class ConverterTests(unittest.TestCase):
             addon = root / "addon"
             addon.mkdir()
             (addon / "__init__.py").write_text("")
+            (addon / "PokemonSwitch.py").write_text("# addon mock")
+            vendor_folder = root / "blender-dependencies"
             target = root / "pikachu.glb"
             def fake_blender(cmd, **_kwargs):
                 self.assertIn("--background", cmd)
                 self.assertIn("--model", cmd)
+                self.assertEqual(cmd[cmd.index("--deps") + 1], str(vendor_folder))
                 self.assertEqual(cmd[cmd.index("--output") + 1], str(target))
                 make_glb(target)
                 return type("Result", (), {"returncode": 0, "stdout": "success", "stderr": ""})()
-            with patch("gfpak_open.converter.subprocess.run", side_effect=fake_blender):
-                result = convert_model(ConversionOptions(source, target, root / "blender.exe", addon))
+            with patch("gfpak_open.converter.ensure_blender_dependencies", return_value=vendor_folder) as ensure:
+                with patch("gfpak_open.converter.subprocess.run", side_effect=fake_blender):
+                    result = convert_model(ConversionOptions(source, target, root / "blender.exe", addon))
+                ensure.assert_called_once()
             self.assertEqual(result, target)
             validate_glb(target)
 
