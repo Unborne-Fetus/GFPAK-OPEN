@@ -127,6 +127,14 @@ class NativeSection:
         self.key = key
         self.fs_type = fs_header[2]
         self.hash_type = fs_header[3]
+        self.patch_indirect_offset = _u64(fs_header, 0x100)
+        self.patch_indirect_size = _u64(fs_header, 0x108)
+        self.patch_crypto_offset = _u64(fs_header, 0x120)
+        self.patch_crypto_size = _u64(fs_header, 0x128)
+        self.sparse_table_offset = _u64(fs_header, 0x148)
+        self.sparse_table_size = _u64(fs_header, 0x150)
+        self.compression_table_offset = _u64(fs_header, 0x178)
+        self.compression_table_size = _u64(fs_header, 0x180)
         self.counter_prefix = fs_header[0x140:0x148][::-1]
         self._fs = None
 
@@ -167,10 +175,43 @@ class NativeSection:
             "cannot interpret safely."
         )
 
+    def compatibility(self) -> dict:
+        """Describe NCA storage features without pretending they are decoded."""
+        return {
+            "section": self.number, "encryption": self.encryption,
+            "filesystem": "RomFS" if self.fs_type == 0 else
+                          "PartitionFS" if self.fs_type == 1 else "Unknown",
+            "update_patch": bool(self.patch_indirect_size or self.patch_crypto_size or
+                                 self.encryption in (4, 6)),
+            "sparse": bool(self.sparse_table_size),
+            "compressed_storage": bool(self.compression_table_size),
+            "needs_base_nca": bool(self.patch_indirect_size),
+        }
+
     def filesystem(self):
         if self._fs is not None:
             return self._fs
         header = self.fs_header
+        if self.patch_indirect_size or self.patch_crypto_size or self.encryption in (4, 6):
+            raise NativeNCAError(
+                "This update/DLC RomFS uses BKTR patch mappings and needs its "
+                "matching base NCA. Combined patch filesystem decoding is not "
+                "yet supported; other sections in this NCA remain accessible."
+            )
+        if self.sparse_table_size:
+            raise NativeNCAError(
+                "This NCA section uses sparse storage mapping. The table can "
+                "be identified but sparse extent remapping is not yet supported."
+            )
+        if self.compression_table_size:
+            raise NativeNCAError(
+                "This NCA section uses a compressed storage layer. Its table "
+                "can be identified but transparent block decoding is not yet supported."
+            )
+        if self.encryption not in (1, 2, 3):
+            raise NativeNCAError(
+                f"Unsupported NCA section encryption type {self.encryption}."
+            )
         if self.fs_type in (1, 2) and self.hash_type in (0, 1, 2, 5):
             # Hierarchical SHA256 hash table followed by real PFS0 data layer.
             file_offset = _u64(header, 0x40) if self.hash_type in (2, 5) else 0
@@ -279,21 +320,15 @@ class NativeNCA:
             if fs[:2] not in (b"\x02\x00", b"\x00\x00"):
                 raise NativeNCAError(f"NCA section {i} uses an unsupported header revision.")
             encryption = fs[4]
-            if encryption not in (1, 2, 3):
+            if encryption not in (1, 2, 3, 4, 5, 6):
                 raise NativeNCAError(
-                    f"NCA section {i} uses unsupported encryption mode {encryption}. "
-                    "Patch/BKTR and compressed sections require separate support."
+                    f"NCA section {i} uses unknown encryption mode {encryption}."
                 )
             if not self.plaintext and encryption != 1 and content_keys is None:
                 raise NativeNCAError(
                     "NCA filesystem content key is unavailable. Choose a compatible "
                     "locally supplied keys file. Rights-managed titles may also need "
                     "a matching title content key."
-                )
-            if any(fs[0x100:0x140]) or any(fs[0x148:0x1a0]):
-                raise NativeNCAError(
-                    f"NCA section {i} contains patch, sparse or compression metadata "
-                    "that the integrated reader cannot safely apply."
                 )
             key = None
             if not self.plaintext and encryption == 3:
