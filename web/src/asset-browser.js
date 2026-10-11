@@ -455,6 +455,7 @@ function select(row) {
     : 'Select an asset to inspect or preview it.';
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
+  id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile'].includes(row.kind);
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
   nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
 }
@@ -632,6 +633,19 @@ async function openSource(mode) {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+async function nxSaveSelectedFile() {
+  if (!selected) return;
+  const row = selected;
+  if (row.kind === 'nspfile') {
+    await startNSPTask('extract', row);
+    return;
+  }
+  try {
+    const result = await api.browse_save_item(row.id);
+    if (result) showNotice('Saved: ' + result);
+  } catch (error) { showNotice(error.message || String(error), true); }
+}
+
 async function nxAttachExtractedFolder() {
   try {
     const attached = await api.browse_attach_extracted();
@@ -738,6 +752,7 @@ function initialize() {
     if (page && page.page + 1 < page.pages) loadNSPPage(page.page + 1);
   });
   id('assetPreview').addEventListener('click', () => preview());
+  id('assetSaveFile').addEventListener('click', nxSaveSelectedFile);
   id('assetScan').addEventListener('click', scanFolder);
   const menuActions = {
     nxMenuOpenPackage: () => id('assetOpenFile').click(),
