@@ -163,6 +163,32 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertFalse(list((root / "cache").glob("*.nca")))
             self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
 
+    def test_model_preview_stages_matching_real_animation_and_texture_companions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_path = root / "pokemon.nsp"
+            packed = plain_nca([("pfs", pfs0_files([
+                ("pm0025_00_00.trmdl", b"model"),
+                ("pm0025_00_00.trmsh", b"mesh"),
+                ("pm0025_00_00.trmbf", b"buffer"),
+                ("pm0025_idle.tranm", b"animation"),
+                ("pm0025_body.dds", b"texture"),
+                ("pm0026_00_00.trmsh", b"other species"),
+            ]))])
+            package(package_path, [("program.nca", packed)])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            nsp = browser.open(package_path)
+            nca = browser.children(nsp["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            files = browser.children(section["id"])["entries"]
+            model = next(row for row in files if row["name"].endswith(".trmdl"))
+            preview = browser.preview_source(model["id"])
+            self.assertTrue(preview.exists())
+            self.assertEqual(preview.read_bytes(), b"model")
+            self.assertEqual((preview.parent / "pm0025_idle.tranm").read_bytes(), b"animation")
+            self.assertEqual((preview.parent / "pm0025_body.dds").read_bytes(), b"texture")
+            self.assertFalse((preview.parent / "pm0026_00_00.trmsh").exists())
+
     def test_native_aes_xts_header_and_aes_ctr_section(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
