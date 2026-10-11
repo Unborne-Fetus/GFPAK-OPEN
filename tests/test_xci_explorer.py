@@ -125,6 +125,31 @@ class XCIReaderTests(unittest.TestCase):
             self.assertEqual(browser.children(ncas[1]["id"])["entries"][0]["name"],
                              "Section 0")
 
+    def test_large_xci_partition_lists_every_indexed_nca_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "large.xci"
+            secure = hfs0([(f"{i:032x}.nca", b"NCA3") for i in range(553)])
+            xci_index = hfs0([("secure", secure)])
+            header = bytearray(0x400)
+            header[0x100:0x104] = b"HEAD"
+            struct.pack_into("<Q", header, 0x130, 0x400)
+            game.write_bytes(header + xci_index)
+            browser = AssetBrowser()
+            top = browser.open(game)
+            partition = browser.children(top["id"])["entries"][0]
+            rows, cursor = [], None
+            while True:
+                page = browser.children(partition["id"], cursor)
+                rows.extend(page["entries"])
+                cursor = page.get("next_cursor")
+                if not cursor:
+                    break
+            self.assertEqual(len(rows), 553)
+            self.assertEqual(len({row["id"] for row in rows}), 553)
+            self.assertEqual(rows[-1]["name"], f"{552:032x}.nca")
+            self.assertFalse(page["truncated"])
+
     def test_rejects_out_of_bounds(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.xci"
