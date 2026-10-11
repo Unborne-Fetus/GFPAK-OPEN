@@ -97,6 +97,7 @@
             <button id="tabViewer" type="button" class="mode-tab active" role="tab" aria-selected="true" aria-controls="viewerPanel">◈ &nbsp; 3D VIEWPORT</button>
             <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
             <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; BLENDER CONVERTER</button>
+            <button id="tabAssets" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="assetBrowser" hidden>▤ &nbsp; GAME FILE EXPLORER</button>
           </div>
           <div id="currentModelTag" class="current-file">NO MODEL LOADED</div>
         </div>
@@ -184,9 +185,65 @@
           <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. BNTX, original shaders and native animation tracks are not yet fully decoded. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
+        <section id="assetBrowser" class="asset-browser" role="tabpanel" aria-labelledby="tabAssets" hidden>
+          <div class="asset-hero">
+            <div><span class="eyebrow">INTEGRATED GAME-ASSET EXPLORER</span>
+              <h2>Find models, textures &amp; animations</h2>
+              <p>Explore extracted Switch game folders and GFPAK archives in one place. NSP packages show their outer file table; encrypted NCA resources need separately extracted content.</p>
+            </div>
+            <div class="asset-actions">
+              <button type="button" id="assetOpenFolder" class="button button-primary">＋ Open game folder</button>
+              <button type="button" id="assetOpenFile" class="button button-secondary">Open GFPAK / ZIP / NSP</button>
+            </div>
+          </div>
+          <div class="asset-summary">
+            <div><span>MODELS</span><strong id="assetCountModel">—</strong></div>
+            <div><span>ANIMATIONS</span><strong id="assetCountAnimation">—</strong></div>
+            <div><span>TEXTURES</span><strong id="assetCountTexture">—</strong></div>
+            <div><span>OTHER ASSETS</span><strong id="assetCountOther">—</strong></div>
+          </div>
+          <div class="asset-toolbar">
+            <button type="button" id="assetBack" class="button button-secondary" disabled title="Go back one folder">← Back</button>
+            <div id="assetBreadcrumb" class="asset-breadcrumb">No game source selected</div>
+            <button type="button" id="assetScan" class="button button-secondary" disabled>⌕ Scan assets</button>
+          </div>
+          <div class="asset-filterbar">
+            <input id="assetSearch" class="field" type="search" placeholder="Filter filenames, hashes, Pokémon IDs…" aria-label="Filter discovered assets" />
+            <select id="assetCategory" class="field" aria-label="Filter type">
+              <option value="all">All files</option>
+              <option value="model">Models</option>
+              <option value="model archive">Model archives</option>
+              <option value="animation">Animations</option>
+              <option value="texture">Textures</option>
+              <option value="skeleton">Skeletons</option>
+              <option value="material">Materials</option>
+              <option value="mesh">Mesh parts</option>
+              <option value="unknown">Unidentified resources</option>
+            </select>
+          </div>
+          <div class="asset-content">
+            <div class="asset-table-wrap">
+              <table class="asset-table">
+                <thead><tr><th>ASSET NAME</th><th>TYPE</th><th>SIZE</th><th></th></tr></thead>
+                <tbody id="assetRows"><tr><td colspan="4" class="table-empty">Open a folder, GFPAK, ZIP, or NSP to browse assets.</td></tr></tbody>
+              </table>
+            </div>
+            <aside class="asset-inspector">
+              <span class="eyebrow">SELECTED RESOURCE</span>
+              <h3 id="assetSelected">Nothing selected</h3>
+              <p id="assetSelectedInfo">Select an asset to inspect its type and preview compatible models.</p>
+              <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
+              <p class="helper-copy">Preview conversion is automatic and temporary. Save a GLB only if you want to keep it.</p>
+              <div id="assetScanSummary" class="asset-scan-summary">No recursive scan performed.</div>
+            </aside>
+          </div>
+          <p id="assetNotice" class="asset-notice" role="status" aria-live="polite"></p>
+          <div class="asset-guidance">Asset detection uses extensions and verified GFPAK hash relations. Unknown encrypted or hashed resources are labeled as unidentified—not invented textures or animations. Files are inspected locally and never uploaded.</div>
+        </section>
+
         <section id="desktopTools" class="side-section desktop-native" role="tabpanel" aria-labelledby="tabConverter" hidden>
           <div class="section-heading"><span class="step-number">04</span><h2>BLENDER MODEL CONVERSION</h2><span class="section-line"></span></div>
-          <p class="helper-copy">Advanced native conversion, right here alongside your 3D preview. Runs on your PC.</p>
+          <p class="helper-copy">Model files are converted quietly to a disposable preview. Save a GLB only when you want to keep a copy.</p>
           <div class="native-state" id="nativeBlenderStatus">Checking Blender…</div>
           <div class="native-state" id="nativeAddonStatus">Checking Pokémon importer…</div>
           <div class="native-button-row">
@@ -209,10 +266,11 @@
             <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button></div>
             <label class="toggle-row"><input id="nativeAnimations" type="checkbox" /><span>Import compatible animations</span></label>
           </details>
-          <button type="button" id="nativeConvert" class="button button-primary">Convert with Blender to GLB ↗</button>
+          <button type="button" id="nativeConvert" class="button button-primary">Preview with Blender ↗</button>
           <div id="nativeProgress" class="helper-copy" role="status" aria-live="polite"></div>
           <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Blender conversion details"></div>
           <div id="nativeResults" class="native-results" aria-live="polite"></div>
+          <p class="helper-copy" id="nativeCacheNote">Temporary previews are deleted on the next conversion or when the app closes.</p>
         </section>
 
         <div class="log-panel">
@@ -225,5 +283,6 @@
   </div>
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/desktop-integration.js"></script>
+  <script type="module" src="/src/asset-browser.js"></script>
 </body>
 </html>
