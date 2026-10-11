@@ -59,6 +59,7 @@ echo ========================================================
 echo  Run or copy this EXE. It is not an installer.
 echo  Blender is still needed for unsupported native models.
 echo.
+if /I "%~1"=="--build-only" exit /b 0
 start "" "%CD%\dist\GFPAK-OPEN.exe"
 exit /b 0
 
