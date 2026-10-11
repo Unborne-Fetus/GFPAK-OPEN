@@ -1,13 +1,15 @@
+import io
 import json
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from gfpak_open.core import Resource
 
 from gfpak_open.converter import (
     ConversionError, ConversionOptions, HashDictionary, convert_model,
-    find_models, fnv1a64, safe_path, validate_glb, discover_dictionary,
+    find_models, fnv1a64, safe_path, validate_glb, discover_dictionary, community_dictionary,
 )
 
 
@@ -37,6 +39,19 @@ class ConverterTests(unittest.TestCase):
             js = Path(tmp) / "map.json"
             js.write_text(json.dumps({"0123456789abcdef": "pokemon/model.trmdl"}))
             self.assertEqual(HashDictionary(js).mapping["0123456789abcdef"], "pokemon/model.trmdl")
+
+    def test_community_dictionary_matches_archive_model_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            names = ["model.trmdl"] + [f"asset_{i}.trmsh" for i in range(130)]
+            response = io.BytesIO(("\\n".join(names) + "\\n").encode())
+            archive = type("Archive", (), {
+                "resources": [Resource(0, 0, 3, 100, 50, 0, fnv1a64("model.trmdl"), None, None, None)]
+            })()
+            messages = []
+            with patch.dict("os.environ", {"LOCALAPPDATA": tmp}):
+                with patch("gfpak_open.converter.urllib.request.urlopen", return_value=response):
+                    _, matched = community_dictionary(archive, messages.append)
+            self.assertEqual(matched, {0: "model.trmdl"})
 
     def test_auto_discover_companion_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
