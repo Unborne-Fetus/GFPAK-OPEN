@@ -228,9 +228,50 @@ async function startNSPTask(kind, row) {
 }
 
 
+async function refreshNCAReader() {
+  if (!api?.browse_nca_settings) return;
+  try {
+    const state = await api.browse_nca_settings();
+    const reader = state.reader || 'No reader selected';
+    const keyset = state.keyset || 'No keyset selected';
+    id('ncaReaderStatus').textContent = state.ready
+      ? '✓ Reader ready: ' + reader + ' · ' + keyset + ' · Expand an NCA to read actual Section folders.'
+      : reader + ' · ' + keyset + ' · Encrypted NCA contents remain locked.';
+    id('ncaReaderStatus').classList.toggle('ready', Boolean(state.ready));
+  } catch (error) {
+    id('ncaReaderStatus').textContent = String(error.message || error);
+  }
+}
+
+function invalidateNCASections() {
+  // Existing nodes were loaded under old tool settings. Force lazy reload
+  // without rebuilding the entire user-opened file tree.
+  for (const view of nxTreeItems.values()) {
+    if (view.row.kind !== 'nspfile') continue;
+    nxTreeListings.delete(view.row.id);
+    view.loaded = false;
+    view.expanded = false;
+    view.children.replaceChildren();
+    view.children.hidden = true;
+    view.toggle.textContent = '▸';
+    view.node.setAttribute('aria-expanded', 'false');
+  }
+}
+
+async function selectNCASetting(kind) {
+  try {
+    await api.browse_nca_select(kind);
+    invalidateNCASections();
+    await refreshNCAReader();
+    showNotice('NCA reader settings updated. Expand a content NCA in the left tree to load real sections.');
+  } catch (error) { showNotice(error.message || String(error), true); }
+}
+
 function nxTreeIcon(row) {
   if (row.kind === 'nsp') return '▣';
   if (row.kind === 'nspfile') return '▣';
+  if (row.kind === 'nca_section') return '▤';
+  if (row.kind === 'nca_locked') return '🔒';
   if (row.kind === 'linked_dir') return '▤';
   if (row.kind === 'directory' || row.kind === 'zipdir') return '▤';
   if (row.category === 'animation') return '▶';
@@ -358,9 +399,20 @@ async function nxToggleTree(row, force = null) {
   const expanded = force === null ? !view.expanded : !!force;
   if (expanded && !view.loaded) {
     view.toggle.textContent = '⋯';
-    const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
-    nxTreeListings.set(row.id, listing);
-    nxPopulateChildren(row, listing);
+    if (row.kind === 'nspfile') {
+      showNotice('Reading NCA Section folders. The local reader may temporarily stage a large NCA; no original files are changed.');
+    } else if (row.kind === 'nca_section') {
+      showNotice('Extracting only Section ' + row.index + ' into the temporary preview cache…');
+    }
+    try {
+      const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
+      nxTreeListings.set(row.id, listing);
+      nxPopulateChildren(row, listing);
+      if (listing.note) showNotice(listing.note);
+    } catch (error) {
+      view.toggle.textContent = '▸';
+      throw error;
+    }
   }
   view.expanded = expanded;
   view.children.hidden = !expanded;
@@ -625,6 +677,8 @@ async function openSource(mode) {
     pathStack = [{root: result.root, listing: result.children}];
     nxResetTree(result.root, result.children);
     id('assetAttach').disabled = result.root.kind !== 'nsp';
+    id('ncaReaderBar').hidden = result.root.kind !== 'nsp';
+    if (result.root.kind === 'nsp') refreshNCAReader();
     id('assetSearch').value = '';
     id('assetCategory').value = 'all';
     id('assetScan').disabled = mode !== 'folder';
@@ -729,6 +783,8 @@ function initialize() {
   }
   id('assetOpenFolder').addEventListener('click', () => openSource('folder'));
   id('assetAttach').addEventListener('click', nxAttachExtractedFolder);
+  id('ncaSelectReader').addEventListener('click', () => selectNCASetting('reader'));
+  id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   id('assetBack').addEventListener('click', () => {
     if (scanListing) scanListing = null;
