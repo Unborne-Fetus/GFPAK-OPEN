@@ -143,9 +143,8 @@ class NativeSection:
         if size < 0 or relative < 0 or relative > self.size or size > self.size - relative:
             raise NativeNCAError("Requested data is outside the NCA filesystem section.")
         absolute = self.start + relative
-        payload = self.nca.read_raw(absolute, size)
         if self.encryption == 1 or self.nca.plaintext:
-            return payload
+            return self.nca.read_raw(absolute, size)
         if self.encryption == 3:
             if not self.key:
                 raise NativeNCAError("The encrypted section needs a compatible content key.")
