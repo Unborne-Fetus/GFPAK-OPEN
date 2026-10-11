@@ -45,9 +45,23 @@ export async function loadDecodedTexture(item, srgb = true) {
   const data = await item.getBytes();
   if (format === '.bntx') {
     const decoded = decodeBntxTexture(parseBntx(data), 0);
-    const texture = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat);
+    let texture;
+    if (decoded.compressed) {
+      const gpuFormat = decoded.compressed === 'bc7'
+        ? THREE.RGBA_BPTC_Format
+        : THREE['RGBA_ASTC_' + decoded.blockWidth + 'x' + decoded.blockHeight + '_Format'];
+      if (!gpuFormat) throw new Error('This browser does not recognize the native BNTX compression format');
+      texture = new THREE.CompressedTexture(
+        [{data:decoded.data,width:decoded.width,height:decoded.height}],
+        decoded.width, decoded.height, gpuFormat
+      );
+      // BPTC / ASTC textures require corresponding WebGL GPU extensions.
+      // THREE uploads the original deswizzled blocks without fabricating pixels.
+    } else {
+      texture = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat);
+      texture.flipY = true;
+    }
     texture.name = decoded.name || item.path;
-    texture.flipY = true;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     texture.needsUpdate = true;
