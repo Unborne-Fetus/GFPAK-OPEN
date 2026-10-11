@@ -606,7 +606,8 @@ function select(row) {
   id('assetSelectedInfo').textContent = row
     ? type + ' • ' + formatSize(row.size) +
       (row.relative ? '\n' + row.relative : '') +
-      (row.kind === 'nspfile' && row.format === 'Encrypted NCA' ? '\nEncrypted NCA contents cannot be decoded here.' : '')
+      (row.kind === 'nspfile' && /\.nca$/i.test(row.name) ?
+        '\nExpand this NCA to browse readable sections with the built-in reader.' : '')
     : 'Select an asset to inspect or preview it.';
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
@@ -822,8 +823,9 @@ async function openSource(mode) {
     pathStack = [{root: result.root, listing: result.children}];
     nxResetTree(result.root, result.children);
     id('assetAttach').disabled = result.root.kind !== 'nsp';
-    id('ncaReaderBar').hidden = result.root.kind !== 'nsp';
-    if (result.root.kind === 'nsp') refreshNCAReader();
+    const nativeArchive = ['nsp', 'xci'].includes(result.root.kind);
+    id('ncaReaderBar').hidden = !nativeArchive;
+    if (nativeArchive) refreshNCAReader();
     id('assetSearch').value = '';
     id('assetCategory').value = 'all';
     id('assetScan').disabled = mode !== 'folder';
