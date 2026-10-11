@@ -251,3 +251,6 @@
  padding:9px;border:1px solid #2d5060;background:#0b2432;border-radius:8px;
 }
 .desktop-app .native-result-row .button{min-width:0;white-space:normal;font-size:11px}
+
+/* Hidden tab panels must stay hidden even when layout rules use display:flex. */
+.desktop-app #assetBrowser[hidden], .desktop-app #desktopTools[hidden]{display:none!important}
