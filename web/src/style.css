@@ -114,3 +114,24 @@
  .desktop-app #desktopTools{padding:18px}
  .desktop-app #desktopTools .native-button-row{grid-template-columns:1fr}
 }
+
+/* Native conversion diagnostics are retained in the converter tab. */
+.desktop-app .native-log{
+  max-height:220px;
+  min-height:60px;
+  padding:12px;
+  overflow:auto;
+  border:1px solid #2c4856;
+  background:#0a1a29;
+  border-radius:9px;
+  color:#afc5d1;
+  font:12px/1.6 ui-monospace,Consolas,monospace;
+}
+.desktop-app .native-log:empty::before{
+  content:"Model discovery and Blender progress will appear here.";
+  color:#7693a7;
+}
+.desktop-app .native-log div{
+  padding:2px 0;
+  overflow-wrap:anywhere;
+}
