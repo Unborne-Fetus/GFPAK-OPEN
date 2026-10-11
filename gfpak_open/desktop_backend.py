@@ -319,6 +319,11 @@ class DesktopAPI:
         threading.Thread(target=run, daemon=True).start()
         return True
 
+    def browse_nsp_page(self, node_id: str, page: int = 0,
+                        query: str = "", category: str = "all"):
+        with self._lock:
+            return self._browser.nsp_page(node_id, page, query, category)
+
     def browse_nsp_summary(self, node_id: str):
         with self._lock:
             node = self._browser.node(node_id)
