@@ -329,7 +329,7 @@ class NativeNCA:
                 raise NativeNCAError(
                     f"NCA section {i} uses unknown encryption mode {encryption}."
                 )
-            if encryption in (2, 3, 4, 5, 6) and content_keys is None:
+            if encryption in (2, 3) and content_keys is None:
                 raise NativeNCAError(
                     "NCA filesystem content key is unavailable. Choose a compatible "
                     "locally supplied keys file. Rights-managed titles may also need "
