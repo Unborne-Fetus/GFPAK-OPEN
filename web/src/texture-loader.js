@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
+import { parseBntx, decodeBntxTexture } from './bntx.js';
 
 function suffix(path) {
   const p = String(path).toLowerCase();
@@ -42,8 +43,18 @@ export function decodeDDSTexture(bytes, srgb = true) {
 export async function loadDecodedTexture(item, srgb = true) {
   const format = suffix(item.path);
   const data = await item.getBytes();
-  if (format === '.bntx' || format === '.trtex')
-    throw new Error(format.toUpperCase() + ' needs game-specific tiling and compression decoding; no texture was guessed');
+  if (format === '.bntx') {
+    const decoded = decodeBntxTexture(parseBntx(data), 0);
+    const texture = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat);
+    texture.name = decoded.name || item.path;
+    texture.flipY = true;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  }
+  if (format === '.trtex')
+    throw new Error('TRTEX texture needs its game-specific layout; no texture was guessed');
   if (format === '.dds') {
     const texture = decodeDDSTexture(data, srgb);
     texture.name = item.path;
