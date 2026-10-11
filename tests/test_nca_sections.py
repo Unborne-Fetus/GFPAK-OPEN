@@ -241,6 +241,34 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(native.sections[0].read(fs.file("main").offset, 23),
                              b"Test executable payload")
 
+    def test_decrypted_header_does_not_mistake_encrypted_sections_for_plaintext(self):
+        """A locally decoded NCA header may still have encrypted AES-CTR data."""
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            headerkey = bytes(range(32))
+            area_key = bytes(range(0x20, 0x30))
+            content_key = bytes(range(0x40, 0x50))
+            encrypted = plain_nca(
+                [("pfs", pfs0_files([("main", b"encrypted executable")] ))],
+                encrypted=True, headerkey=headerkey,
+                areakey=area_key, contentkey=content_key)
+            restored_header = bytearray()
+            for i in range(6):
+                sector = encrypted[i * 0x200:(i + 1) * 0x200]
+                cipher = Cipher(algorithms.AES(headerkey),
+                                modes.XTS(i.to_bytes(16, "big"))).decryptor()
+                restored_header.extend(cipher.update(sector) + cipher.finalize())
+            game = root / "decoded_header.nsp"
+            package(game, [("program.nca", bytes(restored_header) + encrypted[0xC00:])])
+            keys = root / "local.keys"
+            keys.write_text("nca_key_area_key_application_00 = " + area_key.hex())
+            native = NativeNCA(NSPAnalyzer(game), 0, Keyset(keys))
+            self.assertTrue(native.plaintext)
+            meta = native.sections[0].filesystem().file("main")
+            self.assertEqual(native.sections[0].read(meta.offset, meta.size),
+                             b"encrypted executable")
+
     def test_update_patch_sparse_compressed_layers_are_identified_without_blocking_exefs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
