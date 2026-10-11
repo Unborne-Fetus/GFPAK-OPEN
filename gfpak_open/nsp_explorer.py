@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import struct
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -144,6 +145,64 @@ class NSPAnalyzer:
             raise ValueError("Invalid package entry index")
         return self.entries[index]
 
+    def plaintext_content_metadata(self, max_files: int = 8) -> list[dict]:
+        """Inspect small, already-plaintext CNMT XML metadata when present.
+
+        NSP packages do not always contain XML; encrypted NCA metadata cannot
+        be read here. XML entities and DTD declarations are refused.
+        """
+        results = []
+        for entry in self.entries:
+            if len(results) >= max_files:
+                break
+            if not entry.name.lower().endswith(".cnmt.xml") or entry.size > 2 * 1024 * 1024:
+                continue
+            with self.path.open("rb") as handle:
+                handle.seek(entry.offset)
+                data = handle.read(entry.size)
+            if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+                continue
+            try:
+                root = ET.fromstring(data)
+            except (ET.ParseError, ValueError):
+                continue
+
+            def local(tag: str) -> str:
+                return tag.rsplit("}", 1)[-1]
+
+            def field(element, candidates):
+                for item in element:
+                    if local(item.tag).lower() in candidates:
+                        return (item.text or "").strip()[:128]
+                return ""
+
+            title_id = field(root, {"id", "titleid", "title_id"})
+            version = field(root, {"version"})
+            category = field(root, {"type", "contentmetatype"})
+            required = field(root, {"requiredsystemversion", "requiredappversion",
+                                    "requiredapplicationversion"})
+            children = []
+            for element in root:
+                if local(element.tag).lower() != "content":
+                    continue
+                content_id = field(element, {"id"})
+                if not re.fullmatch(r"[a-f0-9]{32}", content_id, re.I):
+                    continue
+                children.append({
+                    "content_id": content_id.lower(),
+                    "role": field(element, {"type"}),
+                    "size": field(element, {"size"}),
+                })
+                if len(children) >= 300:
+                    break
+            results.append({
+                "filename": entry.name,
+                "title_id": title_id, "version": version,
+                "type": category, "required_system_version": required,
+                "contents": children,
+            })
+        return results
+
     def summary(self) -> dict:
         roles = Counter(e.role for e in self.entries)
         formats = Counter(e.format for e in self.entries)
@@ -158,6 +217,7 @@ class NSPAnalyzer:
             "roles": dict(roles), "formats": dict(formats),
             "role_bytes": dict(role_bytes),
             "content_ids": sum(e.content_id is not None for e in self.entries),
+            "plaintext_cnmt": self.plaintext_content_metadata(),
             "warnings": list(self.warnings),
             "encryption": "NCA payloads are opaque/encrypted. No NCA keys are used.",
             "capabilities": ["PFS0 directory", "size and offset analysis",
