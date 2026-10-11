@@ -13,8 +13,25 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--addon", required=True)
+    parser.add_argument("--deps", help="App-managed Python dependency directory")
     parser.add_argument("--animations", action="store_true")
     opts = parser.parse_args(arguments)
+    if opts.deps:
+        dependencies = Path(opts.deps).resolve()
+        if not (dependencies / "flatbuffers" / "__init__.py").is_file():
+            raise RuntimeError(
+                "Missing FlatBuffers files in GFPAK-OPEN's managed Blender dependencies."
+            )
+        # Must precede loading the importer, which checks for flatbuffers and
+        # otherwise tries to install packages from inside Blender's disabled network.
+        sys.path.insert(0, str(dependencies))
+    try:
+        import flatbuffers  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "FlatBuffers is unavailable to Blender's Python. Update GFPAK-OPEN "
+            "so it supplies a managed --deps directory automatically."
+        ) from exc
     addon = Path(opts.addon).resolve()
     spec = importlib.util.spec_from_file_location(
         "pokemon_switch_importer", addon / "__init__.py",
@@ -33,7 +50,11 @@ def main():
         imported = bpy.ops.import_scene.trmdl(filepath=str(source),
                                                loadlods=False, multiple=False, multiplesubs=False)
         if "FINISHED" not in imported:
-            raise RuntimeError("TRMDL import cancelled; check Blender flatbuffers installation")
+            raise RuntimeError(
+                "TRMDL importer cancelled after Python dependency initialization. "
+                "See preceding importer messages for missing model companions or "
+                "unsupported resources."
+            )
     elif source.suffix.lower() == ".gfbmdl":
         # The legacy Blender operator reads its 'files' collection, not 'filepath',
         # which is empty in background mode. Call the import function directly.
