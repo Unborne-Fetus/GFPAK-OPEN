@@ -87,7 +87,7 @@ class DesktopAPI:
                     "setup": dict(self.setup), "sources": [str(x) for x in self.sources],
                     "settings": {name: self.settings.get(name, "")
                                  for name in ("hashes", "oodle", "textures")},
-                    "animations": bool(self.settings.get("animations", False)),
+                    "animations": bool(self.settings.get("animations", True)),
                     "cache": "Temporary GLBs are removed on the next conversion or app exit"}
 
     def _install_addon(self):
