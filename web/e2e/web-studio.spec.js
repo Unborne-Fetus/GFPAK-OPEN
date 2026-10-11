@@ -153,7 +153,10 @@ test('desktop explorer browses extracted folders and filters animations/textures
                     kind:'gfpak', category:'model archive', expandable:true, size:1300}],
           counts:{'model archive':1}, truncated:false, note:''
         }),
-        browse_scan_status: async () => ({running:false, result:null, error:''})
+        browse_scan_status: async () => ({running:false, result:null, error:''}),
+        browse_item_details: async node => ({name:node,kind:'file',category:'animation',
+          size:12,location:'C:/Models/idle.tranm',hex_lines:[],notes:[]}),
+        browse_save_item: async () => 'C:/Exports/idle.tranm'
       }
     };
   });
@@ -168,6 +171,10 @@ test('desktop explorer browses extracted folders and filters animations/textures
   await page.locator('#assetCategory').selectOption('animation');
   await expect(page.locator('#assetRows tr')).toHaveCount(1);
   await expect(page.locator('#assetRows tr')).toContainText('idle.tranm');
+  await page.locator('#assetRows tr').first().click();
+  await expect(page.locator('#assetSaveFile')).toBeEnabled();
+  await page.locator('#assetSaveFile').click();
+  await expect(page.locator('#assetNotice')).toContainText('C:/Exports/idle.tranm');
   await page.locator('#assetCategory').selectOption('all');
   await page.locator('#assetRows tr').filter({hasText:'pokemon'}).first().locator('button').click();
   await expect(page.locator('#assetBreadcrumb')).toContainText('pokemon');
