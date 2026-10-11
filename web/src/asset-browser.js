@@ -6,12 +6,15 @@ let pathStack = [];
 let current = [];
 let selected = null;
 let scanListing = null;
+let activeNSP = null;
+let selectionRevision = 0;
+let nspTaskPolling = false;
 const categories = {
   model: 'Model', 'model archive': 'Model archive',
   animation: 'Animation', texture: 'Texture', skeleton: 'Skeleton',
   material: 'Material', mesh: 'Mesh', folder: 'Folder',
   archive: 'Archive', 'encrypted container': 'Encrypted NCA',
-  unknown: 'Unidentified', other: 'Other'
+  unknown: 'Unidentified', metadata: 'Metadata', other: 'Other'
 };
 
 function showNotice(message, error = false) {
@@ -54,6 +57,7 @@ function select(row) {
     : 'Select an asset to inspect or preview it.';
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
+  showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
 }
 
 function renderRows(rows) {
@@ -144,6 +148,13 @@ function renderListing() {
   const notice = scanListing ? 'Showing recognized files from the folder scan.' : node.listing.note;
   showNotice(notice || (node.listing.truncated ? 'This directory has more files than the visible display limit.' : ''));
   select(null);
+  if (node.root.kind === 'nsp') {
+    loadNSPDashboard(node.root).catch(error => showNotice(error.message || String(error), true));
+  } else {
+    activeNSP = null;
+    id('nspWorkbench').hidden = true;
+    id('nspSelection').hidden = true;
+  }
 }
 
 async function openNode(row) {
@@ -250,6 +261,19 @@ function initialize() {
   id('assetCategory').addEventListener('change', () => renderRows(current));
   id('assetPreview').addEventListener('click', () => preview());
   id('assetScan').addEventListener('click', scanFolder);
+  id('nspManifest').addEventListener('click', async () => {
+    if (!activeNSP) return;
+    try {
+      const saved = await api.browse_nsp_manifest(activeNSP.id);
+      if (saved) showNotice('Package inventory saved: ' + saved);
+    } catch (error) { showNotice(error.message || String(error), true); }
+  });
+  id('nspAudit').addEventListener('click', () => startNSPTask('audit', activeNSP));
+  id('nspHash').addEventListener('click', () => startNSPTask('hash', selected));
+  id('nspExtract').addEventListener('click', () => startNSPTask('extract', selected));
+  id('nspReadHex').addEventListener('click', () => readHexDump());
+  id('nspCancel').addEventListener('click', () => api.browse_nsp_cancel_task());
+
 }
 
 window.addEventListener('pywebviewready', initialize);
