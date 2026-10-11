@@ -300,8 +300,54 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             info = newer.sections[1].compatibility()
             self.assertTrue(info["sparse"])
             self.assertTrue(info["compressed_storage"])
-            with self.assertRaisesRegex(NativeNCAError, "sparse storage"):
+            with self.assertRaisesRegex(NativeNCAError, "Combined sparse/compressed"):
                 newer.sections[1].filesystem()
+
+    def test_plaintext_compressed_nca_bucket_tree_opens_romfs(self):
+        # Synthetic compressed NCA using an uncompressed BucketTree entry.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            romfs = romfs_nested()
+            table = bytearray(0x8000)
+            struct.pack_into("<IIQ", table, 0, 0, 1, len(romfs))
+            struct.pack_into("<IIQ", table, 0x4000, 0, 1, len(romfs))
+            struct.pack_into("<qqBb2sI", table, 0x4010, 0, 0, 0, 0, b"\\0\\0", 0xffffffff)
+            raw = bytearray(plain_nca([("romfs", romfs + bytes((-len(romfs)) % 0x400) + table)]))
+            fs = 0x400
+            struct.pack_into("<QQ", raw, fs+0x178, 0x400, len(table))
+            struct.pack_into("<4sIII", raw, fs+0x188, b"BKTR", 1, 1, 0)
+            filename = root / "compressed.nsp"
+            package(filename, [("compressed.nca", bytes(raw))])
+            section = NativeNCA(NSPAnalyzer(filename), 0).sections[0]
+            self.assertTrue(section.compatibility()["compressed_storage"])
+            files = section.filesystem()
+            entries = files.children_page()["entries"]
+            self.assertEqual(entries[0]["name"], "bin")
+            self.assertEqual(section.read(0, 4), romfs[:4])
+
+    def test_plaintext_sparse_nca_maps_data_and_zero_filled_holes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            romfs = romfs_nested()
+            table = bytearray(0x8000)
+            struct.pack_into("<IIQ", table, 0, 0, 1, len(romfs)+64)
+            struct.pack_into("<IIQ", table, 0x4000, 0, 2, len(romfs)+64)
+            struct.pack_into("<QQI", table, 0x4010, 0, 0, 0)
+            struct.pack_into("<QQI", table, 0x4010+20, len(romfs), 0, 1)
+            raw = bytearray(plain_nca([("romfs", romfs)]))
+            fs = 0x400
+            physical = len(raw)
+            raw.extend(table)
+            struct.pack_into("<QQ", raw, fs+0x148, 0, len(table))
+            struct.pack_into("<4sIII", raw, fs+0x158, b"BKTR", 1, 2, 0)
+            struct.pack_into("<Q", raw, fs+0x168, physical)
+            filename = root / "sparse.nsp"
+            package(filename, [("sparse.nca", bytes(raw))])
+            section = NativeNCA(NSPAnalyzer(filename), 0).sections[0]
+            self.assertTrue(section.compatibility()["sparse"])
+            self.assertEqual(section.filesystem().children_page()["entries"][0]["name"], "bin")
+            self.assertEqual(section.read(len(romfs)-8, 16), romfs[-8:] + bytes(8))
+            self.assertEqual(section.read(len(romfs), 64), bytes(64))
 
     def test_locked_nca_has_help_and_no_fabricated_sections(self):
         with tempfile.TemporaryDirectory() as temp:
