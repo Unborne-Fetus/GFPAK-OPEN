@@ -83,6 +83,12 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### Large NCA sections and paginated filesystem browsing
+
+The built-in RomFS reader no longer rejects large sections because metadata tables exceed **16 MiB**, and no longer errors when a single folder contains **3,000+** entries. It uses an LRU cache of 64 KiB metadata pages (32 pages per directory/file index) and opens **250 files per request** instead of copying huge filesystem tables into RAM. A **Load next 250 files** control appears in the left content tree and center file list when the folder has more entries. Repeated clicks browse the full directory without silently dropping later files. Only the metadata pages being accessed are decoded; model/texture payloads remain on disk until selected. File reads and explicit single-file export remain bounded/streamed and do not use the whole section size as an allocation request.
+
+The huge-section regression uses a synthetic **9 GiB** NCA section with 24 MiB and 48 MiB filesystem tables and 3,304 sibling files. This demonstrates the eliminated size/entry limits, but cannot guarantee support for every encrypted or patched NCA variant without real-game validation. **BKTR patch overlays, sparse block remapping, and NCA compressed-storage layers remain separately unsupported** and will show their specific error messages rather than a false size-limit error.
+
 ### Native NSP NCA tree — no external application
 
 The Windows portable EXE includes its own NCA3 reader. Open an NSP and expand a Program NCA to inspect **real NCA sections**. Expand supported ExeFS (PartitionFS) or RomFS sections to browse actual nested folders such as `bin/archive/pokemon` without using NX File Viewer, hactool, Blender, or another extractor. Directory tables are read lazily from the original NSP rather than copying an entire multi-gigabyte NCA to temporary storage. You can inspect metadata and hex previews, save individual files explicitly, or select a supported native model for a preview. Single-file previews are cleaned up on exit. The NCA reader itself needs no other executable.
