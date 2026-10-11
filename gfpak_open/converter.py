@@ -18,6 +18,7 @@ from typing import Callable
 
 from .core import GFPak, GFPakError, Resource, find_oodle_dll
 from .model_discovery import infer_model_resources
+from .blender_dependencies import ensure_blender_dependencies
 
 
 class ConversionError(GFPakError):
@@ -448,6 +449,10 @@ def convert_model(options: ConversionOptions,
                    "--model", str(model), "--output", str(output), "--addon", str(addon)]
         if options.animations:
             command += ["--animations"]
+        if (addon / "PokemonSwitch.py").is_file():
+            # Install FlatBuffers outside Blender, whose network access may be disabled.
+            dependencies = ensure_blender_dependencies(log)
+            command += ["--deps", str(dependencies)]
         try:
             result = subprocess.run(command, capture_output=True, text=True,
                                     errors="replace", timeout=900, check=False)
