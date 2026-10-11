@@ -19,6 +19,15 @@ if errorlevel 1 (
         exit /b 1
     )
 )
+%PYTHON% -c "import ooz; assert hasattr(ooz, 'decompress')" >nul 2>&1
+if errorlevel 1 (
+    echo Installing open-source Oodle support for native Pokemon models...
+    %PYTHON% -m pip install --only-binary=:all: pyooz==0.0.8
+    if errorlevel 1 (
+        echo Warning: Oodle support could not be installed.
+        echo The app will still open, but Oodle GFPAKs may require an existing DLL.
+    )
+)
 %PYTHON% launch.py
 if errorlevel 1 (
     echo.
