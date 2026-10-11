@@ -24,6 +24,7 @@ from .ncz_native import restore_ncz
 from .xci_explorer import XCIImage, XCIPartition
 from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
+from .pokemon_assets import group_related, pokemon_id
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
                         fnv1a64, REFERENCE_RE, safe_path, ConversionError)
 
@@ -611,6 +612,20 @@ class AssetBrowser:
                 dest.unlink(missing_ok=True)
                 raise
         return dest
+
+    def asset_family(self, id_: str) -> dict:
+        """Related assets currently discovered by browsing real game resources."""
+        node = self.node(id_)
+        def display_path(item: dict) -> str:
+            if item["kind"] in {"nca_file", "nca_dir"}:
+                return item["inner"].split(":", 2)[-1]
+            if item["kind"] == "file":
+                return str(item["path"])
+            return item["name"].split(" · ", 1)[-1]
+        selected = display_path(node)
+        known = [display_path(item) for item in self._nodes.values()
+                 if item["kind"] in {"file", "nca_file", "gfpak_resource", "zipfile"}]
+        return group_related(selected, known)
 
     def item_details(self, id_: str) -> dict:
         """Bounded content sniffing for the selected file in the native tree."""
