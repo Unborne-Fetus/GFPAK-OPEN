@@ -390,21 +390,17 @@ class AssetBrowser:
             return {'root': self._public(node), 'entries': [self._public(linked)],
                     'counts': {'folder': 1}, 'truncated': False,
                     'note': 'Showing separately extracted files linked to this NCA; no NCA decryption was performed.'}
-        if not self._nca_sections.available():
-            message = ("NCA sections are protected. Select a local NCA reader and "
-                       "a compatible keyset in the toolbar. Sections will be "
-                       "displayed only when actually identified by the reader.")
-        else:
-            try:
-                for number in self._nca_sections.sections(reader, index):
-                    child = self._node("nca_section", reader.path, inner=str(index),
-                                       index=number, name=f"Section {number}")
-                    child["category"] = "folder"
-                    self._section_nodes[child["id"]] = (index, number)
-                    entries.append(child)
-                message = f"Identified {len(entries)} actual NCA filesystem sections."
-            except (OSError, RuntimeError, ValueError) as error:
-                message = str(error)
+        try:
+            for number in self._nca_sections.sections(reader, index):
+                child = self._node("nca_section", reader.path, inner=str(index),
+                                   index=number, name=f"Section {number}")
+                child["category"] = "folder"
+                self._section_nodes[child["id"]] = (index, number)
+                entries.append(child)
+            message = ("Opened " + str(len(entries)) + " NCA section headers "
+                       "using GFPAK-OPEN's native parser.")
+        except (OSError, RuntimeError, ValueError) as error:
+            message = str(error)
         if not entries:
             locked = self._node("nca_locked", reader.path, inner=str(index),
                                 name="Sections unavailable")
