@@ -7,7 +7,7 @@ name = "gfpak-open"
 version = "0.1.0"
 description = "Read-only GFLXPACK archive inspector and resource exporter"
 requires-python = ">=3.10"
-dependencies = ["cryptography>=44,<48"]
+dependencies = ["cryptography>=44,<48", "zstandard>=0.23,<1"]
 
 [project.optional-dependencies]
 lz4 = ["lz4>=4"]
