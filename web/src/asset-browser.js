@@ -22,6 +22,7 @@ const categories = {
   animation: 'Animation', texture: 'Texture', skeleton: 'Skeleton',
   material: 'Material', mesh: 'Mesh', folder: 'Folder',
   archive: 'Archive', 'encrypted container': 'Encrypted NCA',
+  'compressed container': 'NCZ compressed NCA',
   unknown: 'Unidentified', metadata: 'Metadata', other: 'Other'
 };
 
@@ -270,7 +271,7 @@ async function selectNCASetting(kind) {
 }
 
 function nxTreeIcon(row) {
-  if (row.kind === 'nsp') return '▣';
+  if (row.kind === 'nsp' || row.kind === 'xci' || row.kind === 'xci_partition') return '▣';
   if (row.kind === 'nspfile') return '▣';
   if (row.kind === 'nca_section' || row.kind === 'nca_dir') return '▤';
   if (row.kind === 'nca_dir') return '▤';
