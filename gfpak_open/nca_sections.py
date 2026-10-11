@@ -22,7 +22,7 @@ class LocalNCASections:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.keyset: Path | None = None
         self._keys = Keyset(None)
-        self._readers: dict[tuple[str, int], NativeNCA] = {}
+        self._readers: dict[tuple, NativeNCA] = {}
 
     def configure(self, keyset: str | Path = ""):
         self.keyset = Path(keyset) if keyset else None
@@ -37,8 +37,21 @@ class LocalNCASections:
         return self._keys.has_header
 
     def _reader(self, analyzer: NSPAnalyzer, index: int) -> NativeNCA:
-        identifier = (str(analyzer.path.resolve()), index)
+        entry = analyzer.get(index)
+        source = analyzer.path.resolve()
+        stat = source.stat()
+        # An XCI may hold multiple HFS0 partitions, each with entry index 0.
+        # Identifying an NCA only by (path, index) reuses the wrong NCA.
+        # Include its absolute byte range and the source revision.
+        identifier = (str(source), index, entry.offset, entry.size,
+                      stat.st_size, stat.st_mtime_ns)
         if identifier not in self._readers:
+            # Forget stale revisions of the same underlying file.
+            stale = [key for key in self._readers
+                     if key[0] == str(source) and
+                     (key[4], key[5]) != (stat.st_size, stat.st_mtime_ns)]
+            for key in stale:
+                del self._readers[key]
             self._readers[identifier] = NativeNCA(analyzer, index, self._keys)
         return self._readers[identifier]
 
