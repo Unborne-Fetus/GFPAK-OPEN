@@ -11,6 +11,9 @@ dependencies = []
 
 [project.optional-dependencies]
 lz4 = ["lz4>=4"]
+# Optional independent GPL-3.0-or-later open-source Oodle decoder.
+# See https://pypi.org/project/pyooz/ for its source and license.
+oodle = ["pyooz==0.0.8"]
 
 [project.scripts]
 gfpak-open = "gfpak_open.cli:main"
