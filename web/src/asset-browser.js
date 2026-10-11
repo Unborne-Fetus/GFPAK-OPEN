@@ -689,8 +689,7 @@ function renderRows(rows) {
     body.append(row);
   }
   const step = pathStack.at(-1);
-  if (!scanListing && step?.listing?.next_cursor &&
-      (step.root.kind === 'nca_section' || step.root.kind === 'nca_dir')) {
+  if (!scanListing && step?.listing?.next_cursor) {
     const moreRow = document.createElement('tr');
     moreRow.className = 'nx-pagination-row';
     const cell = document.createElement('td');
