@@ -143,7 +143,10 @@ class NativeSection:
         if size < 0 or relative < 0 or relative > self.size or size > self.size - relative:
             raise NativeNCAError("Requested data is outside the NCA filesystem section.")
         absolute = self.start + relative
-        if self.encryption == 1 or self.nca.plaintext:
+        # A plaintext *header* does not imply plaintext section data.
+        # Some extracted NCAs have a decoded header but retain CTR-encrypted
+        # filesystem sections. Honor each section's declared encryption mode.
+        if self.encryption == 1:
             return self.nca.read_raw(absolute, size)
         if self.encryption == 3:
             if not self.key:
@@ -292,7 +295,9 @@ class NativeNCA:
         rights = header[0x230:0x240]
         area = header[0x300:0x340]
         content_keys = None
-        if not self.plaintext:
+        if any(section_header[4] in (2, 3, 4, 5, 6)
+               for section_header in (header[0x400+i*0x200:0x600+i*0x200]
+                                      for i in range(4))):
             if any(rights):
                 name = rights.hex()
                 content = self.keys.get("titlekey_" + name, name)
@@ -324,16 +329,16 @@ class NativeNCA:
                 raise NativeNCAError(
                     f"NCA section {i} uses unknown encryption mode {encryption}."
                 )
-            if not self.plaintext and encryption != 1 and content_keys is None:
+            if encryption in (2, 3, 4, 5, 6) and content_keys is None:
                 raise NativeNCAError(
                     "NCA filesystem content key is unavailable. Choose a compatible "
                     "locally supplied keys file. Rights-managed titles may also need "
                     "a matching title content key."
                 )
             key = None
-            if not self.plaintext and encryption == 3:
+            if encryption == 3:
                 key = content_keys[2]
-            elif not self.plaintext and encryption == 2:
+            elif encryption == 2:
                 key = content_keys[0] + content_keys[1]
             self.sections[i] = NativeSection(self, i, offset, boundary - offset,
                                              fs, encryption, key)
