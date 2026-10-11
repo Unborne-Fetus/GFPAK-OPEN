@@ -61,6 +61,19 @@ The desktop application now opens **one studio window** with the same 3D viewer 
 5. For supported Trinity GFPAKs, the desktop converter first identifies verified **TRMDL/TRMSH/TRMBF groups from the archive's FNV-1a hashes** without needing a filename dictionary. It then attempts to restore the exact companion filenames by reading strings from the decoded model and verifying their hashes. Unrecognized resources still benefit from an optional gfpak.txt/JSON dictionary.
 6. Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
 
+**Blender 5.x / FlatBuffers:** The Pokémon Switch Blender importer also requires Python
+modules such as `flatbuffers` and `requests`. Blender may prohibit the importer's
+own pip installation when Online Access is disabled. GFPAK-OPEN instead prepares
+these packages in its own application-data folder on first conversion (source-run
+installations), or bundles them inside the downloaded Windows EXE. The Blender worker
+receives the package directory before registering the importer. You do **not** need
+to enable Blender's Online Access setting. The first source-run install requires
+network access to Python package downloads; packaged EXE builds include the packages
+and can run offline after the importer itself has been installed.
+
+**Animated demo:** The built-in geometric crystal has a four-second looping float
+and ring-orbit animation. Use the inspector's animation controls to pause/play;
+the animation is also included when exporting the demo to GLB.
 **Third-party notice:** pyooz 0.0.8 is distributed under [GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html); its upstream source is [zao/pyooz](https://github.com/zao/pyooz). The Pokémon Switch importer is independently maintained by ChicoEevee. The decoder and importer are not produced by GFPAK-OPEN.
 
 Model fidelity still depends on the upstream importer and the supplied assets; missing shaders, textures, codecs and animation variants are not automatically restored.
