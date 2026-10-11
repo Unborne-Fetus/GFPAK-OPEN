@@ -47,7 +47,15 @@ async function readConvertedGlb(item) {
 
 async function pollConversion() {
   const status = await api.conversion_status();
-  for (const message of status.messages.slice(seen)) notice(message, message.startsWith('Failed '));
+  for (const message of status.messages.slice(seen)) {
+    notice(message, message.startsWith('Failed '));
+    const line = document.createElement('div');
+    line.textContent = String(message);
+    if (message.startsWith('Failed ')) line.className = 'native-error';
+    byId('nativeLog').append(line);
+    while (byId('nativeLog').childElementCount > 120) byId('nativeLog').firstElementChild.remove();
+    byId('nativeLog').scrollTop = byId('nativeLog').scrollHeight;
+  }
   seen = status.messages.length;
   for (const item of status.completed) {
     if (displayed.has(item.url)) continue;
@@ -141,6 +149,7 @@ async function initialize() {
       seen = 0;
       displayed = new Set();
       byId('nativeResults').replaceChildren();
+      byId('nativeLog').replaceChildren();
       polling = true;
       byId('nativeConvert').disabled = true;
       notice('Converting native model with Blender…');
