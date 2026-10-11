@@ -77,6 +77,54 @@ class XCIReaderTests(unittest.TestCase):
             browser.export_item(secure[1]["id"], output)
             self.assertEqual(output.read_bytes(), b"plain auxiliary metadata")
 
+    def test_two_partitions_do_not_share_nca_cache_or_virtual_nodes(self):
+        """Same filename/index can occur in different gamecard partitions."""
+        def nca_with_payload(value):
+            filename = b"main\\0"
+            body = (b"PFS0" + struct.pack("<III", 1, len(filename), 0)
+                    + struct.pack("<QQII", 0, len(value), 0, 0)
+                    + filename + value)
+            body += b"\\0" * (-len(body) % 0x200)
+            header = bytearray(0xC00)
+            header[0x200:0x204] = b"NCA3"
+            struct.pack_into("<II", header, 0x240, 6, 6 + len(body) // 0x200)
+            header[0x400:0x402] = b"\\x02\\x00"
+            header[0x402] = 2
+            header[0x403] = 2
+            header[0x404] = 1
+            return bytes(header) + body
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "multi.xci"
+            secure = hfs0([("program.nca", nca_with_payload(b"from secure"))])
+            normal = hfs0([("program.nca", nca_with_payload(b"from normal"))])
+            index = hfs0([("secure", secure), ("normal", normal)])
+            header = bytearray(0x400)
+            header[0x100:0x104] = b"HEAD"
+            struct.pack_into("<Q", header, 0x130, 0x400)
+            game.write_bytes(header + index)
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            root_node = browser.open(game)
+            partitions = browser.children(root_node["id"])["entries"]
+            ncas = [browser.children(p["id"])["entries"][0] for p in partitions]
+            self.assertNotEqual(ncas[0]["id"], ncas[1]["id"])
+            sections = [browser.children(nca["id"])["entries"][0] for nca in ncas]
+            self.assertNotEqual(sections[0]["id"], sections[1]["id"])
+            files = [browser.children(section["id"])["entries"][0] for section in sections]
+            self.assertNotEqual(files[0]["id"], files[1]["id"])
+            self.assertEqual(browser._nca_sections.preview_bytes(
+                browser._nca_sources[files[0]["id"]], 0, 0, "main"), b"from secure")
+            self.assertEqual(browser._nca_sections.preview_bytes(
+                browser._nca_sources[files[1]["id"]], 0, 0, "main"), b"from normal")
+            extracted = root / "linked"
+            extracted.mkdir()
+            browser.attach_extracted_nca(ncas[0]["id"], extracted)
+            self.assertEqual(browser.children(ncas[0]["id"])["entries"][0]["name"],
+                             "Extracted files (linked)")
+            self.assertEqual(browser.children(ncas[1]["id"])["entries"][0]["name"],
+                             "Section 0")
+
     def test_rejects_out_of_bounds(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.xci"
