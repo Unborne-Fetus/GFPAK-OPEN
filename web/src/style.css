@@ -792,3 +792,23 @@
   font:11px/1.55 "Segoe UI",sans-serif;
 }
 #assetGameProfile[hidden]{display:none!important}
+
+/* Browse very large RomFS/ExeFS folders by requesting only one page at a time. */
+.desktop-app .nx-fileviewer .nx-tree-more.nx-load-more {
+  display:block;width:calc(100% - 18px);margin:4px 8px 9px;
+  border:1px solid #cadbe6;border-radius:4px;background:#eef6fc;
+  color:#245678;text-align:left;font:600 11px/1.45 "Segoe UI",sans-serif;
+  padding:8px 10px;cursor:pointer;
+}
+.desktop-app .nx-fileviewer .nx-tree-more.nx-load-more:hover {
+  background:#dceefb;border-color:#a2c4d8;
+}
+.desktop-app .nx-fileviewer .nx-tree-more.nx-load-more:disabled {cursor:wait}
+.desktop-app .nx-fileviewer .nx-pagination-row td {
+  padding:12px 18px;text-align:center;background:#f3f8fc;
+  border-top:1px solid #dbe7ef;
+}
+.desktop-app .nx-fileviewer .nx-pagination-row .nx-pagination-button {
+  max-width:100%;min-height:32px;white-space:normal;
+  background:#e0f0fb;border-color:#b2cfdf;color:#214c68;
+}
