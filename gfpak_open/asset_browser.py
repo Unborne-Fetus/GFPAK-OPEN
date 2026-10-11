@@ -144,7 +144,13 @@ class AssetBrowser:
         for subfolder in ("ncz", "preview"):
             staged = self._nca_sections.workspace / subfolder
             if staged.is_dir():
-                shutil.rmtree(staged)
+                try:
+                    shutil.rmtree(staged)
+                except OSError:
+                    # A concurrent converter or antivirus scanner may still
+                    # hold a cached preview open on Windows. Do not prevent
+                    # another game from opening; the session owns the cache.
+                    pass
         self._nca_sections._readers.clear()
         self._nodes.clear()
         self._keys.clear()
@@ -729,11 +735,34 @@ class AssetBrowser:
         ]
         result["signature"] = next((name for magic, name in signatures
                                     if data.startswith(magic)), "Unrecognized binary data")
-        if node["category"] == "texture" and kind == "file" and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-            if path.stat().st_size < 2 * 1024 * 1024:
-                mime = {"png": "image/png", "jpg": "image/jpeg",
-                        "jpeg": "image/jpeg", "webp": "image/webp"}[path.suffix.lower()[1:]]
-                result["thumbnail"] = "data:" + mime + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+        # Give the built-in properties pane the same small-image previews
+        # whether assets are loose files, ZIP members or native NCA files.
+        ext = Path(node["name"]).suffix.lower()
+        mimes = {".png": "image/png", ".jpg": "image/jpeg",
+                 ".jpeg": "image/jpeg", ".webp": "image/webp"}
+        if node["category"] == "texture" and ext in mimes:
+            maximum = 2 * 1024 * 1024
+            picture = None
+            if kind == "file" and path.stat().st_size <= maximum:
+                picture = path.read_bytes()
+            elif kind == "nca_file":
+                reader, index, section, name = self._nca_virtual_file(node)
+                fs = self._nca_sections.filesystem(reader, index, section)
+                meta = fs.file(name)
+                if meta.size <= maximum:
+                    from .nca_native import read_file
+                    picture = read_file(fs, name, length=meta.size)
+            elif kind == "zipfile":
+                with zipfile.ZipFile(path) as archive:
+                    entry = archive.getinfo(node["inner"])
+                    if entry.file_size <= maximum:
+                        with archive.open(entry) as stream:
+                            picture = stream.read(maximum + 1)
+            if picture and len(picture) <= maximum:
+                result["thumbnail"] = (
+                    "data:" + mimes[ext] + ";base64," +
+                    base64.b64encode(picture).decode("ascii")
+                )
         return result
 
     def preview_source(self, id_: str) -> Path:
