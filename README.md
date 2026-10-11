@@ -83,6 +83,36 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### File browser reliability audit
+
+GFPAK-OPEN now keeps separate NCA readers and tree nodes for each XCI
+partition **even when different partitions contain NCA files with the same
+entry index or filename**. Optional linked extractions appear *alongside*
+real, readable NCA sections rather than replacing them. Switching game files
+removes cached NCZ reconstructions and model preview files owned by the
+current session (Windows can defer removal of files held by another process).
+
+In addition to the earlier large-RomFS fix, **ordinary folders, ZIP archive
+folders, GFPAK resource lists and XCI game-card partitions** now expose
+continuation pages rather than silently cutting off at 2,000 files. The same
+"Load next 250 entries" interaction works in both NX-style panes. Filtered
+views retain this option even if no match occurs on the current page.
+
+Supported small PNG/JPEG/WebP assets now have in-panel previews whether they
+come from a directory, ZIP, or uncompressed/decrypted NCA section. A locked
+NCA node exposes its specific parsing error in its Properties panel. The
+reader can also handle an NCA whose **header was decrypted** while its
+filesystem section remains encrypted; it respects section-level encryption.
+Large NCZ reconstruction checks free temporary disk space before writing,
+instead of filling the disk unexpectedly.
+
+These reliability fixes are validated using synthetic NSP, XCI, NCZ, RomFS,
+ZIP, plaintext-header/AES-CTR and large-directory fixtures. They are not a
+claim of universal compatibility with every Nintendo Switch release.
+Game-specific BKTR update overlays, sparse mappings, NCA compressed storage,
+BNTX texture formats, and some animation pipelines still require separate
+decoders and real-world test cases.
+
 ### Large NCA sections and paginated filesystem browsing
 
 The built-in RomFS reader no longer rejects large sections because metadata tables exceed **16 MiB**, and no longer errors when a single folder contains **3,000+** entries. It uses an LRU cache of 64 KiB metadata pages (32 pages per directory/file index) and opens **250 files per request** instead of copying huge filesystem tables into RAM. A **Load next 250 files** control appears in the left content tree and center file list when the folder has more entries. Repeated clicks browse the full directory without silently dropping later files. Only the metadata pages being accessed are decoded; model/texture payloads remain on disk until selected. File reads and explicit single-file export remain bounded/streamed and do not use the whole section size as an allocation request.
