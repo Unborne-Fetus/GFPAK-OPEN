@@ -375,7 +375,31 @@ class PartitionFS:
                 raise NativeNCAError("Duplicate PFS0 entry name.")
             self.files[name] = FileInfo(name, name, data_start + begin, length)
 
+    def children_page(self, folder: str = "", cursor: str | None = None,
+                      limit: int = 250) -> dict:
+        if folder:
+            raise NativeNCAError("PartitionFS has no nested directories.")
+        if not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise NativeNCAError("Invalid PartitionFS page size.")
+        if cursor is None:
+            start = 0
+        else:
+            if not isinstance(cursor, str) or not re.fullmatch(r"p:[0-9a-f]{8}", cursor):
+                raise NativeNCAError("Invalid PartitionFS page cursor.")
+            start = int(cursor[2:], 16)
+            if start > len(self.files):
+                raise NativeNCAError("PartitionFS page cursor exceeds the file count.")
+        files = list(self.files.values())
+        subset = files[start:start + limit]
+        next_at = start + len(subset)
+        return {
+            "entries": [{"name": f.name, "path": f.path, "type": "file", "size": f.size}
+                        for f in subset],
+            "next_cursor": f"p:{next_at:08x}" if next_at < len(files) else None,
+        }
+
     def children(self, folder: str = "") -> list[dict]:
+        # Existing small-folder callers keep working, while the UI uses pages.
         if folder:
             raise NativeNCAError("PartitionFS has no nested directories.")
         return [{"name": f.name, "path": f.path, "type": "file", "size": f.size}
