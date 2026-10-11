@@ -76,3 +76,33 @@ test('GFPAK index browser correctly extracts a stored internal resource', async 
   const data = await fs.readFile(await download.path());
   expect(data.toString('utf8')).toBe('HELLO');
 });
+
+test('WebGL canvas and model scale with a wide desktop viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 750 });
+  await page.goto('/');
+  await page.locator('#demoButton').click();
+  await expect(page.locator('#statMeshes')).toHaveText('2');
+
+  const geometry = () => page.evaluate(() => {
+    const host = document.querySelector('#canvasHost').getBoundingClientRect();
+    const canvas = document.querySelector('#canvasHost canvas').getBoundingClientRect();
+    return { hostW: host.width, hostH: host.height,
+             canvasW: canvas.width, canvasH: canvas.height,
+             centerX: canvas.left + canvas.width / 2,
+             hostCenterX: host.left + host.width / 2 };
+  });
+  const initial = await geometry();
+  expect(Math.abs(initial.hostW - initial.canvasW)).toBeLessThan(3);
+  expect(Math.abs(initial.hostH - initial.canvasH)).toBeLessThan(3);
+
+  await page.setViewportSize({ width: 2048, height: 950 });
+  await expect.poll(async () => (await geometry()).hostW).toBeGreaterThan(initial.hostW);
+  await expect.poll(async () => {
+    const values = await geometry();
+    return Math.abs(values.hostW - values.canvasW);
+  }).toBeLessThan(3);
+  const wide = await geometry();
+  expect(Math.abs(wide.hostCenterX - wide.centerX)).toBeLessThan(3);
+  expect(Math.abs(wide.hostH - wide.canvasH)).toBeLessThan(3);
+});
+
