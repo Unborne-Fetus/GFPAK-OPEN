@@ -185,15 +185,20 @@
           <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. BNTX, original shaders and native animation tracks are not yet fully decoded. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
-        <section id="assetBrowser" class="asset-browser" role="tabpanel" aria-labelledby="tabAssets" hidden>
+        <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
+          <div class="nx-title-strip">
+            <div class="nx-app-title"><span class="nx-logo">▤</span><strong>File Viewer</strong><span class="nx-subtitle">GFPAK-OPEN / NX-style browser</span></div>
+            <div class="nx-top-menu"><span>File</span><span>View</span><span>Tools</span><span>Help</span></div>
+          </div>
           <div class="asset-hero">
             <div><span class="eyebrow">INTEGRATED GAME-ASSET EXPLORER</span>
-              <h2>Find models, textures &amp; animations</h2>
-              <p>Explore extracted Switch game folders and GFPAK archives in one place. NSP packages show their outer file table; encrypted NCA resources need separately extracted content.</p>
+              <h2>Browse packages and extracted game files</h2>
+              <p>Explore a familiar, expandable file tree just like NX File Viewer. GFPAK-OPEN also recognizes model, animation, and texture assets.</p>
             </div>
             <div class="asset-actions">
               <button type="button" id="assetOpenFolder" class="button button-primary">＋ Open game folder</button>
               <button type="button" id="assetOpenFile" class="button button-secondary">Open GFPAK / ZIP / NSP</button>
+              <button type="button" id="assetAttach" class="button button-secondary" disabled>Link extracted NSP files</button>
             </div>
           </div>
           <section id="nspWorkbench" class="nsp-workbench" hidden>
@@ -261,15 +266,28 @@
             </div>
           </div>
           <div class="asset-content">
-            <div class="asset-table-wrap">
+            <aside class="nx-tree-panel">
+              <div class="nx-pane-heading"><span class="nx-pane-icon">▤</span> Content tree <span class="nx-tree-shortcut">Folders</span></div>
+              <div class="nx-tree-scroller">
+                <div id="assetTree" role="tree" aria-label="Game files and package contents">
+                  <div class="nx-tree-empty">Open a package or extracted folder to browse its contents.</div>
+                </div>
+              </div>
+              <div id="nxTreeStatus" class="nx-tree-status">No archive open</div>
+            </aside>
+            <div class="asset-table-wrap" role="region" aria-label="Files in selected folder">
               <table class="asset-table">
-                <thead><tr><th>ASSET NAME</th><th>TYPE</th><th>SIZE</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Action</th></tr></thead>
                 <tbody id="assetRows"><tr><td colspan="4" class="table-empty">Open a folder, GFPAK, ZIP, or NSP to browse assets.</td></tr></tbody>
               </table>
             </div>
             <aside class="asset-inspector">
               <span class="eyebrow">SELECTED RESOURCE</span>
               <h3 id="assetSelected">Nothing selected</h3>
+              <img id="assetThumbnail" class="nx-thumbnail" alt="Selected image preview" hidden />
+              <dl id="assetFileMetadata" class="nx-file-metadata"></dl>
+              <p id="assetSignature" class="nx-signature"></p>
+              <pre id="assetGeneralHex" class="nx-general-hex" hidden></pre>
               <p id="assetSelectedInfo">Select an asset to inspect its type and preview compatible models.</p>
               <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
               <p class="helper-copy">Preview conversion is automatic and temporary. Save a GLB only if you want to keep it.</p>
@@ -300,7 +318,7 @@
             </aside>
           </div>
           <p id="assetNotice" class="asset-notice" role="status" aria-live="polite"></p>
-          <div class="asset-guidance">Asset detection uses extensions and verified GFPAK hash relations. Unknown encrypted or hashed resources are labeled as unidentified—not invented textures or animations. Files are inspected locally and never uploaded.</div>
+          <div class="asset-guidance">Like NX File Viewer, use the tree to expand folders. Only already-extracted files are displayed under linked game folders: encrypted NCA contents cannot be opened without separately available decrypted data. No game data is uploaded.</div>
         </section>
 
         <section id="desktopTools" class="side-section desktop-native" role="tabpanel" aria-labelledby="tabConverter" hidden>
