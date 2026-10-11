@@ -290,6 +290,27 @@ class DesktopAPI:
             return {"root": root, "directory": str(self._browser.root_path),
                     "children": self._browser.children(root["id"])}
 
+    def browse_attach_extracted(self):
+        """Link an existing extracted directory into the NSP's file tree."""
+        with self._lock:
+            if not self._browser.root_path or self._browser.root_path.suffix.lower() != ".nsp":
+                raise ValueError("Open an NSP first, then link your extracted files")
+            browser = self._browser
+        folders = self._dialog("folder", "Choose an already extracted game folder")
+        if not folders:
+            return None
+        with self._lock:
+            if browser is not self._browser:
+                raise ValueError("Opened package changed; try again")
+            node = browser.attach_extracted(folders[0])
+            root = browser.node(browser.root_id)
+            return {"linked": node, "root": browser._public(root),
+                    "children": browser.children(root["id"])}
+
+    def browse_item_details(self, node_id: str):
+        with self._lock:
+            return self._browser.item_details(node_id)
+
     def browse_children(self, node_id: str):
         with self._lock:
             return self._browser.children(node_id)
