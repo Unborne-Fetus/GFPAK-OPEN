@@ -4,8 +4,8 @@ import { selectNativeAnimations } from './animation-association.js';
  * Resolve companion Trinity model files and construct Three.js meshes.
  * This path requires a readable .trmdl/.trmsh with the matching .trmbf.
  *
- * Original Pokémon game shader permutations and BNTX texture decoding are
- * separate; decoded PNGs/JPEGs may be provided alongside the model.
+ * Original Pokémon shader permutations and many console texture variants
+ * remain unsupported. Standard BNTX, PNG, JPEG and DDS inputs are decoded.
  */
 import * as THREE from 'three';
 import {
@@ -15,7 +15,7 @@ import {
 import { parseNativeAnimation } from './trinity-animation.js';
 
 const MAX_BYTES = 450 * 1024 * 1024;
-const TEXTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.dds']);
+const TEXTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.dds', '.bntx']);
 
 function normalized(s) {
   const stack = [];
@@ -336,7 +336,7 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
   const vCount = parts.reduce((sum, p) => sum + p.vertices.count, 0);
   report('Decoded ' + parts.length + ' Trinity mesh parts / ' + vCount.toLocaleString() +
     ' vertices' + (rig ? ' / ' + rig.bones.length + ' skeleton bones' : '') +
-    ' / ' + animations.length + ' native animation clips. Game-native shaders, BNTX and some track variants still require more support.');
+    ' / ' + animations.length + ' native animation clips. Game-native shaders and some texture/track variants still require more support.');
   return {
     root: scene, animations, selected,
     sourceFormat: 'TRMDL',
