@@ -32,6 +32,7 @@ function showNotice(message, error = false) {
 function canPreview(row) {
   if (!row) return false;
   if (row.kind === 'gfpak') return true;
+  if (row.kind === 'nca_file' && /\.(gfpak|trmdl|gfbmdl|glb)$/i.test(row.name)) return true;
   if (row.kind === 'gfpak_resource') return row.category === 'model';
   return row.kind === 'file' && /\.(glb|trmdl|gfbmdl|gfpak)$/i.test(row.name);
 }
@@ -232,12 +233,12 @@ async function refreshNCAReader() {
   if (!api?.browse_nca_settings) return;
   try {
     const state = await api.browse_nca_settings();
-    const reader = state.reader || 'No reader selected';
-    const keyset = state.keyset || 'No keyset selected';
-    id('ncaReaderStatus').textContent = state.ready
-      ? '✓ Reader ready: ' + reader + ' · ' + keyset + ' · Expand an NCA to read actual Section folders.'
-      : reader + ' · ' + keyset + ' · Encrypted NCA contents remain locked.';
-    id('ncaReaderStatus').classList.toggle('ready', Boolean(state.ready));
+    const keyset = state.keyset || 'No keys file selected';
+    id('ncaReaderStatus').textContent =
+      '✓ Self-contained NCA / RomFS / ExeFS reader · ' + keyset +
+      (state.has_keys ? ' · Encrypted NCA keys file selected.' :
+                        ' · Encrypted NCA sections require a compatible local keys file.');
+    id('ncaReaderStatus').classList.add('ready');
   } catch (error) {
     id('ncaReaderStatus').textContent = String(error.message || error);
   }
@@ -263,7 +264,7 @@ async function selectNCASetting(kind) {
     await api.browse_nca_select(kind);
     invalidateNCASections();
     await refreshNCAReader();
-    showNotice('NCA reader settings updated. Expand a content NCA in the left tree to load real sections.');
+    showNotice('Local keys file selected. Expand an NCA to browse its real sections inside GFPAK-OPEN.');
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -271,6 +272,7 @@ function nxTreeIcon(row) {
   if (row.kind === 'nsp') return '▣';
   if (row.kind === 'nspfile') return '▣';
   if (row.kind === 'nca_section') return '▤';
+  if (row.kind === 'nca_dir') return '▤';
   if (row.kind === 'nca_locked') return '🔒';
   if (row.kind === 'linked_dir') return '▤';
   if (row.kind === 'directory' || row.kind === 'zipdir') return '▤';
@@ -401,9 +403,9 @@ async function nxToggleTree(row, force = null) {
   if (expanded && !view.loaded) {
     view.toggle.textContent = '⋯';
     if (row.kind === 'nspfile') {
-      showNotice('Reading NCA Section folders. The local reader may temporarily stage a large NCA; no original files are changed.');
+      showNotice('Reading NCA section headers directly with the built-in reader.');
     } else if (row.kind === 'nca_section') {
-      showNotice('Extracting ' + row.name + ' into the temporary preview cache…');
+      showNotice('Opening the ' + row.name + ' filesystem index, without bulk extraction…');
     }
     try {
       const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
@@ -509,7 +511,7 @@ function select(row) {
     : 'Select an asset to inspect or preview it.';
   id('assetPreview').disabled = !canPreview(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
-  id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile'].includes(row.kind);
+  id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
   id('assetAttachNCA').disabled = !(row?.kind === 'nspfile' && /\.nca$/i.test(row.name));
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
   nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
@@ -814,7 +816,6 @@ function initialize() {
   id('assetOpenFolder').addEventListener('click', () => openSource('folder'));
   id('assetAttach').addEventListener('click', nxAttachExtractedFolder);
   id('assetAttachNCA').addEventListener('click', nxAttachToSelectedNCA);
-  id('ncaSelectReader').addEventListener('click', () => selectNCASetting('reader'));
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   id('assetBack').addEventListener('click', () => {
@@ -857,8 +858,8 @@ function initialize() {
     nxMenuManifest: () => id('nspManifest').click(),
     nxMenuAbout: () => showNotice(
       'NX-style file tree with native GFPAK/ZIP and outer NSP inspection. ' +
-      'To browse bin/archive/... under an NSP, link an already-extracted game folder. ' +
-      'Encrypted NCA contents cannot be opened directly.'
+      'GFPAK-OPEN includes its own NCA3 and RomFS reader: expand an NCA to browse compatible sections. ' +
+      'Encrypted content requires compatible local keys; patch formats may be unsupported.'
     )
   };
   for (const [name, action] of Object.entries(menuActions)) {
