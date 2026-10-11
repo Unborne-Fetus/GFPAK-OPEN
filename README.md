@@ -69,6 +69,14 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### Nested NSP NCA tree (NX-style)
+
+The fourth tab now exposes real **expand/collapse arrows for NCA files**. Select a Program NCA in the left tree. If a previously configured compatible local reader can inspect it, open it to discover its actual `Section 0`, `Section 1`, etc. (only sections reported by the reader are displayed). Opening a section extracts its available filesystem into the temporary app cache, then populates its nested directories. This requires a compatible independently installed NCA reader and locally supplied credentials; neither is bundled or retrieved.
+
+If you already have an NCA's extracted contents in a directory, **select its NCA row, then choose "Link files to selected NCA"**. The folder appears as **Extracted files (linked)** directly beneath that NCA, and its *actual* nested folders, such as `Section 1 / bin / archive / pokemon` (when those directories exist in the provided extraction), can be expanded through the left tree without re-exporting or converting them. The link does not claim the selected NCA and the chosen extraction have been cryptographically matched. No guessed sections or files appear under encrypted NCAs.
+
+The three-pane layout also constrains the hex viewer and long hashes to their own scroll areas so the Properties inspector remains visible instead of clipping past the right window edge.
+
 ### NX File Viewer-style fourth tab
 
 **Game File Explorer** has been redesigned into a Windows-style, NX File Viewer-inspired interface based on the user's reference screenshots. It has a collapsible **Content tree** (left), file list (center), and type-sensitive **Properties/preview pane** (right), plus functioning File, View, Tools and Help menus. Click a folder name to navigate; click its triangle to expand/collapse without leaving the tree. Double-click compatible models to preview them. Open image files to see a bounded embedded thumbnail, or inspect a short hex and ASCII sample. Use **Save selected file** to copy an individual item from an already-extracted folder, GFPAK, ZIP or the outer NSP index to a chosen path (existing destinations are never overwritten, and protected NCA payloads remain encrypted). Folder and GFPAK nodes are lazily opened so large trees do not need to be fully loaded.
