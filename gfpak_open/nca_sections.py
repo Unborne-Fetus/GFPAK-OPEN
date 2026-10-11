@@ -45,6 +45,12 @@ class LocalNCASections:
     def sections(self, analyzer: NSPAnalyzer, index: int) -> list[int]:
         return sorted(self._reader(analyzer, index).sections)
 
+    def section_info(self, analyzer: NSPAnalyzer, index: int, section: int) -> dict:
+        reader = self._reader(analyzer, index)
+        if section not in reader.sections:
+            raise NativeNCAError("Selected NCA section does not exist")
+        return reader.sections[section].compatibility()
+
     def filesystem(self, analyzer: NSPAnalyzer, index: int, section: int):
         nca = self._reader(analyzer, index)
         if section not in nca.sections:
