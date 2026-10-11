@@ -80,15 +80,15 @@ class XCIReaderTests(unittest.TestCase):
     def test_two_partitions_do_not_share_nca_cache_or_virtual_nodes(self):
         """Same filename/index can occur in different gamecard partitions."""
         def nca_with_payload(value):
-            filename = b"main\\0"
+            filename = b"main\0"
             body = (b"PFS0" + struct.pack("<III", 1, len(filename), 0)
                     + struct.pack("<QQII", 0, len(value), 0, 0)
                     + filename + value)
-            body += b"\\0" * (-len(body) % 0x200)
+            body += b"\0" * (-len(body) % 0x200)
             header = bytearray(0xC00)
             header[0x200:0x204] = b"NCA3"
             struct.pack_into("<II", header, 0x240, 6, 6 + len(body) // 0x200)
-            header[0x400:0x402] = b"\\x02\\x00"
+            header[0x400:0x402] = b"\x02\x00"
             header[0x402] = 2
             header[0x403] = 2
             header[0x404] = 1
