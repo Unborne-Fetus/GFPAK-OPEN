@@ -23,8 +23,9 @@ jobs:
           npm run build
       - name: Build Windows GUI EXE
         run: |
-          python -m pip install pyinstaller pywebview
-          python -m PyInstaller --onefile --windowed --name GFPAK-OPEN --collect-all webview --add-data "dist-desktop;web_dist" --add-data "gfpak_open/blender_worker.py;gfpak_open" launch.py
+          python -m pip install pyinstaller pywebview pyooz==0.0.8
+          python -c "import ooz; assert hasattr(ooz, 'decompress')"
+          python -m PyInstaller --onefile --windowed --name GFPAK-OPEN --collect-all webview --hidden-import ooz --add-data "dist-desktop;web_dist" --add-data "gfpak_open/blender_worker.py;gfpak_open" launch.py
       - uses: actions/upload-artifact@v4
         with:
           name: GFPAK-OPEN-Windows
