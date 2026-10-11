@@ -6,6 +6,7 @@ let displayed = new Set();
 let polling = false;
 let lastSettings = null;
 let initialized = false;
+let autoOpened = false;
 
 function notice(message, error = false) {
   const status = byId('nativeProgress');
@@ -60,23 +61,54 @@ async function pollConversion() {
   for (const item of status.completed) {
     if (displayed.has(item.url)) continue;
     displayed.add(item.url);
-    const button = document.createElement('button');
-    button.className = 'button button-secondary';
-    button.textContent = 'Preview ' + item.name + ' in 3D ↗';
-    button.addEventListener('click', () => readConvertedGlb(item).catch(e => notice(e.message, true)));
-    byId('nativeResults').append(button);
-    // One completed model opens automatically in the existing model viewport.
-    if (status.completed.length === 1 && !status.running)
-      readConvertedGlb(item).catch(e => notice(e.message, true));
+    const group = document.createElement('div');
+    group.className = 'native-result-row';
+    const preview = document.createElement('button');
+    preview.className = 'button button-secondary';
+    preview.textContent = '◈ Preview ' + item.name;
+    preview.addEventListener('click', () => readConvertedGlb(item).catch(e => notice(e.message, true)));
+    const save = document.createElement('button');
+    save.className = 'button button-secondary';
+    save.textContent = '↓ Save GLB';
+    save.addEventListener('click', async () => {
+      try {
+        const result = await api.save_cached_model(item.key);
+        if (result) notice('Saved permanent GLB: ' + result);
+      } catch (error) { notice(error.message || String(error), true); }
+    });
+    group.append(preview, save);
+    byId('nativeResults').append(group);
   }
   if (!status.running) {
     polling = false;
+    if (status.completed.length === 1 && !autoOpened) {
+      autoOpened = true;
+      readConvertedGlb(status.completed[0]).catch(error => notice(error.message, true));
+    }
     if (status.error) notice(status.error, true);
-    else if (status.completed.length) notice('Conversion finished. Select a result to preview or export.');
+    else if (status.completed.length) notice(
+      'Preview ready. The converted GLB is temporary until you choose Save GLB.'
+    );
     await refreshSetup();
     return;
   }
   window.setTimeout(() => pollConversion().catch(e => notice(e.message, true)), 600);
+}
+
+function beginPolling() {
+  seen = 0;
+  displayed = new Set();
+  autoOpened = false;
+  polling = true;
+  byId('nativeResults').replaceChildren();
+  byId('nativeLog').replaceChildren();
+  byId('nativeConvert').disabled = true;
+  notice('Preparing temporary Blender preview…');
+  pollConversion().catch(error => {
+    polling = false;
+    notice(error.message || String(error), true);
+    refreshSetup().catch(() => {});
+  });
 }
 
 async function initialize() {
@@ -84,6 +116,7 @@ async function initialize() {
   if (initialized) return;
   initialized = true;
   api = window.pywebview.api;
+  window.addEventListener('gfpak-native-conversion-started', beginPolling);
   document.body.classList.add('desktop-app');
   byId('tabConverter').hidden = false;
   const converter = byId('desktopTools');
@@ -146,14 +179,7 @@ async function initialize() {
     try {
       await api.set_options({animations: byId('nativeAnimations').checked});
       if (!await api.start_conversion()) return;
-      seen = 0;
-      displayed = new Set();
-      byId('nativeResults').replaceChildren();
-      byId('nativeLog').replaceChildren();
-      polling = true;
-      byId('nativeConvert').disabled = true;
-      notice('Converting native model with Blender…');
-      await pollConversion();
+      beginPolling();
     } catch (e) {
       polling = false;
       notice(e.message, true);
