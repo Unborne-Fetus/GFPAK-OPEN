@@ -132,6 +132,50 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertEqual(listing["counts"]["texture"], 1)
             self.assertEqual(listing["counts"]["animation"], 1)
 
+    def test_link_extracted_folder_under_nsp_and_browse_full_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            nsp = root / "Pokemon Legends Arceus.nsp"
+            create_pfs0(nsp)
+            extracted = root / "already_extracted"
+            models = extracted / "bin" / "archive" / "pokemon"
+            models.mkdir(parents=True)
+            (models / "pm0025_00_00.gfpak").write_bytes(b"demo asset")
+            browser = AssetBrowser()
+            base = browser.open(nsp)
+            with self.assertRaisesRegex(ValueError, "directory"):
+                browser.attach_extracted(nsp)
+            linked = browser.attach_extracted(extracted)
+            self.assertTrue(linked["expandable"])
+            self.assertEqual(linked["category"], "folder")
+            overview = browser.children(base["id"])
+            self.assertEqual(overview["entries"][0]["id"], linked["id"])
+            node = linked
+            for folder in ("bin", "archive", "pokemon"):
+                listing = browser.children(node["id"])
+                node = next(entry for entry in listing["entries"] if entry["name"] == folder)
+                self.assertEqual(node["category"], "folder")
+            model = browser.children(node["id"])["entries"][0]
+            self.assertEqual(model["name"], "pm0025_00_00.gfpak")
+            self.assertEqual(model["category"], "model archive")
+            self.assertEqual(browser.preview_source(model["id"]).resolve(),
+                             (models / "pm0025_00_00.gfpak").resolve())
+            self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
+
+    def test_detailed_inspection_returns_bounded_bytes_and_png_preview(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            image = root / "model.png"
+            image.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"test")
+            browser = AssetBrowser()
+            node = browser.open(root)
+            image_node = browser.children(node["id"])["entries"][0]
+            info = browser.item_details(image_node["id"])
+            self.assertEqual(info["category"], "texture")
+            self.assertEqual(info["signature"], "PNG image")
+            self.assertTrue(info["thumbnail"].startswith("data:image/png;base64,"))
+            self.assertTrue(info["hex_lines"])
+
     def test_zip_tree_rejects_traversal_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "models.zip"
