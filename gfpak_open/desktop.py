@@ -13,8 +13,15 @@ from pathlib import Path
 def _prepare_assets() -> Path:
     """Build browser assets on first source checkout run, without touching packaged builds."""
     assets = _assets()
+    root = Path(__file__).resolve().parent.parent
     if (assets / "index.html").is_file():
-        return assets
+        if getattr(sys, "frozen", False):
+            return assets
+        built = (assets / "index.html").stat().st_mtime
+        sources = [root / "vite.config.js", root / "package.json"]
+        sources.extend((root / "web").rglob("*"))
+        if not any(p.is_file() and p.stat().st_mtime > built for p in sources):
+            return assets
     if getattr(sys, "frozen", False):
         raise RuntimeError("The packaged desktop application is missing its bundled viewer files.")
     root = Path(__file__).resolve().parent.parent
