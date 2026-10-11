@@ -636,7 +636,7 @@ function renderRows(rows) {
     cell.textContent = 'No assets match this filter or directory.';
     row.append(cell);
     body.append(row);
-    return;
+    // A match may exist on a later NCA page. Keep Load more visible.
   }
   for (const item of visible) {
     const row = document.createElement('tr');
