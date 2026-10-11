@@ -257,12 +257,15 @@ class AssetBrowser:
             results = sorted(names.values(),
                              key=lambda item: (not item["expandable"], item["name"].lower()))
         elif kind == "nsp":
-            if path not in self._pfs:
-                self._pfs[path] = pfs0_entries(path)
-            for i, entry in enumerate(self._pfs[path][:MAX_ENTRIES]):
-                child = self._node("nspfile", path, index=i,
-                                   name=entry["name"], size=entry["size"])
-                child["category"] = entry["type"]
+            analyzer = self.nsp_reader(path)
+            for entry in analyzer.entries[:MAX_ENTRIES]:
+                child = self._node("nspfile", path, index=entry.index,
+                                   name=entry.name, size=entry.size)
+                child["category"] = classify(entry.name)
+                child["role"] = entry.role
+                child["format"] = entry.format
+                child["content_id"] = entry.content_id
+                child["offset"] = entry.offset
                 results.append(child)
         counts = dict(Counter(row["category"] for row in results))
         return {"root": self._public(node), "entries": [self._public(c) for c in results],
@@ -273,6 +276,26 @@ class AssetBrowser:
                          "Only hash-verified GFPAK resource types are labeled; unknown entries "
                          "may contain additional textures or animations."
                          if kind == "gfpak" else "")}
+
+    def nsp_reader(self, path: Path | None = None) -> NSPAnalyzer:
+        if path is None:
+            if self.root_path is None or self.root_path.suffix.lower() != ".nsp":
+                raise ValueError("Open an NSP before using the NSP analyzer")
+            path = self.root_path
+        path = Path(path)
+        if path not in self._pfs:
+            self._pfs[path] = NSPAnalyzer(path)
+        return self._pfs[path]
+
+    def nsp_entry(self, node_id: str) -> tuple[NSPAnalyzer, int]:
+        node = self.node(node_id)
+        if node["kind"] != "nspfile":
+            raise ValueError("Select an individual NSP file first")
+        return self.nsp_reader(Path(node["path"])), node["index"]
+
+    def nsp_inspect(self, node_id: str, offset: int = 0, length: int = 256) -> dict:
+        analyzer, index = self.nsp_entry(node_id)
+        return analyzer.inspect(index, offset=offset, length=length)
 
     def preview_source(self, id_: str) -> Path:
         node = self.node(id_)
