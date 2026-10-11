@@ -83,6 +83,14 @@ Use **Open GFPAK / ZIP / NSP** to browse individual archive structures. ZIPs hav
 
 The recursive scan is bounded to at most 40,000 scanned files per request and the results are capped at 1,200 rows, with truncation clearly indicated.
 
+### Large GFPAK archive handling and packed export
+
+GFPAK indexes are now **lazy on Windows and the web**. The desktop reader maps the index briefly and releases the file immediately; it does not copy a multi-gigabyte GFPAK into RAM. The web studio uses local File/Blob range reads rather than `file.arrayBuffer()` on the whole archive. Opening and searching a GFPAK therefore requires only its metadata. Resource content is fetched on demand.
+
+The built-in explorer shows resource offsets, compressed sizes, hashes and bounded hexadecimal previews. **Save selected file** streams stored entries; **Save packed bytes** streams the original compressed block without requiring a decoder, including for entries larger than 512 MiB. Existing output files are never silently replaced. The browser exports stored and packed resources as Blob slices. LZ4 decoding remains capped at 512 MiB of output; browser Oodle and unsupported game-specific compression are not claimed to work. A large resource can be indexed and inspected even if it cannot yet be decoded to a usable model.
+
+Windows and Node regression tests use synthetic GFPAK fixtures, including a >512 MiB sparse file and an instrumented browser Blob that disallows reading the whole archive. These tests do not validate every Pokémon game or proprietary compression variant.
+
 ### File browser reliability audit
 
 GFPAK-OPEN now keeps separate NCA readers and tree nodes for each XCI
