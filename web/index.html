@@ -278,6 +278,7 @@
               <option value="mesh">Mesh parts</option>
               <option value="unknown">Unidentified resources</option>
               <option value="encrypted container">Encrypted NCA entries</option>
+              <option value="compressed container">Compressed NCZ entries</option>
               <option value="metadata">Tickets, certificates &amp; metadata</option>
               <option value="archive">Other archives</option>
             </select>
@@ -312,6 +313,12 @@
               <dl id="assetFileMetadata" class="nx-file-metadata"></dl>
               <p id="assetSignature" class="nx-signature"></p>
               <pre id="assetGeneralHex" class="nx-general-hex" hidden></pre>
+              <section id="assetFamily" class="nx-asset-family" hidden>
+                <div class="nx-family-title">Related Pokémon assets <strong id="assetFamilyId"></strong></div>
+                <div id="assetFamilyCounts" class="nx-family-counts"></div>
+                <div id="assetFamilyFiles" class="nx-family-files"></div>
+                <p class="nx-family-note">Based on identified filenames in currently visited folders, not a verified Pokédex number.</p>
+              </section>
               <p id="assetSelectedInfo">Select an asset to inspect its type and preview compatible models.</p>
               <div class="nx-selection-actions">
                 <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
