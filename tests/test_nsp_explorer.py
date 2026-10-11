@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gfpak_open.nsp_explorer import NSPAnalyzer, describe_entry
+from gfpak_open.asset_browser import AssetBrowser
 from gfpak_open.desktop_backend import DesktopAPI
 
 
@@ -113,6 +114,51 @@ class NSPAnalyzerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Stop test"):
                 NSPAnalyzer(pkg).export_raw(0, target, progress=stop)
             self.assertFalse(target.exists())
+
+    def test_plaintext_cnmt_title_metadata_is_read_when_present(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "meta.nsp"
+            content_id = "a" * 32
+            xml = (
+                "<ContentMeta><Id>0x01007EF00011E000</Id><Version>65536</Version>"
+                "<Type>Application</Type><RequiredSystemVersion>301989888</RequiredSystemVersion>"
+                "<Content><Id>" + content_id + "</Id><Type>Program</Type><Size>8192</Size></Content>"
+                "</ContentMeta>"
+            ).encode("utf-8")
+            create_pfs0(path, [("sample.cnmt.xml", xml), (content_id + ".nca", b"encrypted")])
+            info = NSPAnalyzer(path).summary()["plaintext_cnmt"]
+            self.assertEqual(len(info), 1)
+            self.assertEqual(info[0]["title_id"], "0x01007EF00011E000")
+            self.assertEqual(info[0]["contents"][0]["role"], "Program")
+            self.assertEqual(info[0]["contents"][0]["content_id"], content_id)
+
+    def test_plaintext_metadata_rejects_xml_entities(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "bad-meta.nsp"
+            xml = b'<!DOCTYPE foo [<!ENTITY secret "test">]><ContentMeta><Id>&secret;</Id></ContentMeta>'
+            create_pfs0(path, [("test.cnmt.xml", xml)])
+            self.assertEqual(NSPAnalyzer(path).summary()["plaintext_cnmt"], [])
+
+    def test_full_index_search_and_pagination(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "many.nsp"
+            entries = [(f"{i:032x}.nca", b"test") for i in range(315)]
+            entries.append(("special.tik", b"ticket"))
+            create_pfs0(path, entries)
+            browser = AssetBrowser()
+            root = browser.open(path)
+            first = browser.children(root["id"])
+            self.assertEqual(len(first["entries"]), 250)
+            self.assertEqual(first["pagination"]["pages"], 2)
+            second = browser.nsp_page(root["id"], page=1)
+            self.assertEqual(len(second["entries"]), 66)
+            self.assertEqual(second["pagination"]["first"], 251)
+            metadata = browser.nsp_page(root["id"], query="special", category="metadata")
+            self.assertEqual(metadata["pagination"]["total"], 1)
+            self.assertEqual(metadata["entries"][0]["name"], "special.tik")
+            self.assertEqual(metadata["entries"][0]["category"], "metadata")
+            with self.assertRaises(ValueError):
+                browser.nsp_page(root["id"], page=-1)
 
     def test_tickets_not_exposed_in_hex(self):
         with tempfile.TemporaryDirectory() as temp:
