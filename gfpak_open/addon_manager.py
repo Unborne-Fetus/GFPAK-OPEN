@@ -76,8 +76,8 @@ def ensure_addon(preferred: str | Path | None = None) -> str:
                     continue
                 if len(parts) < 2:
                     continue
-                name = Path(*parts[1:])
-                if name.is_absolute() or ":" in str(name) or "\\" in str(name):
+                name = PurePosixPath(*parts[1:])
+                if name.is_absolute() or ":" in name.as_posix() or "\\\\" in name.as_posix():
                     raise ValueError("Unsafe resource name in Blender add-on")
                 destination = staging.joinpath(*name.parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
