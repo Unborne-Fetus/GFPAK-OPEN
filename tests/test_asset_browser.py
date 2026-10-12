@@ -64,6 +64,7 @@ class AssetBrowserTests(unittest.TestCase):
     def test_detect_models_animations_and_textures(self):
         cases = {
             "pm0025_00_00.gfpak": "model archive",
+            "common_assets.gfpak": "asset package",
             "pm0025_00_00.trmdl": "model",
             "walking.tranm": "animation",
             "scene.gfbanm": "animation",
