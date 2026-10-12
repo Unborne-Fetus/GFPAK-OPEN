@@ -132,6 +132,27 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertEqual(listing["counts"]["texture"], 1)
             self.assertEqual(listing["counts"]["animation"], 1)
 
+    def test_full_gfpak_catalog_sees_beyond_visible_pages_and_unknown_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "pm0025_00_00.gfpak"
+            create_resolved_gfpak(archive)
+            browser = AssetBrowser()
+            opened = browser.open(archive)
+            catalog = browser.scan_gfpak_assets(opened["id"])
+            self.assertEqual(catalog["counts"]["model"], 1)
+            self.assertEqual(catalog["counts"]["texture"], 1)
+            self.assertEqual(catalog["counts"]["animation"], 1)
+            self.assertEqual(catalog["counts"]["mesh"], 2)
+            self.assertFalse(catalog["unresolved"])
+            self.assertEqual(len(catalog["assets"]), 5)
+
+            unknown = Path(tmp) / "unnamed.gfpak"
+            create_gfpak(unknown)
+            other = browser.open(unknown)
+            incomplete = browser.scan_gfpak_assets(other["id"])
+            self.assertEqual(incomplete["counts"]["unknown"], 1)
+            self.assertTrue(incomplete["unresolved"])
+
     def test_fast_gfpak_preview_streams_native_assets_without_conversion(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "pm0025_00_00.gfpak"
