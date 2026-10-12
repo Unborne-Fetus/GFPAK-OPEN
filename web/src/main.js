@@ -279,8 +279,9 @@ async function inspectSourceTexture(item) {
     if (!el('textureDialog').open) el('textureDialog').showModal();
     await drawCurrentTexture();
     log('Opened ' + item.path + ' with ' + info.surfaces.length + ' texture surface(s).','success');
-  } catch (error) { errorMessage(error); }
+  } catch (error) { errorMessage(error); return false; }
   finally { busy(false); }
+  return true;
 }
 
 function inspectSelectedTexture() {
@@ -752,6 +753,23 @@ async function openFastDesktopPreview(detail) {
 
 function start() {
   window.gfpakFastPreviewAvailable = true;
+  window.gfpakFastTextureAvailable = true;
+  window.addEventListener('gfpak-fast-native-texture', event => {
+    const info = event.detail?.manifest;
+    if (!info?.url || !info?.path) {
+      event.detail?.finish?.(false, 'Invalid texture source');
+      return;
+    }
+    inspectSourceTexture({
+      path:info.path, size:info.size,
+      getBytes:async () => {
+        const response = await fetch(info.url, {cache:'no-store'});
+        if (!response.ok) throw new Error('Texture request failed (' + response.status + ')');
+        return response.arrayBuffer();
+      }
+    }).then(success => event.detail?.finish?.(success !== false))
+      .catch(error => event.detail?.finish?.(false,error.message));
+  });
   window.addEventListener('gfpak-fast-native-preview', event =>
     openFastDesktopPreview(event.detail).catch(error =>
       event.detail?.finish?.(false, error.message || String(error))
