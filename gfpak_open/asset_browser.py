@@ -1109,55 +1109,66 @@ class AssetBrowser:
         }
 
     def _matched_preview(self, node: dict, manifest: dict) -> dict:
-        """Add catalog-confirmed companion files, including other RomFS folders.
+        """Include and *mark* evidence-backed companions in the native preview.
 
-        No file payload is opened here; the renderer still requests only
-        resources required by its native mesh/material/animation decoders.
+        Existing adjacent files may already appear in the manifest, so
+        annotate those entries instead of adding another copy. A different
+        physical resource with the same virtual path is not overwritten:
+        silently choosing between the two would assign an unverified texture.
         """
         matches = self._model_matches.get(node["id"], ())
         if not matches:
             return manifest
-        entries = list(manifest["items"])
-        paths = {row["path"].casefold() for row in entries}
+        entries = [dict(row) for row in manifest["items"]]
+        by_path = {row["path"].casefold(): row for row in entries}
+        linked = Counter()
         for companion in matches:
-            if len(entries) >= 1000:
-                break
             try:
                 item = self.node(companion["id"])
-                if item["category"] not in ("mesh", "skeleton", "material",
-                                            "texture", "animation"):
+                kind = item["category"]
+                if kind not in ("mesh", "skeleton", "material",
+                                "texture", "animation"):
                     continue
-                kind = item["kind"]
-                if kind == "nca_file":
+                item_kind = item["kind"]
+                if item_kind == "nca_file":
                     reader, index, section, name = self._nca_virtual_file(item)
                     source = ("nca", reader, index, section, name)
-                elif kind == "nca_gfpak_resource":
+                elif item_kind == "nca_gfpak_resource":
                     parent_id, idx = self._virtual_gfpak_nodes[item["id"]]
                     _, names = self._mounted_gfpak(parent_id)
                     name = names.get(idx, "")
                     source = ("nca_gfpak", parent_id, idx)
-                elif kind == "gfpak_resource":
+                elif item_kind == "gfpak_resource":
                     name = self._known_names(Path(item["path"])).get(item["index"], "")
                     source = ("gfpak", Path(item["path"]), item["index"])
-                elif kind == "file":
+                elif item_kind == "file":
                     name = item["name"]
                     source = ("file", Path(item["path"]))
-                elif kind == "zipfile":
+                elif item_kind == "zipfile":
                     name = item["inner"]
                     source = ("zip", Path(item["path"]), name)
                 else:
                     continue
-                if not name or name.casefold() in paths:
+                if not name or not 0 <= item["size"] <= 128 * 1024 * 1024:
                     continue
-                if item["size"] < 0 or item["size"] > 128 * 1024 * 1024:
-                    continue
-                entries.append({"path": name, "size": item["size"],
-                                "source": source})
-                paths.add(name.casefold())
+                existing = by_path.get(name.casefold())
+                if existing is not None:
+                    if existing["source"] != source:
+                        continue
+                    entry = existing
+                else:
+                    entry = {"path": name, "size": item["size"], "source": source}
+                    entries.append(entry)
+                    by_path[name.casefold()] = entry
+                entry["linkedKind"] = kind
+                entry["matchConfidence"] = companion["confidence"]
+                entry["matchReason"] = companion["reason"]
+                linked[kind] += 1
             except (KeyError, ValueError, OSError):
                 continue
         return {**manifest, "items": entries,
-                "matched": len(matches)}
+                "matched": dict(linked)}
+
 
     def fast_preview_items(self, id_: str) -> dict:
         """Identify lazy, read-only browser-native model dependencies.
