@@ -545,7 +545,7 @@ async function recoverTrinitySkeleton(project, selected, reference, report) {
     sameFolder.length===1?sameFolder[0]:
     parsed.length===1?parsed[0]:null;
   if(chosen){
-    report('Recovered '+chosen.value.bones.length+'-bone skeleton from '+
+    report('Recovered '+(parsed.length===1?'unambiguous ':'')+chosen.value.bones.length+'-bone skeleton from '+
       chosen.item.path+(own.length===1?' in the model\'s own archive.':
         ' (unique model companion).'));
     return chosen.value;
