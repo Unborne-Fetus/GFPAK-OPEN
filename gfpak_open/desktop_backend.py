@@ -137,9 +137,9 @@ class DesktopAPI:
                 else:
                     # Inventory siblings for complete animation matching, while keeping
                     # the user-selected model as the only conversion candidate.
-                    assets = [browser._public(browser._fs_node(item))
+                    assets = [root] + [browser._public(browser._fs_node(item))
                               for item in sorted(source.parent.iterdir())
-                              if item.is_file() and not item.is_symlink()]
+                              if item != source and item.is_file() and not item.is_symlink()]
                 for row in assets:
                     row.setdefault("game_scope", str(browser.root_path))
                 texture_folder = Path(self.settings["textures"]) if self.settings.get("textures") else None
