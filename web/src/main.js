@@ -217,7 +217,7 @@ function refreshTextureVariantControls() {
   const visible = ['TRMDL', 'GFBMDL'].includes(state.loaded?.sourceFormat) &&
     projectHasVariantTextures();
   const shinyAvailable=items.some(item=>
-    (item.linkedKind==='texture'||/\\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
+    (item.linkedKind==='texture'||/\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
     ['shiny','mixed'].includes(textureVariantForItem(item)));
   // Do not offer a fake shiny switch for an archive which has no recognized
   // shiny texture surface. The regular option stays the default.
