@@ -35,7 +35,7 @@ function readVec3(reader, pos) {
 }
 
 /**
- * PackedQuaternion WXYZ has three ushort values packing the least significant
+ * PackedQuaternion XYZW has three ushort values packing the least significant
  * components and a two-bit omitted-component index. Return Three.js XYZW.
  */
 export function unpackQuaternion(x, y, z) {

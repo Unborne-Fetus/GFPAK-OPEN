@@ -158,9 +158,11 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
           created.push(texture);
         }
         texture.name = selected.file || selected.name || channel.property;
-        if (uv?.length === 4 && uv.every(Number.isFinite)) {
+        if (uv?.length === 4 && uv.every(Number.isFinite) &&
+            texture.image.width !== texture.image.height) {
           texture.repeat.set(uv[0], uv[1]);
           texture.offset.set(uv[2], uv[3]);
+          if (uv[0] > 1) texture.wrapS = THREE.MirroredRepeatWrapping;
           texture.updateMatrix();
         }
         const material = definition.material;
@@ -218,13 +220,14 @@ async function applyMatchedLinkedTextures(project, root, report, created) {
   return [...images];
 }
 
-function buildBones(trskl, sceneRoot) {
+export function buildBones(trskl, sceneRoot) {
   if (!trskl?.bones?.length) return null;
   const bones = trskl.bones.map(info => {
     const bone = new THREE.Bone();
     bone.name = info.name;
     bone.position.fromArray(info.translation);
-    bone.rotation.set(...info.rotation, 'XYZ');
+    // Native extrinsic X -> Y -> Z rotations compose as qZ*qY*qX.
+    bone.rotation.set(...info.rotation, 'ZYX');
     bone.scale.fromArray(info.scale);
     return bone;
   });
@@ -239,6 +242,14 @@ function buildBones(trskl, sceneRoot) {
   sceneRoot.updateMatrixWorld(true);
   const rig = new THREE.Skeleton(bones);
   rig.calculateInverses();
+  for (const info of trskl.bones) {
+    const axes = trskl.joints?.[info.jointInfoIndex]?.inverseBind;
+    if (axes?.length === 4 && axes.every(a => a.length === 3 && a.every(Number.isFinite))) {
+      const matrix = new THREE.Matrix4().fromArray([
+        ...axes[0],0,...axes[1],0,...axes[2],0,...axes[3],1]);
+      if (Math.abs(matrix.determinant()) > 1e-10) rig.boneInverses[info.index] = matrix;
+    }
+  }
   const jointNodes = new Map();
   for (const info of trskl.bones) {
     if (info.jointInfoIndex >= 0) {
@@ -294,7 +305,7 @@ export function makeMesh(part, material, skeletonInfo) {
       geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
       const mesh = new THREE.SkinnedMesh(geometry, material);
       mesh.name = part.name + (part.material ? ':' + part.material : '');
-      mesh.bind(skel);
+      mesh.bind(skel, new THREE.Matrix4());
       mesh.frustumCulled = false;
       return mesh;
     }

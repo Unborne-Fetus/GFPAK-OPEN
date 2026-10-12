@@ -159,7 +159,7 @@ function buildLegacyRig(root, entries) {
     const bone = new THREE.Bone();
     bone.name = entry.name;
     bone.position.fromArray(entry.translation);
-    bone.rotation.set(...entry.rotation, 'XYZ');
+    bone.rotation.set(...entry.rotation, 'ZYX');
     bone.scale.fromArray(entry.scale);
     return bone;
   });
