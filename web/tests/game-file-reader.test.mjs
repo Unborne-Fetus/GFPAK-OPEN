@@ -83,7 +83,7 @@ test('Plaintext NCA PartitionFS is scanned without external executables',async()
   const pkg=await openGamePackage(localFile(pfs([['main.nca',nca]]),'game.nsp'));
   assert.equal(pkg.originals,1);
   assert.equal(pkg.entries.length,3);
-  assert.equal(pkg.entries[0].ncaStatus,'partial-plaintext');
+  assert.equal(pkg.entries[0].ncaStatus,'decrypted');
   assert.equal(pkg.entries[1].name,'main.nca/section-0/pm0094_00_00.trmdl');
   assert.deepEqual([...new Uint8Array(await pkg.entries[2].getBytes())],[5,6,7]);
 });
