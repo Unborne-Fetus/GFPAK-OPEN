@@ -751,6 +751,7 @@ async function openFastDesktopPreview(detail) {
 }
 
 function start() {
+  window.gfpakFastPreviewAvailable = true;
   window.addEventListener('gfpak-fast-native-preview', event =>
     openFastDesktopPreview(event.detail).catch(error =>
       event.detail?.finish?.(false, error.message || String(error))
