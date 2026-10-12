@@ -11,6 +11,7 @@ let assetCatalog = null;
 const catalogsBySource = new Map();
 let catalogBusy = false;
 let catalogRevision = 0;
+let pendingCatalogRequest = null;
 let assetClass = 'all';
 const classKinds = {
   models: new Set(['model', 'model archive', 'mesh']),
@@ -924,6 +925,7 @@ async function openSource(mode) {
     ++catalogRevision;
     assetCatalog = null;
     catalogsBySource.clear();
+    pendingCatalogRequest = null;
     scanListing = null;
     catalogBusy = false;
     activeNSP = null;
@@ -1110,7 +1112,13 @@ async function scanFolder(requested = null, automatic = false) {
   const origin = pathStack[0]?.root;
   const target = requested && typeof requested === 'object' ? requested :
     pathStack.at(-1)?.root || origin;
-  if (!target || catalogBusy) return;
+  if (!target) return;
+  if (catalogBusy) {
+    if (automatic && target.kind === 'nca_file' &&
+        /\.gfpak$/i.test(target.name))
+      pendingCatalogRequest = target;
+    return;
+  }
   const useId = ['nca_section', 'nca_dir', 'gfpak', 'nsp', 'xci',
     'nspfile', 'xci_partition'].includes(target.kind) ||
     (target.kind === 'nca_file' && /\.gfpak$/i.test(target.name));
@@ -1125,7 +1133,7 @@ async function scanFolder(requested = null, automatic = false) {
   id('assetScanSummary').textContent = 'Finding models, textures and animations throughout ' +
     (useId ? target.name : origin.name) + '…';
   try {
-    const started = await api.browse_start_scan(useId ? target.id : null);
+    const started = await api.browse_start_scan(useId ? target.id : null, automatic);
     if (!started) {
       catalogBusy = false;
       setScanAvailability();
@@ -1169,6 +1177,12 @@ async function scanFolder(requested = null, automatic = false) {
         renderListing();
         if (!automatic && assetClass === 'all' && located > 0)
           selectAssetClass('models');
+        if (pendingCatalogRequest) {
+          const next = pendingCatalogRequest;
+          pendingCatalogRequest = null;
+          if (pathStack.some(step => step.root.id === next.id))
+            void scanFolder(next, true);
+        }
       } catch (error) {
         if (revision !== catalogRevision) return;
         catalogBusy = false;
