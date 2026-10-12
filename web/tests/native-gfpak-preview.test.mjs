@@ -104,6 +104,31 @@ test('descriptor companion aliases resolve when dictionary canonical names diffe
   preview.disposeAssets();
 });
 
+test('hashed GFPAK links the only geometry-compatible buffer instead of a wrong ordered buffer',async()=>{
+  const original=makeTrinityTriangle();
+  const bad=new Uint8Array(original['models/test.trmbf']);
+  const pattern=[0,0,1,0,2,0];
+  let index=-1;
+  for(let i=0;i<=bad.length-pattern.length;i++)
+    if(pattern.every((value,j)=>bad[i+j]===value))index=i;
+  assert.ok(index>=0,'fixture must contain the LOD0 triangle indices');
+  bad[index+4]=55; // Invalid triangle vertex index, valid TRMBF format.
+  const blob=gfpak({
+    'hidden/model.bin':original['models/test.trmdl'],
+    'hidden/shape.bin':original['models/test.trmsh'],
+    'hidden/bad-buffer.bin':bad,
+    'hidden/good-buffer.bin':original['models/test.trmbf']
+  });
+  const {project,selected}=await prepareGfpakModelPreview(blob,'pm0025_00_00.gfpak');
+  const buffer=project.items.find(item=>item.path.endsWith('.trmbf'));
+  assert.ok(buffer,'a compatible buffer was selected');
+  assert.equal(buffer.sourceResourceIndex,3);
+  assert.ok(buffer.resourceMatches.some(match=>match.evidence==='verified-buffer-geometry'));
+  const model=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.equal(model.sourceStats.vertices,3);
+  model.disposeAssets();
+});
+
 test('TRMSH and TRMBF in a separate same-Pokémon GFPAK can complete a model',async()=>{
   const files=makeTrinityTriangle();
   const modelArchive=gfpak({'hashed/model.bin':files['models/test.trmdl']});
