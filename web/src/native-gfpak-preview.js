@@ -6,6 +6,7 @@
  */
 import {parseGfpakFile, extractResourceAsync, resolvedName, fnv1a64} from './gfpak.js';
 import {parseTrmdl,parseTrmsh,parseTrmbf,parseTrskl,parseTrmtr} from './trinity.js';
+import {parseNativeAnimation} from './trinity-animation.js';
 
 const PROBE_LIMIT=20*1024*1024;
 const MAX_PROBES=1800;
@@ -26,6 +27,23 @@ function hasGeometry(buffer){
   return Boolean(info?.buffers?.some(part =>
     part.vertexBuffers?.some(b=>b.byteLength>=12) &&
     part.indexBuffers?.some(b=>b.byteLength>=2)));
+}
+function identifyAuxiliary(buffer) {
+  const bytes=new Uint8Array(buffer);
+  if(bytes.length>=4){
+    const head=String.fromCharCode(...bytes.subarray(0,4));
+    if(head==='BNTX')return 'bntx';
+    if(head==='DDS ')return 'dds';
+    if(head==='\x89PNG')return 'png';
+    if(bytes[0]===255 && bytes[1]===216 && bytes[2]===255)return 'jpg';
+    if(head==='RIFF' && bytes.length>=12 &&
+      String.fromCharCode(...bytes.subarray(8,12))==='WEBP')return 'webp';
+  }
+  try{
+    const animation=parseNativeAnimation(buffer,'probed.tranm');
+    if(animation.tracks?.length)return 'tranm';
+  }catch(_){}
+  return '';
 }
 function identifyTrinity(buffer){
   for(const kind of probeOrder){
@@ -149,7 +167,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     if(row.resource.size>PROBE_LIMIT || probed++>=MAX_PROBES)continue;
     try{
       const bytes=await read(row);
-      const type=identifyTrinity(bytes);
+      const type=identifyTrinity(bytes)||identifyAuxiliary(bytes);
       if(type) row.kind=type;
       else row.buffer=null; // Never retain thousands of unrelated decoded assets.
     }catch(_){unreadable++;row.buffer=null;}
@@ -206,7 +224,8 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       size:row.resource.size,
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
-      linkedKind:row.kind==='bntx'?'texture':undefined
+      linkedKind:['bntx','dds','png','jpg','jpeg','webp'].includes(row.kind)?'texture':
+        ['tranm','gfbanm'].includes(row.kind)?'animation':undefined
     };
   });
   const original=items.find(item=>
