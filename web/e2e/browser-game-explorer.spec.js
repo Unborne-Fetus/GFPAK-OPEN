@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {makeTrinityTriangle} from '../tests/trinity-fixture.mjs';
+import {fnv1a64} from '../src/gfpak.js';
 function packageBytes(name,data){
   const entry=Buffer.from(data);
   const nameBytes=Buffer.from(name+'\0');
@@ -144,4 +145,41 @@ test('Desktop-like folder tree navigates large game indexes and retains global a
   await page.locator('#webGameBack').click();
   await expect(page.locator('#webGameRows')).toContainText('content.nca');
   await expect(page.locator('#webGameTreeStatus')).toContainText('indexed folders');
+});
+
+
+test('Preview a hashed PLA GFPAK straight from an NSP without leaving to the Archive Inspector',async({page})=>{
+  await page.goto('/');
+  await page.locator('#tabBrowserGame').click();
+  const members=Object.entries(makeTrinityTriangle());
+  const total=members.length, tableOffset=40, hashesOffset=40+24*total;
+  const dataOffset=hashesOffset+8*total;
+  const gfpak=Buffer.alloc(dataOffset+members.reduce((sum,[,bytes])=>sum+bytes.byteLength,0));
+  gfpak.write('GFLXPACK',0);
+  gfpak.writeUInt32LE(0x1000,8);
+  gfpak.writeUInt32LE(total,16);
+  gfpak.writeBigUInt64LE(BigInt(tableOffset),24);
+  gfpak.writeBigUInt64LE(BigInt(hashesOffset),32);
+  let offset=dataOffset;
+  for(const [i,[name,bytes]] of members.entries()){
+    const entry=tableOffset+i*24;
+    gfpak.writeUInt32LE(bytes.byteLength,entry+4);
+    gfpak.writeUInt32LE(bytes.byteLength,entry+8);
+    gfpak.writeUInt32LE(offset,entry+16);
+    gfpak.writeBigUInt64LE(BigInt('0x'+fnv1a64(name)),hashesOffset+i*8);
+    Buffer.from(bytes).copy(gfpak,offset);offset+=bytes.byteLength;
+  }
+  await page.locator('#webGameFile').setInputFiles({
+    name:'arceus.nsp',mimeType:'application/octet-stream',
+    buffer:packageBytes('bin/archive/pokemon/pm0025_00_00.gfpak',gfpak)
+  });
+  await page.locator('[data-web-asset-class="all"]').click();
+  await page.locator('#webGameSearch').fill('pm0025_00_00.gfpak');
+  await page.locator('#webGameRows tr').filter({hasText:'pm0025_00_00.gfpak'}).click();
+  await expect(page.locator('#webGamePreview')).toBeEnabled();
+  await page.locator('#webGamePreview').click();
+  await expect(page.locator('#viewerPanel')).toBeVisible();
+  await expect(page.locator('#statMeshes')).toHaveText('1');
+  await expect(page.locator('#statVertices')).toHaveText('3');
+  await expect(page.locator('#archivePanel')).toBeHidden();
 });
