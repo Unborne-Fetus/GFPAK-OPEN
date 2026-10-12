@@ -257,14 +257,17 @@ function refreshAnimationControls(result) {
   clips.replaceChildren();
   result.animations.forEach((a, index) =>
     clips.add(new Option(a.name || 'Animation ' + (index + 1), String(index))));
+  const noRig=result.sourceFormat==='TRMDL' && result.sourceStats?.bones===0;
   if (!result.animations.length) clips.add(new Option(
-    result.postLoad ? 'Animation clips loading…' : 'No animations available', ''));
+    noRig ? 'No linked skeleton — animations unavailable' :
+    result.postLoad && !result.companionsReady ?
+      'Animation clips loading…' : 'No compatible animations found', ''));
   clips.disabled = !result.animations.length;
   el('toggleAnimation').disabled = !result.animations.length;
   el('toggleAnimation').textContent = result.animations.length ?
     'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
   el('statClips').textContent = result.postLoad && !result.companionsReady &&
-    !result.animations.length ? '…' : Number(result.animations.length).toLocaleString();
+    !result.animations.length && !noRig ? '…' : Number(result.animations.length).toLocaleString();
 }
 
 function completeFastPreview(result) {
