@@ -138,8 +138,12 @@ def discover_resource_names(archive, initial):
             except (UnicodeError, ConversionError, ValueError):
                 continue
             found = {}
-            for value in (fnv1a64(original), fnv1a64(original.rsplit('/', 1)[-1])):
-                found.update(hashes.get(value, {}))
+            # Game Freak also uses a nonstandard FNV offset basis. A format
+            # label alone is insufficient: exact descriptor names must match
+            # the archive hashes before replacing discovery aliases.
+            for spelling in (original, original.rsplit('/', 1)[-1]):
+                for seed in (0xCBF29CE484222325, 0xCBF29CE484222645):
+                    found.update(hashes.get(fnv1a64(spelling, seed), {}))
             if len(found) == 1:
                 resolved = next(iter(found))
                 names[resolved] = original

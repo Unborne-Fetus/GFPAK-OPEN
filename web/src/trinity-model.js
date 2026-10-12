@@ -1,6 +1,7 @@
 import {
   loadDecodedTexture, matchingLinkedDiffuseTexture
 } from './texture-loader.js';
+import { applyLayerColors } from './trinity-layer-colors.js';
 import { associatedNativeAnimations } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
@@ -112,7 +113,8 @@ function createMaterials(materials) {
         color: 0xd9e0e7, side: THREE.DoubleSide,
         roughness: 0.8, metalness: 0.0
       });
-      lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures });
+      lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
+        colors: info.colors, scalars: info.scalars });
     }
   }
   return lookup;
@@ -121,6 +123,7 @@ function createMaterials(materials) {
 async function applyDecodedTextures(project, lookup, modelPath, report, created) {
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
+    { names: /^layermaskmap$/i, property: 'layerMaskMap', srgb: false },
     { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false },
     { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false },
     { names: /^metallicmap\d*$/i, property: 'metalnessMap', srgb: false },
@@ -133,7 +136,9 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
     if (!textures.length) continue;
     for (const channel of channels) {
       const reference = textures.find(t => channel.names.test(t.name));
-      const selected = reference || (channel.property === 'map' && textures.length === 1 ? textures[0] : null);
+      const selected = reference || (channel.property === 'map' && textures.length === 1 &&
+        !/(normal|mask|rough|metal|occlusion|ao|emissive|emission)/i.test(textures[0].name) &&
+        !/(?:_|-)(nrm|lym|msk|ao)(?:\.|$)/i.test(textures[0].file) ? textures[0] : null);
       if (!selected) continue;
       const textureItem = findOptionalTexture(project, selected.file, modelPath);
       if (!textureItem) {
@@ -142,7 +147,9 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
       }
       try {
         const requestedNames = [selected.file, selected.name];
-        const cacheKey = textureItem.path + '|' + channel.srgb +
+        const uv = definition.colors?.[channel.property === 'normalMap'
+          ? 'UVScaleOffsetNormal' : 'UVScaleOffset'];
+        const cacheKey = textureItem.path + '|' + (uv?.join(',') || '') + '|' + channel.srgb +
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
         if (!texture) {
@@ -150,9 +157,15 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
           textureCache.set(cacheKey, texture);
           created.push(texture);
         }
-        texture.name = selected.name || channel.property;
+        texture.name = selected.file || selected.name || channel.property;
+        if (uv?.length === 4 && uv.every(Number.isFinite)) {
+          texture.repeat.set(uv[0], uv[1]);
+          texture.offset.set(uv[2], uv[3]);
+          texture.updateMatrix();
+        }
         const material = definition.material;
-        material[channel.property] = texture;
+        if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
+        else material[channel.property] = texture;
         if (channel.property === 'map') material.color.setRGB(1, 1, 1);
         if (channel.property === 'emissiveMap') material.emissive.setRGB(1, 1, 1);
         material.needsUpdate = true;
@@ -160,6 +173,9 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
         report('Could not decode texture ' + textureItem.path + ': ' + error.message);
       }
     }
+  }
+  for (const definition of lookup.values()) {
+    applyLayerColors(definition, created, report);
   }
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
 }
@@ -381,7 +397,10 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   const meta = suffix === '.trmdl' ? parseTrmdl(await bytesFor(entry)) :
     { meshFiles: [entry.path], skeleton: '', materials: [] };
   const parts = [];
-  for (const meshRef of meta.meshFiles) {
+  // LOD meshes are alternate versions of the same surface. Drawing all of
+  // them at once overlays three skins and produces flicker during animation.
+  const primaryMeshes = meta.meshFiles.filter(ref => !/[_-]lod[1-9]\d*(?:\.|$)/i.test(ref));
+  for (const meshRef of primaryMeshes.length ? primaryMeshes : meta.meshFiles) {
     const shape = suffix === '.trmsh'
       ? entry
       : findResource(project, meshRef, selected, '.trmsh');

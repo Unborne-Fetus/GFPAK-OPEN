@@ -12,7 +12,7 @@ function sampleBntx({format=0x0b01, tileMode=0, width=2, height=2}={}) {
   bytes.set(new TextEncoder().encode('NX  '),0x20);
   set32(0x24,1);set64(0x28,0x80);set64(0x80,0x100);
   bytes.set(new TextEncoder().encode('BRTI'),0x100);
-  bytes[0x110]=tileMode;set16(0x116,1);
+  bytes[0x110]=9;bytes[0x111]=2;set16(0x112,tileMode === 1 ? 0 : 1);set16(0x116,1);
   set32(0x11c,format);set32(0x124,width);set32(0x128,height);
   set32(0x130,1);set32(0x134,0);set32(0x150,256);
   set64(0x160,0x1a0);set64(0x170,0x1b0);set64(0x1b0,0x200);
@@ -118,5 +118,24 @@ test('multiple BNTX textures require an exact surface name',async()=>{
    path:'packed.bntx',getBytes:async()=>bytes
  },true,['eyes']);
  assert.deepEqual(Array.from(texture.image.data.slice(0,4)),[0,255,0,255]);
+ texture.dispose();
+});
+
+test('BRTI flags and dimension bytes are independent of native tile mode',()=>{
+ const {bytes,v}=sampleBntx({format:0x1a01,tileMode:1,width:4,height:4});
+ v.setUint16(0x110,0x0209,true);
+ v.setUint16(0x112,0,true);
+ bytes.set([0,0xf8,0x1f,0,0,0,0,0],0x200);
+ const parsed=parseBntx(bytes);
+ assert.equal(parsed.textures[0].tileMode,1);
+ assert.deepEqual(Array.from(decodeBntxTexture(parsed).data.slice(0,4)),[255,0,0,255]);
+});
+
+test('BC5 normal texture reconstructs Z and uses the same UV orientation as BC7',async()=>{
+ const {bytes}=sampleBntx({format:0x1e01,tileMode:1,width:4,height:4});
+ bytes.set([128,128,0,0,0,0,0,0,128,128,0,0,0,0,0,0],0x200);
+ const texture=await loadDecodedTexture({path:'body_nrm.bntx',getBytes:async()=>bytes},false,['NormalMap']);
+ assert.ok(texture.image.data[2]>=254);
+ assert.equal(texture.flipY,false);
  texture.dispose();
 });

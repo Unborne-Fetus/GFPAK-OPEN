@@ -16,7 +16,7 @@ function bntxFixture() {
   u64(0x80,0x100);u64(0x88,0x280);
   for(const [base,name,pointer,dataPos] of [
     [0x100,'body',0x1b0,0x400],[0x280,'eyes',0x330,0x500]]) {
-    text(base,'BRTI');bytes[base+0x10]=0;u16(base+0x16,1);
+    text(base,'BRTI');bytes[base+0x10]=9;bytes[base+0x11]=2;u16(base+0x12,1);u16(base+0x16,1);
     u32(base+0x1c,0x0b01);u32(base+0x24,2);u32(base+0x28,1);
     u32(base+0x30,1);u32(base+0x50,32);
     u64(base+0x60,base+0x80);u64(base+0x70,pointer);

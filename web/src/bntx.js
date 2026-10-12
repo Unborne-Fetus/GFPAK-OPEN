@@ -47,12 +47,15 @@ export function parseBntx(input) {
     const at = ptr(infoPtr + 8*i);
     checked(r.view,at,0x78,'BRTI header');
     if(ascii.decode(bytes.subarray(at,at+4))!=='BRTI')throw new BntxError('Invalid BRTI entry');
-    const tileMode=bytes[at+0x10],mips=u16(at+0x16);
+    // BRTI +0x10 contains flags and dimension, not tile mode.
+    // Native mode 0 is block-linear; 1 is pitch-linear.
+    const nativeTileMode=u16(at+0x12),tileMode=nativeTileMode === 0 ? 1 : 0;
+    const mips=u16(at+0x16);
     const format=u32(at+0x1c),width=u32(at+0x24),height=u32(at+0x28);
     const sizeRange=u32(at+0x34),imageSize=u32(at+0x50);
     const namePtr=ptr(at+0x60),mipPtr=ptr(at+0x70);
     if(!width||!height||width*height>MAX_PIXELS||mips<1||mips>32 ||
-        sizeRange>5||imageSize>MAX_TEXTURE_BYTES||tileMode>1)
+        sizeRange>5||imageSize>MAX_TEXTURE_BYTES||nativeTileMode>1)
       throw new BntxError('Unsupported or oversized BRTI layout');
     checked(r.view,namePtr,2,'texture name');
     const nameSize=u16(namePtr);
