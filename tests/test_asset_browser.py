@@ -153,6 +153,10 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertEqual(listing["counts"]["mesh"], 2)
             self.assertEqual(listing["counts"]["texture"], 1)
             self.assertEqual(listing["counts"]["animation"], 1)
+            family = browser.asset_family(root["id"])
+            self.assertEqual(family["counts"]["texture"], 1)
+            self.assertEqual(family["counts"]["animation"], 1)
+            self.assertIn("body.bntx", [item["path"] for item in family["files"]])
 
     def test_full_gfpak_catalog_sees_beyond_visible_pages_and_unknown_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
