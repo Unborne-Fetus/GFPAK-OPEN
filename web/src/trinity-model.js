@@ -239,10 +239,17 @@ function buildBones(trskl, sceneRoot) {
   sceneRoot.updateMatrixWorld(true);
   const rig = new THREE.Skeleton(bones);
   rig.calculateInverses();
-  return { bones, rig };
+  const jointNodes = new Map();
+  for (const info of trskl.bones) {
+    if (info.jointInfoIndex >= 0) {
+      if (jointNodes.has(info.jointInfoIndex)) jointNodes.set(info.jointInfoIndex, -1);
+      else jointNodes.set(info.jointInfoIndex, info.index);
+    }
+  }
+  return { bones, rig, jointNodes };
 }
 
-function makeMesh(part, material, skeletonInfo) {
+export function makeMesh(part, material, skeletonInfo) {
   const vertices = part.vertices;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices.position, 3));
@@ -266,8 +273,10 @@ function makeMesh(part, material, skeletonInfo) {
       for (let j = 0; j < 4; j++) {
         const idx = i * 4 + j;
         const local = Math.round(vertices.joints[idx]);
-        const remap = part.boneWeights?.[local]?.rigIndex;
-        const actual = Number.isInteger(remap) && remap >= 0 ? remap : local;
+        // Vertex IDs address TRSKL jointInfoIndex, not the node array.
+        // TRMSH boneWeights summarizes influences; its order is not a palette.
+        const actual = skeletonInfo.jointNodes.size
+          ? (skeletonInfo.jointNodes.get(local) ?? -1) : local;
         const weight = vertices.weights[idx];
         if (actual >= 0 && actual < skel.bones.length && weight > 0) {
           joints[idx] = actual;
