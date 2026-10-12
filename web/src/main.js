@@ -740,6 +740,14 @@ async function openFastDesktopPreview(detail) {
     };
     const result = await loadModel(project, manifest.selected, message => log(message));
     setModel(result, extension(manifest.selected), project.label);
+    // The desktop explorer is a separate tab; make the loaded 3D viewport
+    // actually visible instead of leaving it obscured behind File Explorer.
+    el('assetBrowser').hidden = true;
+    el('desktopTools').hidden = true;
+    el('tabAssets').classList.remove('active');
+    el('tabAssets').setAttribute('aria-selected', 'false');
+    el('tabConverter').classList.remove('active');
+    el('tabConverter').setAttribute('aria-selected', 'false');
     showTab('viewer');
     log('Fast native preview loaded without launching Blender.', 'success');
     finished(true);
