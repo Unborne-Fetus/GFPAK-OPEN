@@ -184,7 +184,7 @@ test('AES-XTS encrypted NCA filesystem sections decode original native model fil
   }
   const packageFile=new Blob([pfs([['main.nca',file]])]);
   packageFile.name='encrypted-content.nsp';
-  const keys=parseLocalKeys(source.keyLines.join('\\n'));
+  const keys=parseLocalKeys(source.keyLines.join(String.fromCharCode(10)));
   const result=await openGamePackage(packageFile,{keys});
   assert.equal(result.entries.length,2,result.warnings.join('; '));
   assert.deepEqual(Buffer.from(await result.entries[1].getBytes()),original);
