@@ -1,9 +1,4 @@
-"""Launch full 3D studio or classic Blender converter."""
-import sys
-
+"""Launch the self-contained GFPAK 3D studio."""
 if __name__ == "__main__":
-    if "--classic" in sys.argv:
-        from gfpak_open.gui import main
-    else:
-        from gfpak_open.desktop import main
+    from gfpak_open.desktop import main
     main()

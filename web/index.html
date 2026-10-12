@@ -102,7 +102,7 @@
           <div class="mode-tabs" role="tablist" aria-label="Workspace mode">
             <button id="tabViewer" type="button" class="mode-tab active" role="tab" aria-selected="true" aria-controls="viewerPanel">◈ &nbsp; 3D VIEWPORT</button>
             <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
-            <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; BLENDER CONVERTER</button>
+            <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; MODEL CONVERTER</button>
             <button id="tabAssets" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="assetBrowser" hidden>▤ &nbsp; GAME FILE EXPLORER</button>
           </div>
           <div id="currentModelTag" class="current-file">NO MODEL LOADED</div>
@@ -381,33 +381,17 @@
         </section>
 
         <section id="desktopTools" class="side-section desktop-native" role="tabpanel" aria-labelledby="tabConverter" hidden>
-          <div class="section-heading"><span class="step-number">04</span><h2>BLENDER MODEL CONVERSION</h2><span class="section-line"></span></div>
-          <p class="helper-copy">Model files are converted quietly to a disposable preview. Save a GLB only when you want to keep a copy.</p>
-          <div class="native-state" id="nativeBlenderStatus">Checking Blender…</div>
-          <div class="native-state" id="nativeAddonStatus">Checking Pokémon importer…</div>
+          <div class="section-heading"><span class="step-number">04</span><h2>BUILT-IN MODEL CONVERSION</h2><span class="section-line"></span></div>
+          <p class="helper-copy">Models open directly with their compatible textures, skeletons and animations. Export GLB from the viewer to keep a copy.</p>
+          <div class="native-state" id="nativeDecoderStatus">Built-in decoders ready</div>
           <div class="native-button-row">
             <button type="button" id="nativeChoose" class="button button-secondary">Select model files</button>
             <button type="button" id="nativeFolder" class="button button-secondary">Select folder</button>
           </div>
           <p id="nativeSources" class="helper-copy">No native conversion sources selected.</p>
-          <details class="native-advanced">
-            <summary>Advanced converter settings</summary>
-            <label class="input-label" for="nativeBlender">Blender executable</label>
-            <div class="native-path"><input class="field" id="nativeBlender" readonly /><button type="button" data-native-pick="blender" class="button button-secondary">Browse</button></div>
-            <label class="input-label" for="nativeAddon">Switch Blender importer folder</label>
-            <div class="native-path"><input class="field" id="nativeAddon" readonly /><button type="button" data-native-pick="addon" class="button button-secondary">Browse</button></div>
-            <button type="button" id="nativeRetryAddon" class="text-button">Retry automatic importer download</button>
-            <label class="input-label" for="nativeHashes">GFPAK filename dictionary</label>
-            <div class="native-path"><input class="field" id="nativeHashes" readonly /><button type="button" data-native-pick="hashes" class="button button-secondary">Browse</button></div>
-            <label class="input-label" for="nativeOodle">Oodle DLL (optional, supply locally)</label>
-            <div class="native-path"><input class="field" id="nativeOodle" readonly /><button type="button" data-native-pick="oodle" class="button button-secondary">Browse</button></div>
-            <label class="input-label" for="nativeTextures">Decoded texture folder (optional)</label>
-            <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button></div>
-            <label class="toggle-row"><input id="nativeAnimations" type="checkbox" /><span>Import compatible animations</span></label>
-          </details>
-          <button type="button" id="nativeConvert" class="button button-primary">Preview with Blender ↗</button>
+          <button type="button" id="nativeConvert" class="button button-primary">Preview in 3D ↗</button>
           <div id="nativeProgress" class="helper-copy" role="status" aria-live="polite"></div>
-          <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Blender conversion details"></div>
+          <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Model preview details"></div>
           <div id="nativeResults" class="native-results" aria-live="polite"></div>
           <p class="helper-copy" id="nativeCacheNote">Temporary previews are deleted on the next conversion or when the app closes.</p>
         </section>

@@ -1216,17 +1216,12 @@ async function preview(row = selected) {
           showNotice('Native 3D preview loaded without Blender or temporary conversion.');
           return;
         }
-        showNotice('Native decoder unavailable (' + outcome.reason +
-          '); trying Blender only for this unsupported model.');
+        throw Error('Built-in decoder could not preview this model: ' + outcome.reason);
       } catch (error) {
-        showNotice('Fast preview unavailable (' + (error.message || error) +
-          '); trying the existing converter.');
+        throw Error(error.message || String(error));
       }
     }
-    showNotice('Preparing fallback 3D preview with the local converter…');
-    const started = await api.preview_browser_item(row.id);
-    if (started !== false) window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
-    else showNotice('A conversion is already running.', true);
+    throw Error('This model format is not yet supported by the built-in decoder.');
   } catch (error) { showNotice(error.message || String(error), true); }
   finally {
     previewInFlight = false;

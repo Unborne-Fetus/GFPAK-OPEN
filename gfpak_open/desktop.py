@@ -1,4 +1,4 @@
-"""Offline desktop host for the full web studio, with access to the classic Blender tools."""
+"""Offline desktop host for the self-contained web studio."""
 from __future__ import annotations
 
 import functools

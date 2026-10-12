@@ -128,7 +128,7 @@
   font:12px/1.6 ui-monospace,Consolas,monospace;
 }
 .desktop-app .native-log:empty::before{
-  content:"Model discovery and Blender progress will appear here.";
+  content:"Model discovery and preview progress will appear here.";
   color:#7693a7;
 }
 .desktop-app .native-log div{
