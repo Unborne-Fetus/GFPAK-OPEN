@@ -7,6 +7,36 @@ let pathStack = [];
 let current = [];
 let selected = null;
 let scanListing = null;
+let assetClass = 'all';
+const classKinds = {
+  models: new Set(['model', 'model archive', 'mesh']),
+  textures: new Set(['texture']),
+  animations: new Set(['animation'])
+};
+function belongsToClass(row, group) {
+  return group === 'all' || !!classKinds[group]?.has(row.category);
+}
+function selectAssetClass(group) {
+  assetClass = group;
+  for (const button of document.querySelectorAll('[data-asset-class]')) {
+    const active = button.dataset.assetClass === group;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  if (group !== 'all') id('assetCategory').value = 'all';
+  if (pathStack.at(-1)?.root.kind === 'nsp') {
+    // NSP outer index has server-side filtering and no decoded model catalog.
+    showNotice('Expand a readable NCA section, then use Locate assets for game resources.');
+  }
+  renderRows(current);
+}
+function setScanAvailability() {
+  const root = pathStack.at(-1)?.root;
+  const searchable = ['nca_section', 'nca_dir'].includes(root?.kind) ||
+    !!(pathStack[0]?.root.kind === 'directory');
+  id('assetScan').disabled = !searchable;
+}
+
 let activeNSP = null;
 let selectionRevision = 0;
 let nspTaskPolling = false;
@@ -52,6 +82,10 @@ function summary(counts = {}) {
   id('assetCountModel').textContent = (counts.model || 0) + (counts['model archive'] || 0);
   id('assetCountAnimation').textContent = counts.animation || 0;
   id('assetCountTexture').textContent = counts.texture || 0;
+  id('assetClassModels').textContent = (counts.model || 0) +
+    (counts['model archive'] || 0) + (counts.mesh || 0);
+  id('assetClassTextures').textContent = counts.texture || 0;
+  id('assetClassAnimations').textContent = counts.animation || 0;
   id('assetCountOther').textContent = Object.entries(counts).reduce(
     (n, [key, count]) => n + (!['model', 'model archive', 'animation', 'texture', 'folder'].includes(key) ? count : 0), 0
   );
@@ -631,7 +665,8 @@ function renderRows(rows) {
     ? rows
     : rows.filter(row => {
         return (!needle || (row.name + ' ' + (row.relative || '')).toLowerCase().includes(needle)) &&
-          (filter === 'all' || row.category === filter);
+          (filter === 'all' || row.category === filter) &&
+          belongsToClass(row, assetClass);
       });
   const body = id('assetRows');
   body.replaceChildren();
@@ -748,7 +783,8 @@ function renderListing() {
   const node = pathStack.at(-1);
   if (!node) return;
   const breadcrumbs = pathStack.map(step => step.root.name).join('  /  ');
-  id('assetBreadcrumb').textContent = scanListing ? breadcrumbs + '  /  Scan results' : breadcrumbs;
+  id('assetBreadcrumb').textContent = scanListing ? breadcrumbs + '  /  Asset catalog' : breadcrumbs;
+  setScanAvailability();
   id('assetBack').disabled = pathStack.length <= 1 && !scanListing;
   if (scanListing) {
     summary(scanListing.counts);
@@ -757,7 +793,10 @@ function renderListing() {
     summary(node.listing.counts);
     renderRows(node.listing.entries);
   }
-  const notice = scanListing ? 'Showing recognized files from the folder scan.' : node.listing.note;
+  const notice = scanListing ? 'Showing files discovered by the read-only asset scanner.' : node.listing.note;
+  id('assetClassHint').textContent = scanListing
+    ? 'Select a class to see its discovered files. Models can preview in 3D; textures and animations display file details and their available companions.'
+    : 'Choose Locate assets to search this game folder or readable RomFS for models, textures and animations.';
   showNotice(notice || (node.listing.truncated ? 'This directory has more files than the visible display limit.' : ''));
   select(null);
   if (node.root.kind === 'nsp') {
@@ -834,7 +873,8 @@ async function openSource(mode) {
     if (nativeArchive) refreshNCAReader();
     id('assetSearch').value = '';
     id('assetCategory').value = 'all';
-    id('assetScan').disabled = mode !== 'folder';
+    selectAssetClass('all');
+    setScanAvailability();
     id('assetScanSummary').textContent = 'Browse directories or scan extracted files for model, texture and animation references.';
     renderListing();
   } catch (error) { showNotice(error.message || String(error), true); }
@@ -977,9 +1017,17 @@ async function preview(row = selected) {
 
 async function scanFolder() {
   try {
-    if (!await api.browse_start_scan()) return;
+    const target = pathStack.at(-1)?.root;
+    const nca = ['nca_section', 'nca_dir'].includes(target?.kind);
+    if (!nca && pathStack[0]?.root.kind !== 'directory') {
+      showNotice('Open an extracted folder or a readable NCA RomFS section before locating assets.', true);
+      return;
+    }
+    if (!await api.browse_start_scan(nca ? target.id : null)) return;
     id('assetScan').disabled = true;
-    id('assetScanSummary').textContent = 'Scanning extracted game directories…';
+    id('assetScanSummary').textContent = nca
+      ? 'Locating models, textures and animations in RomFS metadata…'
+      : 'Locating models, textures and animations in extracted folders…';
     const poll = async () => {
       try {
         const state = await api.browse_scan_status();
@@ -987,7 +1035,7 @@ async function scanFolder() {
           window.setTimeout(poll, 650);
           return;
         }
-        id('assetScan').disabled = false;
+        setScanAvailability();
         if (state.error) {
           showNotice(state.error, true);
           return;
@@ -996,15 +1044,18 @@ async function scanFolder() {
           scanListing = state.result;
           const count = Object.values(scanListing.counts).reduce((a, b) => a + b, 0);
           id('assetScanSummary').textContent = count + ' recognized assets across ' +
-            scanListing.scanned + ' files' + (scanListing.truncated ? ' (partial scan)' : '') +
-            '. Select a file to preview, or go Back to browse folders.';
+            scanListing.scanned + ' scanned entries' +
+            (scanListing.truncated ? ' (partial catalog — safety limit reached)' : '') +
+            '. Choose Models, Textures or Animations above to browse the results.';
+          id('assetCategory').value = 'all';
+          selectAssetClass('models');
           renderListing();
         }
       } catch (error) { showNotice(error.message || String(error), true); }
     };
     poll();
   } catch (error) {
-    id('assetScan').disabled = false;
+    setScanAvailability();
     showNotice(error.message || String(error), true);
   }
 }
@@ -1064,6 +1115,9 @@ function initialize() {
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
   id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
   id('assetScan').addEventListener('click', scanFolder);
+  for (const button of document.querySelectorAll('[data-asset-class]')) {
+    button.addEventListener('click', () => selectAssetClass(button.dataset.assetClass));
+  }
   const menuActions = {
     nxMenuOpenPackage: () => id('assetOpenFile').click(),
     nxMenuOpenFolder: () => id('assetOpenFolder').click(),
