@@ -153,15 +153,20 @@ function setModel(result, format, packageName) {
     ['statBones', info.bones], ['statClips', info.clips]
   ];
   for (const [id, n] of mapping) el(id).textContent = Number(n).toLocaleString();
-  el('inspectorState').textContent = 'LOADED';
+  el('inspectorState').textContent = result.postLoad
+    ? 'IMPORTING COMPANIONS' : 'LOADED';
   el('objectName').textContent = result.selected.split('/').pop() || result.selected;
-  el('objectSubtitle').textContent = info.meshes + ' mesh(es) ready for GLB export' +
-    (result.sourceFormat === 'GFBMDL' ? ' · Native geometry (animations and shaders not decoded)' : '');
+  el('objectSubtitle').textContent = info.meshes + ' mesh(es)' +
+    (result.postLoad
+      ? ' visible · matched textures and animations importing…'
+      : ' ready for GLB export');
   el('originalFormat').textContent = format.replace('.', '').toUpperCase();
   el('packageName').textContent = packageName;
   el('activeGame').textContent = currentGame().name;
   el('emptyState').hidden = true;
-  el('exportButton').disabled = false;
+  // Exporting before asynchronous texture/animation import completes would
+  // silently create a GLB without those linked assets.
+  el('exportButton').disabled = !!result.postLoad;
   const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
@@ -195,12 +200,20 @@ function completeFastPreview(result) {
       if (state.loaded !== result) return;
       state.stage.setAnimations(result.animations);
       refreshAnimationControls(result);
-      log('Textures and ' + result.animations.length +
-        ' animation clip(s) finished loading in the background.', 'success');
+      el('inspectorState').textContent = 'LOADED';
+      el('objectSubtitle').textContent =
+        modelStats(result.root, result.animations).meshes +
+        ' mesh(es) with decoded companion assets ready for GLB export';
+      el('exportButton').disabled = false;
+      log('Imported model textures and ' + result.animations.length +
+        ' compatible animation clip(s). Select a clip to play it.', 'success');
     }).catch(error => {
-      if (state.loaded === result)
+      if (state.loaded === result) {
+        el('inspectorState').textContent = 'PARTIAL IMPORT';
+        el('exportButton').disabled = false;
         log('Some companion resources could not be loaded: ' +
           (error.message || error), 'info');
+      }
     });
   }, 0));
 }
@@ -764,10 +777,20 @@ async function openFastDesktopPreview(detail) {
         };
         return {
           path:item.path, size:item.size, getBytes,
+          linkedKind:item.linkedKind || null,
+          matchConfidence:item.matchConfidence || null,
+          matchReason:item.matchReason || '',
           getText:async () => new TextDecoder().decode(await getBytes())
         };
       })
     };
+    if (manifest.matched && Object.keys(manifest.matched).length) {
+      const linked = Object.entries(manifest.matched)
+        .filter(([,count]) => count > 0)
+        .map(([kind,count]) => count + ' ' + kind + (count !== 1 ? 's' : ''));
+      log('Model-linked assets detected: ' + linked.join(', ') +
+        '. Importing compatible textures and animations automatically.');
+    }
     const result = await loadModel(project, manifest.selected,
       message => log(message), {fastPreview:true});
     setModel(result, extension(manifest.selected), project.label);
