@@ -617,6 +617,7 @@ function select(row) {
   id('assetSavePacked').hidden = row?.kind !== 'gfpak_resource';
   id('assetSavePacked').disabled = row?.kind !== 'gfpak_resource';
   id('assetAttachNCA').disabled = !(row?.kind === 'nspfile' && /\.nca$/i.test(row.name));
+  id('assetAttachBaseNCA').disabled = !(row?.kind === 'nspfile' && /\.(nca|ncz)$/i.test(row.name));
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
   nxLoadDetails(row).catch(error => showNotice(error.message || String(error), true));
 }
@@ -851,6 +852,34 @@ async function nxSaveSelectedFile(packed = false) {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+async function nxAttachBaseNCA() {
+  const row = selected;
+  if (row?.kind !== 'nspfile' || !/\.(nca|ncz)$/i.test(row.name)) {
+    showNotice('Select the update NCA entry in the tree first.', true);
+    return;
+  }
+  try {
+    const result = await api.browse_attach_base_nca(row.id);
+    if (!result) return;
+    // Refresh section nodes so a previously locked BKTR can be expanded.
+    const refreshed = await api.browse_children(row.id);
+    nxTreeListings.set(row.id, refreshed);
+    const view = nxTreeItems.get(row.id);
+    if (view) {
+      nxPopulateChildren(row, refreshed);
+      view.expanded = true;
+      view.children.hidden = false;
+      view.toggle.textContent = '▾';
+      view.node.setAttribute('aria-expanded', 'true');
+    }
+    showNotice('Base NCA linked: ' + result.basename + ' (' +
+      result.matching_sections + ' matching sections). Compatible plaintext BKTR files can now be browsed.');
+    await nxNavigateTree(row);
+  } catch (error) {
+    showNotice(error.message || String(error), true);
+  }
+}
+
 async function nxAttachToSelectedNCA() {
   const row = selected;
   if (row?.kind !== 'nspfile' || !/\.nca$/i.test(row.name)) {
@@ -962,6 +991,7 @@ function initialize() {
   id('assetOpenFolder').addEventListener('click', () => openSource('folder'));
   id('assetAttach').addEventListener('click', nxAttachExtractedFolder);
   id('assetAttachNCA').addEventListener('click', nxAttachToSelectedNCA);
+  id('assetAttachBaseNCA').addEventListener('click', nxAttachBaseNCA);
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   id('assetBack').addEventListener('click', () => {
