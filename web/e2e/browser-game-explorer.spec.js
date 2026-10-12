@@ -89,7 +89,7 @@ test('Local prod.keys picker accepts keys in memory and forgets them without upl
   await expect(page.locator('#webGameFiles')).toHaveText('1');
   await page.locator('#webGameKeysFile').setInputFiles({
     name:'prod.keys',mimeType:'text/plain',
-    buffer:Buffer.from('nca_header_key = '+'10'.repeat(32)+'\\n')
+    buffer:Buffer.from('nca_header_key = '+'10'.repeat(32)+String.fromCharCode(10))
   });
   await expect(page.locator('#webGameKeysStatus')).toContainText('Local keys loaded (1 entries)');
   await expect(page.locator('#webGameFiles')).toHaveText('1');
