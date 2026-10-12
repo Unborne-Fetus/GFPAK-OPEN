@@ -49,7 +49,7 @@ test('PLA GFPAK with known hash dictionary preserves real original companion fil
   assert.equal(selected,'models/test.trmdl');
   assert.deepEqual(project.items.map(item=>item.path).sort(),Object.keys(makeTrinityTriangle()).sort());
 });
-test('Fully unsupported GFPAK compression fails with an explicit error rather than fake model',async()=>{
+test('Invalid Oodle-compressed GFPAK never fabricates a fake model',async()=>{
   const blob=gfpak(makeTrinityTriangle(),3);
-  await assert.rejects(prepareGfpakModelPreview(blob,'pla.gfpak'),/Oodle|unsupported compression/);
+  await assert.rejects(prepareGfpakModelPreview(blob,'pla.gfpak'),/No supported TRMDL|Oodle|unsupported compression/);
 });
