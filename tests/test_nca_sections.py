@@ -342,7 +342,7 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             struct.pack_into("<IIQ", table, 0x4000, 0, 1, len(virtual))
             struct.pack_into("<qqBb2sI", table, 0x4010,
                              0, 0, 3, 0, bytes(2), len(packed))
-            raw = bytearray(plain_nca([("pfs", packed.ljust(0x400, b"\\0") + table)]))
+            raw = bytearray(plain_nca([("pfs", packed.ljust(0x400, bytes(1)) + table)]))
             fs_header = 0x400
             struct.pack_into("<QQ", raw, fs_header + 0x178, 0x400, len(table))
             struct.pack_into("<4sIII", raw, fs_header + 0x188, b"BKTR", 1, 1, 0)
