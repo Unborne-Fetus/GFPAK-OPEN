@@ -39,6 +39,11 @@ export function findLegacyTexture(name, options) {
   // Prefer an exact referenced file in the source model directory.
   // Several identical textures in different game folders must not be
   // silently combined into the same model.
+  const associated = options.filter(row => row.item.linkedKind === 'texture');
+  const linkedNamed = associated.filter(row => row.base === target ||
+    row.base.startsWith(target + '_') || target.startsWith(row.base + '_'));
+  if (linkedNamed.length === 1) return linkedNamed[0].item;
+  if (linkedNamed.length > 1) return null;
   const matching = options.filter(row => row.base === target ||
     row.base.startsWith(target + '_') || target.startsWith(row.base + '_'));
   const local = matching.filter(row => row.score >= 10);
@@ -52,6 +57,10 @@ export function findLegacyTexture(name, options) {
   // Many games pack multiple named textures into one BNTX. Let the
   // BNTX decoder select by the exact GFBMDL texture name; never choose
   // a random surface or one of several unrelated BNTX files.
+  // A resolved model link may point into an entirely different file/package.
+  // Prefer that single explicit companion to an unrelated local BNTX. Actual
+  // internal surface-name matching is still validated by loadDecodedTexture.
+  if (associated.length === 1) return associated[0].item;
   const packed = options.filter(row => row.score >= 10 &&
     getExtension(row.item.path) === '.bntx');
   return packed.length === 1 ? packed[0].item : null;
@@ -259,8 +268,42 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
         }
       }
         };
-        const [, clips] = await Promise.all([
-          renderTextures(), readLegacyAnimations(project, selected, rig, report)
+        const attachUniqueLinkedTexture = async () => {
+          const linked = project.items.filter(item => item.linkedKind === 'texture' &&
+            ['.png', '.jpg', '.jpeg', '.webp', '.dds', '.bntx']
+              .includes(getExtension(item.path)));
+          if (linked.length !== 1) return;
+          const visible = new Set();
+          root.traverse(object => {
+            if (!object.isMesh) return;
+            for (const mat of Array.isArray(object.material) ?
+              object.material : [object.material]) {
+              if (mat) visible.add(mat);
+            }
+          });
+          if (visible.size !== 1) return;
+          const material = [...visible][0];
+          if (material.map) return;
+          try {
+            const texture = await loadDecodedTexture(
+              linked[0], true, [material.name]);
+            textureObjects.push(texture);
+            material.map = texture;
+            material.color.setRGB(1, 1, 1);
+            material.needsUpdate = true;
+            report('Automatically applied the sole matched texture ' +
+              linked[0].path + ' to GFBMDL material.');
+          } catch (error) {
+            report('Could not apply linked texture ' + linked[0].path +
+              ': ' + (error.message || error));
+          }
+        };
+        const [_, clips] = await Promise.all([
+          (async () => {
+            await renderTextures();
+            await attachUniqueLinkedTexture();
+          })(),
+          readLegacyAnimations(project, selected, rig, report)
         ]);
         if (!disposed) animations.push(...clips);
         report('GFBMDL companion textures and ' + clips.length +
