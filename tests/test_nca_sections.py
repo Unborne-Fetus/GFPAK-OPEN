@@ -31,6 +31,37 @@ def pfs0_files(files: list[tuple[str, bytes]]):
             + table + names + payload)
 
 
+def native_gfpak_fixture():
+    """Small read-only nested archive with a verified model/texture/clip family."""
+    from gfpak_open.converter import fnv1a64
+    extensions = (".trmdl", ".trmsh", ".trmbf", ".bntx", ".tranm")
+    contents = (
+        b"model descriptor", b"mesh descriptor", b"buffer data",
+        b"BNTX texture", b"native animation"
+    )
+    count = len(extensions)
+    paths_offset = 48
+    folder_offset = paths_offset + 8 * count
+    table_offset = folder_offset + 16 + 16 * count
+    data_offset = table_offset + 24 * count
+    result = bytearray(data_offset + sum(map(len, contents)))
+    result[:8] = b"GFLXPACK"
+    struct.pack_into("<4I", result, 8, 0x1000, 0, count, 1)
+    struct.pack_into("<QQQ", result, 24, table_offset, paths_offset, folder_offset)
+    struct.pack_into("<QII", result, folder_offset, 0xabcdef, count, 0)
+    begin = data_offset
+    for idx, (extension, body) in enumerate(zip(extensions, contents)):
+        name_hash = int(fnv1a64("pm0025_00_00" + extension), 16)
+        struct.pack_into("<Q", result, paths_offset + idx * 8, name_hash)
+        struct.pack_into("<QII", result, folder_offset + 16 + 16 * idx,
+                         name_hash, idx, 0)
+        struct.pack_into("<HHIIIII", result, table_offset + 24 * idx,
+                         0, 0, len(body), len(body), 0, begin, 0)
+        result[begin:begin+len(body)] = body
+        begin += len(body)
+    return bytes(result)
+
+
 def romfs_nested():
     """Construct a real RomFS table with bin/archive/pokemon nested directories."""
     names = ("", "bin", "archive", "pokemon")
@@ -300,6 +331,43 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertTrue(catalog["unresolved"])
             self.assertEqual(catalog["counts"], {})
             self.assertTrue(catalog["warnings"])
+
+    def test_nested_romfs_gfpak_native_assets_browse_and_stream_without_staging(self):
+        """Prove direct discovery/preview of all three classes within an NCA GFPAK."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "game.nsp"
+            inner = native_gfpak_fixture()
+            package(game, [("program.nca", plain_nca([
+                ("pfs", pfs0_files([("pm0025_00_00.gfpak", inner)]))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "workspace")
+            package_node = browser.open(game)
+            nca = browser.children(package_node["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            inner_node = browser.children(section["id"])["entries"][0]
+            self.assertTrue(inner_node["expandable"])
+            self.assertEqual(inner_node["category"], "model archive")
+            listing = browser.children(inner_node["id"])
+            self.assertEqual(listing["counts"]["model"], 1)
+            self.assertEqual(listing["counts"]["mesh"], 2)
+            self.assertEqual(listing["counts"]["texture"], 1)
+            self.assertEqual(listing["counts"]["animation"], 1)
+            mounted = browser.scan_mounted_gfpak_assets(inner_node["id"])
+            self.assertFalse(mounted["unresolved"])
+            self.assertEqual(len(mounted["assets"]), 5)
+            manifest = browser.fast_preview_items(inner_node["id"])
+            self.assertEqual(manifest["selected"], "pm0025_00_00.trmdl")
+            self.assertEqual(len(manifest["items"]), 5)
+            _, content = browser.stream_fast_preview_item(manifest["items"][0]["source"])
+            self.assertEqual(b"".join(content), b"model descriptor")
+            texture = next(row for row in listing["entries"]
+                           if row["category"] == "texture")
+            texture_meta = browser.fast_texture_item(texture["id"])
+            _, content = browser.stream_fast_preview_item(texture_meta["source"])
+            self.assertEqual(b"".join(content), b"BNTX texture")
+            self.assertFalse(list((root / "workspace" / "preview").glob("*"))
+                             if (root / "workspace" / "preview").exists() else True)
 
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
