@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .addon_manager import find_addon, ensure_addon
 from .asset_browser import AssetBrowser
+from .asset_matching import match_model_assets
 from .blender_detection import find_blender, can_launch_blender
 from .converter import ConversionOptions, convert_model, validate_glb
 
@@ -44,7 +45,10 @@ class DesktopAPI:
         self._checked_blender: str | None = None
         self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
         self._configure_nca_browser()
-        self._scan_job = {"running": False, "error": "", "result": None}
+        self._scan_job = {"running": False, "error": "", "result": None,
+                          "scanned": 0, "stage": ""}
+        self._scan_cancel = threading.Event()
+        self._catalogs: dict[str, dict] = {}
         self._nsp_job = {"running": False, "kind": "", "done": 0, "total": 0, "result": None, "error": ""}
         self._nsp_cancel = threading.Event()
         # Short-lived, per-selection read-only URLs. Nothing is extracted,
@@ -55,6 +59,7 @@ class DesktopAPI:
         """Best-effort shutdown; only delete files the app owns in its temp cache."""
         with self._lock:
             self._closing = True
+            self._scan_cancel.set()
             worker = self._worker
         if worker and worker.is_alive():
             worker.join(timeout=3)
@@ -372,6 +377,9 @@ class DesktopAPI:
         if not paths:
             return None
         with self._lock:
+            self._scan_cancel.set()
+            self._scan_cancel = threading.Event()
+            self._catalogs.clear()
             self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
             self._quick_previews.clear()
             self._configure_nca_browser()
