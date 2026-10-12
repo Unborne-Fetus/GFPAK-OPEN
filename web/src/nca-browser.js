@@ -50,7 +50,7 @@ async function sectionReader(blob,head,number,start,size,mode,key,xtsEndian){
     if(mode===1) return sliceBytes(blob,absolute,length);
     if(mode===3){
       if(key?.length!==16)throw Error('Compatible NCA content key not provided');
-      const aligned=absolute&~15,leading=absolute-aligned;
+      const aligned=Math.floor(absolute/16)*16,leading=absolute-aligned;
       const payload=await sliceBytes(blob,aligned,length+leading);
       const plaintext=await decryptCtr(key,payload,prefix,aligned);
       return plaintext.slice(leading,leading+length);
