@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 import {Builder} from 'flatbuffers';
-import {prepareGfpakModelPreview} from '../src/native-gfpak-preview.js';
+import {prepareGfpakModelPreview,prepareGfpakCompanions} from '../src/native-gfpak-preview.js';
 import {loadTrinityModel} from '../src/trinity-model.js';
 import {fnv1a64,parseHashDictionary} from '../src/gfpak.js';
 
@@ -134,4 +134,16 @@ test('hashed PLA GFPAK recognizes BNTX header as texture companion and preserves
   assert.ok(texture);
   assert.match(texture.path,/\.bntx$/);
   assert.deepEqual(new Uint8Array(await texture.getBytes()),bntx);
+});
+
+test('separate matching GFPAK exposes hashed PLA texture and animation companions',async()=>{
+  const files=makeAnimatedTrinityTriangle();
+  const texture=new Uint8Array(64);texture.set([66,78,84,88]);
+  const companion=gfpak({
+    'hashed/animation-resource.bin':files['models/test.tranm'],
+    'hashed/texture-resource.bin':texture
+  });
+  const found=await prepareGfpakCompanions(companion,'pm0025_00_00_animation.gfpak');
+  assert.equal(found.filter(item=>item.linkedKind==='animation').length,1);
+  assert.equal(found.filter(item=>item.linkedKind==='texture').length,1);
 });
