@@ -681,7 +681,7 @@ async function recoverTrinityMaterials(project, selected, references, parts, rep
   const variant=options.textureVariant==='shiny'?'shiny':'regular';
   const selected=chooseTrinityMaterialSources(parsed,variant);
   for(const item of selected)report('Matched '+item.data.materials.length+
-    ' '+trinityMaterialVariant(item.item)+' material definition(s) from '+item.item.path+
+    ' material definition(s) ['+trinityMaterialVariant(item.item)+'] from '+item.item.path+
     (item.explicit?' by model reference':' by mesh material names')+'.');
   if(parsed.some(item=>trinityMaterialVariant(item.item)==='shiny'))
     report('TRMTR color assignment: '+variant+' selected; '+selected.length+
