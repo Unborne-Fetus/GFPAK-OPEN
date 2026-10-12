@@ -45,6 +45,11 @@ test('PLA GFPAK with unknown resource hashes still resolves real TRMDL/TRMSH/TRM
   const blob=gfpak(makeTrinityTriangle());
   const {project,selected}=await prepareGfpakModelPreview(blob,'pm0025_00_00.gfpak');
   assert.equal(project.items.length,3);
+  assert.equal(project.scanSummary.totalResources,3);
+  assert.equal(project.scanSummary.classification.trmdl,1);
+  assert.equal(project.scanSummary.classification.trmsh,1);
+  assert.equal(project.scanSummary.classification.trmbf,1);
+  assert.equal(project.scanSummary.unidentified.length,0);
   assert.match(selected,/\.trmdl$/);
   const real=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
   let geometry=0;
