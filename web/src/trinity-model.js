@@ -1,5 +1,5 @@
 import {
-  loadDecodedTexture, matchingLinkedDiffuseTexture
+  loadDecodedTexture, matchingLinkedDiffuseTexture, matchingLinkedDiffuseSurface
 } from './texture-loader.js';
 import { applyLayerColors } from './trinity-layer-colors.js';
 import { associatedNativeAnimations } from './animation-association.js';
@@ -231,7 +231,9 @@ async function applyMatchedLinkedTextures(project, root, report, created) {
       if (!texture) {
         // A multi-surface BNTX must still match the real material's
         // surface name, otherwise the decoder rejects applying a guess.
-        texture = await loadDecodedTexture(item, true, [material.name]);
+        const matchingSurface=matchingLinkedDiffuseSurface(item,material.name);
+        texture = await loadDecodedTexture(item, true, matchingSurface ?
+          [matchingSurface] : [material.name]);
         loaded.set(item.path, texture);
         created.push(texture);
         if (texture.image?.close) images.add(texture.image);
