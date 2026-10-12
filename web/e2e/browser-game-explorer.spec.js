@@ -51,7 +51,7 @@ test('Preview a readable game-package Trinity model in-browser and export GLB',a
   await page.goto('/');
   await page.locator('#tabBrowserGame').click();
   const entries=Object.entries(makeTrinityTriangle());
-  const names=Buffer.concat(entries.map(([name])=>Buffer.from(name+'\\0')));
+  const names=Buffer.concat(entries.map(([name])=>Buffer.from(name+String.fromCharCode(0))));
   const records=Buffer.alloc(entries.length*24);
   let offset=0,start=0;
   for(const [i,[name,body]] of entries.entries()){
