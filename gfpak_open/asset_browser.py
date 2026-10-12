@@ -1197,7 +1197,8 @@ class AssetBrowser:
                 break
         return {
             "counts": dict(counts), "assets": found, "scanned": scanned,
-            "truncated": truncated or len(found) >= max_results,
+            "truncated": truncated or sum(counts.values()) > max_results,
+            "unresolved": counts.get("model archive", 0) > 0 or counts.get("archive", 0) > 0,
             "source": "RomFS", "source_node": node_id
         }
 
@@ -1233,7 +1234,9 @@ class AssetBrowser:
         return {
             "counts": dict(counts), "assets": assets,
             "scanned": len(archive.resources),
-            "truncated": len(assets) >= max_results,
+            "truncated": sum(counts[k] for k in (
+                "model", "mesh", "model archive", "texture", "animation")) > max_results,
+            "unresolved": bool(counts.get("unknown", 0)),
             "source": "GFPAK",
             "note": (f"{counts.get('unknown', 0)} resource hashes remain unidentified. "
                      "Their types cannot be verified from the archive index alone.")
@@ -1299,6 +1302,10 @@ class AssetBrowser:
                     warnings.append(entry.name + ": " + str(exc)[:100])
                     continue
                 for section in sections:
+                    if section["kind"] == "nca_locked":
+                        warnings.append(entry.name + ": " +
+                                        section["name"] + " (decryption or format unavailable)")
+                        continue
                     if section["kind"] != "nca_section":
                         continue
                     if inspected >= limit or len(assets) >= max_results:
@@ -1327,6 +1334,8 @@ class AssetBrowser:
             "total_ncas": total_ncas,
             "truncated": inspected >= limit or len(assets) >= max_results or
                          scanned_ncas < total_ncas,
+            "unresolved": bool(warnings) or counts.get("model archive", 0) > 0 or
+                          counts.get("archive", 0) > 0,
             "warnings": warnings[:16],
             "note": ("Some NCA sections may require keys, base updates or unsupported decoding. "
                      "GFPAK archives are listed; their internal hashed files are not "
