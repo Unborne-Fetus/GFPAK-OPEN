@@ -514,6 +514,33 @@ async function loadNativeClips(project, selected, skeleton, report, scene) {
  * the files still exist as hashed GFPAK siblings. Recover only validated,
  * unambiguous companions from the selected Pokémon project.
  */
+/**
+ * Prefer real animation bone-track evidence over arbitrary GFPAK resource
+ * order. A common one-bone "root" is insufficient to distinguish rigs.
+ * Return null for ties and weak evidence rather than binding a wrong species.
+ */
+export function chooseRigByAnimationTracks(candidates, animations) {
+  if(candidates.length<2 || !animations.length)return null;
+  const normalize = name=>String(name||'').split(/[/:|\\\\]/).at(-1).trim().toLowerCase();
+  const observed = new Set();
+  for(const clip of animations){
+    for(const track of clip?.tracks||[]){
+      const name=normalize(track.bone);
+      if(name)observed.add(name);
+    }
+  }
+  if(observed.size<2)return null;
+  const scored=candidates.map(candidate=>{
+    const names=new Set((candidate.value?.bones||[]).map(bone=>normalize(bone.name)));
+    let hits=0;
+    for(const name of observed)if(names.has(name))hits++;
+    return {candidate,hits};
+  }).sort((a,b)=>b.hits-a.hits);
+  if(scored[0].hits<2 || scored[0].hits===scored[1].hits ||
+     scored[0].hits/observed.size<0.5)return null;
+  return scored[0].candidate;
+}
+
 async function recoverTrinitySkeleton(project, selected, reference, report) {
   const candidates=project.items.filter(item=>ext(item.path)==='.trskl');
   if(reference){
@@ -541,9 +568,27 @@ async function recoverTrinitySkeleton(project, selected, reference, report) {
   const origin=modelItem?.sourceArchive;
   const own=origin?parsed.filter(row=>row.item.sourceArchive===origin):[];
   const sameFolder=parsed.filter(row=>dirname(row.item.path)===dirname(selected));
-  const chosen=own.length===1?own[0]:
+  let chosen=own.length===1?own[0]:
     sameFolder.length===1?sameFolder[0]:
     parsed.length===1?parsed[0]:null;
+  if(!chosen && parsed.length>1){
+    const clips=[];
+    // Bounded evidence probe: never decode hundreds of huge Oodle animations
+    // before the first 3D frame. Those without matching tracks cannot prove
+    // which skeleton belongs to the model.
+    const companions=associatedNativeAnimations(project.items,selected,()=>{})
+      .filter(item=>Number.isFinite(item.size) && item.size<=8*1024*1024);
+    let bytes=0;
+    for(const item of companions.slice(0,12)){
+      if(bytes+item.size>24*1024*1024)break;
+      bytes+=item.size;
+      try{clips.push(parseNativeAnimation(await bytesFor(item),basename(item.path)));}
+      catch(_){}
+    }
+    chosen=chooseRigByAnimationTracks(parsed,clips);
+    if(chosen)report('Skeleton linked using '+clips.length+
+      ' decoded animation(s) and uniquely matching bone tracks.');
+  }
   if(chosen){
     report('Recovered '+(parsed.length===1?'unambiguous ':'')+chosen.value.bones.length+'-bone skeleton from '+
       chosen.item.path+(own.length===1?' in the model\'s own archive.':
