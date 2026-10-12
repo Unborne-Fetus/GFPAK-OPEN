@@ -208,3 +208,12 @@ Python unit tests:
 - [ ] Validate native model skeletal skinning, native animation interpolation and all shader/material variations against actual game files.
 
 Only process models and game assets you own or are authorized to use.
+
+## Exporting Pokémon to Pokédex 3D Max
+
+1. Open your own extracted game data and select the correct **Game Source** (important for game-internal Pokémon IDs).
+2. Preview the Pokémon and allow all matched textures and animations to finish loading.
+3. Click **Export Pokémon**. The ZIP contains original model/texture/skeleton/animation resources, a `gfpak-pokemon-export.json` interoperability manifest, and—if conversion succeeds—`pokedex3d/regular.glb`.
+4. In the Pokédex 3D Max project, drag the ZIP onto `import-gfpak-pokemon.bat` (or double-click that file and pick the ZIP). No Blender is used by this new GLB import path.
+
+The Pokédex's strict baseline requires complete embedded textures **and a recognizable idle animation**. If native materials or animations are still unsupported for that Pokémon, GFPAK exports the original files and clearly marks the ZIP `original-assets-only` rather than inventing a working GLB. This format does not imply every game source is already conversion-compatible. Existing Pokédex models are not overwritten by default.
