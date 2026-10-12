@@ -106,6 +106,27 @@ class AssetBrowserTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 browser.preview_source("random-untrusted-id")
 
+    def test_complete_extracted_catalog_goes_beyond_old_1200_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # Previous scans cut the visible catalog off at 1,200 matches.
+            # Full discovery should traverse all and preserve correct totals.
+            for index in range(1251):
+                (root / f"pm0025_clip_{index:04d}.tranm").write_bytes(b"clip")
+            (root / "pm0025_00_00.trmdl").write_bytes(b"model")
+            (root / "pm0025_body.bntx").write_bytes(b"texture")
+            browser = AssetBrowser()
+            browser.open(root)
+            stages = []
+            report = browser.scan(progress=lambda count, stage: stages.append(count))
+            self.assertEqual(report["counts"]["animation"], 1251)
+            self.assertEqual(report["counts"]["model"], 1)
+            self.assertEqual(report["counts"]["texture"], 1)
+            self.assertEqual(report["scanned"], 1253)
+            self.assertEqual(len(report["assets"]), 1253)
+            self.assertFalse(report["truncated"])
+            self.assertTrue(stages)
+
     def test_archive_resource_inspection_is_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
