@@ -8,6 +8,7 @@ let current = [];
 let selected = null;
 let scanListing = null;
 let assetCatalog = null;
+const catalogsBySource = new Map();
 let catalogBusy = false;
 let catalogRevision = 0;
 let assetClass = 'all';
@@ -35,6 +36,7 @@ function setScanAvailability() {
   const source = pathStack[0]?.root;
   const searchable = ['nca_section', 'nca_dir', 'nspfile', 'xci_partition']
     .includes(root?.kind) ||
+    (root?.kind === 'nca_file' && /\.gfpak$/i.test(root.name)) ||
     ['directory', 'gfpak', 'nsp', 'xci'].includes(source?.kind);
   id('assetScan').disabled = !searchable || catalogBusy;
 }
@@ -65,7 +67,8 @@ function showNotice(message, error = false) {
 
 function canInspectTexture(row) {
   return !!row && row.category === 'texture' &&
-    ['file', 'zipfile', 'nca_file', 'gfpak_resource'].includes(row.kind) &&
+    ['file', 'zipfile', 'nca_file', 'gfpak_resource',
+     'nca_gfpak_resource'].includes(row.kind) &&
     /\.(bntx|dds|png|jpe?g|webp)$/i.test(row.name);
 }
 
@@ -73,6 +76,7 @@ function canPreview(row) {
   if (!row) return false;
   if (row.kind === 'gfpak') return true;
   if (row.kind === 'nca_file' && /\.(gfpak|trmdl|trmsh|gfbmdl|glb)$/i.test(row.name)) return true;
+  if (row.kind === 'nca_gfpak_resource') return row.category === 'model';
   if (row.kind === 'zipfile' && /\.(trmdl|trmsh|gfbmdl|glb|gltf|fbx|obj|dae)$/i.test(row.name)) return true;
   if (row.kind === 'gfpak_resource') return row.category === 'model';
   return row.kind === 'file' && /\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl|gfpak)$/i.test(row.name);
@@ -823,6 +827,14 @@ function scheduleNSPSearch() {
 function renderListing() {
   const node = pathStack.at(-1);
   if (!node) return;
+  // Keep a game-wide catalog for the package while allowing a more precise
+  // catalog inside an individual nested GFPAK. Returning to a parent restores
+  // its previous verified counts instead of showing the last visited folder.
+  if (!catalogBusy) {
+    assetCatalog = [...pathStack].reverse().map(step =>
+      catalogsBySource.get(step.root.id)).find(Boolean) || null;
+    scanListing = assetClass === 'all' ? null : assetCatalog;
+  }
   const breadcrumbs = pathStack.map(step => step.root.name).join('  /  ');
   id('assetBreadcrumb').textContent = scanListing ? breadcrumbs + '  /  Asset catalog' : breadcrumbs;
   setScanAvailability();
@@ -882,6 +894,8 @@ async function openNode(row) {
       nxRevealExistingBranch(row).catch(() => {});
     }
     renderListing();
+    if (row.kind === 'nca_file' && /\.gfpak$/i.test(row.name))
+      void scanFolder(row, true);
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -907,6 +921,7 @@ async function openSource(mode) {
     updateGameCompatibility(result);
     ++catalogRevision;
     assetCatalog = null;
+    catalogsBySource.clear();
     scanListing = null;
     catalogBusy = false;
     activeNSP = null;
@@ -923,7 +938,7 @@ async function openSource(mode) {
     id('assetScanSummary').textContent = 'Game inventory has not been scanned.';
     renderListing();
     if (['directory', 'gfpak', 'nsp', 'xci'].includes(result.root.kind))
-      void scanFolder(result.root.id, true);
+      void scanFolder(result.root, true);
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -1058,7 +1073,8 @@ async function preview(row = selected) {
   id('assetPreview').disabled = true;
   try {
     select(row);
-    const direct = (['gfpak', 'gfpak_resource'].includes(row.kind) ||
+    const direct = (['gfpak', 'gfpak_resource', 'nca_gfpak_resource'].includes(row.kind) ||
+      (row.kind === 'nca_file' && /\.gfpak$/i.test(row.name)) ||
       (/\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i.test(row.name) &&
        ['file', 'zipfile', 'nca_file'].includes(row.kind)));
     if (direct && typeof api.browse_fast_preview === 'function') {
@@ -1090,11 +1106,12 @@ async function preview(row = selected) {
 
 async function scanFolder(requested = null, automatic = false) {
   const origin = pathStack[0]?.root;
-  const target = requested ? origin :
+  const target = requested && typeof requested === 'object' ? requested :
     pathStack.at(-1)?.root || origin;
   if (!target || catalogBusy) return;
   const useId = ['nca_section', 'nca_dir', 'gfpak', 'nsp', 'xci',
-    'nspfile', 'xci_partition'].includes(target.kind);
+    'nspfile', 'xci_partition'].includes(target.kind) ||
+    (target.kind === 'nca_file' && /\.gfpak$/i.test(target.name));
   if (!useId && origin?.kind !== 'directory') {
     showNotice('Open a game package, GFPAK, folder, or readable RomFS.', true);
     return;
@@ -1134,6 +1151,7 @@ async function scanFolder(requested = null, automatic = false) {
           summary(null);
           return;
         }
+        catalogsBySource.set(target.id, status.result);
         assetCatalog = status.result;
         scanListing = assetClass !== 'all' ? assetCatalog : null;
         const counts = assetCatalog.counts || {};
