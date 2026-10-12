@@ -1,4 +1,6 @@
-import { loadDecodedTexture } from './texture-loader.js';
+import {
+  loadDecodedTexture, matchingLinkedDiffuseTexture
+} from './texture-loader.js';
 import { associatedNativeAnimations } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
@@ -162,37 +164,42 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
 }
 
-async function applySingleLinkedTexture(project, root, report, created) {
-  const linked = project.items.filter(item => item.linkedKind === 'texture' &&
-    TEXTURE_EXT.has(ext(item.path)));
-  if (linked.length !== 1) return [];
+async function applyMatchedLinkedTextures(project, root, report, created) {
   const materials = new Set();
   root.traverse(object => {
     if (!object.isMesh) return;
-    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+    for (const material of Array.isArray(object.material) ?
+      object.material : [object.material]) {
       if (material) materials.add(material);
     }
   });
-  if (materials.size !== 1) return [];
-  const material = [...materials][0];
-  if (material.map) return [];
-  // Without explicit material channel names, one genuine matched texture and
-  // one material form an unambiguous base-map candidate. If the BNTX contains
-  // multiple surfaces the decoder rejects guessing which surface is correct.
-  try {
-    const texture = await loadDecodedTexture(linked[0], true, [material.name]);
-    created.push(texture);
-    material.map = texture;
-    material.color.setRGB(1, 1, 1);
-    material.needsUpdate = true;
-    report('Automatically applied the sole matched texture ' + linked[0].path +
-      ' to the model material.');
-    return texture.image?.close ? [texture.image] : [];
-  } catch (error) {
-    report('Linked texture ' + linked[0].path +
-      ' could not be applied: ' + (error.message || error));
-    return [];
+  const loaded = new Map(), images = new Set();
+  for (const material of materials) {
+    if (material.map) continue;
+    const item = matchingLinkedDiffuseTexture(
+      project.items, material.name, materials.size);
+    if (!item) continue;
+    try {
+      let texture = loaded.get(item.path);
+      if (!texture) {
+        // A multi-surface BNTX must still match the real material's
+        // surface name, otherwise the decoder rejects applying a guess.
+        texture = await loadDecodedTexture(item, true, [material.name]);
+        loaded.set(item.path, texture);
+        created.push(texture);
+        if (texture.image?.close) images.add(texture.image);
+      }
+      material.map = texture;
+      material.color.setRGB(1, 1, 1);
+      material.needsUpdate = true;
+      report('Automatically applied linked texture ' + item.path +
+        ' to material ' + material.name + '.');
+    } catch (error) {
+      report('Linked texture ' + item.path +
+        ' could not be applied: ' + (error.message || error));
+    }
   }
+  return [...images];
 }
 
 function buildBones(trskl, sceneRoot) {
@@ -440,7 +447,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
           (async () => {
             const images = await applyDecodedTextures(
               project, lookup, selected, report, created);
-            const fallbackImages = await applySingleLinkedTexture(
+            const fallbackImages = await applyMatchedLinkedTextures(
               project, scene, report, created);
             return images.concat(fallbackImages);
           })(),
