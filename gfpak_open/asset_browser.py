@@ -1480,6 +1480,7 @@ class AssetBrowser:
                     row = self._public(child)
                     row["relative"] = entry["path"]
                     row["scope"] = scope
+                    row["game_scope"] = str(self.root_path)
                     if max_results is None or len(found) < max_results:
                         found.append(row)
                     if inspect_gfpaks and entry["name"].lower().endswith(".gfpak"):
@@ -1544,6 +1545,7 @@ class AssetBrowser:
             row = self._public(child)
             row["relative"] = name
             row["scope"] = "gfpak:" + node_id
+            row["game_scope"] = str(self.root_path)
             assets.append(row)
         return {
             "counts": dict(counts), "assets": assets,
@@ -1585,6 +1587,7 @@ class AssetBrowser:
             row = self._public(item)
             row["relative"] = known
             row["scope"] = "gfpak:" + str(archive.source)
+            row["game_scope"] = str(self.root_path)
             assets.append(row)
         return {
             "counts": dict(counts), "assets": assets,
@@ -1740,6 +1743,7 @@ class AssetBrowser:
                         row = self._public(node)
                         row["relative"] = str(item.relative_to(self.root_path)).replace("\\", "/")
                         row["scope"] = scope
+                        row["game_scope"] = str(self.root_path)
                         if max_results is None or len(assets) < max_results:
                             assets.append(row)
                         if item.suffix.lower() == ".gfpak":
