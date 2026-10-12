@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Builder} from 'flatbuffers';
-import {loadTrinityModel} from '../src/trinity-model.js';
+import {loadTrinityModel,chooseRigByAnimationTracks} from '../src/trinity-model.js';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 
@@ -63,4 +63,21 @@ test('two unreferenced rigs must not be assigned randomly to unrelated model',as
   assert.equal(result.sourceStats.bones,0);
   assert.match(log.join(' '),/skipping unsafe rig substitution/);
   result.disposeAssets();
+});
+
+test('animation bone evidence uniquely associates the correct rig without guessing',()=>{
+  const roots=[
+    {item:{path:'related-a.trskl'},value:{bones:[
+      {name:'root'}, {name:'neck'}, {name:'wing_right'}]}},
+    {item:{path:'related-b.trskl'},value:{bones:[
+      {name:'root'}, {name:'tail'}, {name:'claw_left'}]}}
+  ];
+  const animations=[{tracks:[{bone:'root'},{bone:'neck'},{bone:'wing_right'}]}];
+  assert.equal(chooseRigByAnimationTracks(roots,animations),roots[0]);
+  assert.equal(chooseRigByAnimationTracks(roots,[{tracks:[{bone:'root'}]}]),null);
+  assert.equal(chooseRigByAnimationTracks(roots,[{tracks:[
+    {bone:'root'},{bone:'wing_right'},{bone:'tail'}]}]),null);
+  assert.equal(chooseRigByAnimationTracks([roots[0],{
+    ...roots[0],item:{path:'duplicate.trskl'}
+  }],animations),null);
 });
