@@ -340,8 +340,16 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
       bytes=await peekData(raw);
       type=identifyAuxiliary(bytes);
       if(!type){
-        const candidate=identifyTrinity(bytes);
-        if(['trskl','trmtr'].includes(candidate))type=candidate;
+        try{
+          if(plausibleRig(parseTrskl(bytes)))type='trskl';
+        }catch(_){}
+      }
+      if(!type){
+        try{
+          const materials=parseTrmtr(bytes).materials;
+          if(materials?.some(m=>m.textures?.length||m.shaders?.length||
+            Object.keys(m.colors||{}).length))type='trmtr';
+        }catch(_){}
       }
     }catch(error){continue;}
     if(!['bntx','dds','png','jpg','webp','tranm','trskl','trmtr'].includes(type))continue;
