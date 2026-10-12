@@ -48,3 +48,36 @@ export function selectNativeAnimations(items, selectedModel, limit = 64) {
   rows.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
   return rows.slice(0, limit).map(row => row.item);
 }
+
+/** Prefer companions explicitly associated with THIS model by the game scanner.
+ *
+ * The manifest is scoped to a selected model and its validated companion
+ * entries. Nearby animations are only a fallback when no evidence-backed
+ * links were supplied. Native decoders still validate real bone tracks.
+ */
+export function associatedNativeAnimations(items, selectedModel, report = () => {}) {
+  const linked = items.filter(item => item.linkedKind === 'animation' &&
+    NATIVE_ANIMS.has(fileExtension(item.path)));
+  if (!linked.length) return selectNativeAnimations(items, selectedModel);
+  const sourceSpecies = speciesToken(selectedModel);
+  const unique = new Set();
+  const selected = [];
+  let bytes = 0;
+  for (const item of linked) {
+    const species = speciesToken(item.path);
+    if (sourceSpecies && species && sourceSpecies !== species) continue;
+    if (unique.has(item.path)) continue;
+    unique.add(item.path);
+    if (!Number.isFinite(item.size) || item.size < 0 || item.size > 64 * 1024 * 1024)
+      continue;
+    // Background import can be extensive but must not consume unlimited memory.
+    if (bytes + item.size > 512 * 1024 * 1024) {
+      report('Animation import reached the 512 MiB safety budget; remaining clips are not decoded.');
+      break;
+    }
+    bytes += item.size;
+    selected.push(item);
+  }
+  report('Automatically importing ' + selected.length + ' linked animation file(s) for this model.');
+  return selected;
+}
