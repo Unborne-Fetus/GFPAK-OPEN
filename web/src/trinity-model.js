@@ -40,15 +40,20 @@ function findResource(project, ref, basePath, suffix, required = true) {
   const list = project.items ?? [];
   const rawRef = String(ref || '').replaceAll('\\', '/');
   const sourceRef = normalized(rawRef);
-  const filename = basename(sourceRef);
-  const expected = suffix || (filename.includes('.') ? ext(filename) : '');
+  const sourceFilename = basename(sourceRef);
+  const expected = suffix || (sourceFilename.includes('.') ? ext(sourceFilename) : '');
+  // PLA TRMDL/TRMSH resources often reference bare names such as "head".
+  // The recovered archive project must retain actual .trmsh/.trmbf types,
+  // so resolve the reference with its requested extension when omitted.
+  const filename = sourceFilename && expected && !sourceFilename.endsWith(expected)
+    ? sourceFilename + expected : sourceFilename;
   let candidates = list.filter(item => expected ? ext(item.path) === expected : true);
   if (!filename && !expected) {
     if (required) throw new TrinityError('Missing Trinity model resource filename');
     return null;
   }
   const baseDir = dirname(basePath);
-  const normalizedRef = normalized(baseDir + rawRef);
+  const normalizedRef = normalized(baseDir + (filename && filename!==sourceFilename ? rawRef+expected : rawRef));
   const exact = candidates.filter(item =>
     normalized(item.path) === normalizedRef || normalized(item.path) === sourceRef);
   if (exact.length === 1) return exact[0];
