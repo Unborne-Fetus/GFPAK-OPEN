@@ -705,6 +705,28 @@ async function recoverTrinityMaterials(project, selected, references, parts, rep
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
  */
+/** Render only the highest-detail LOD for each actual native mesh family.
+ * Preserve distinct head, body, and accessories; never invent subdivisions.
+ */
+export function preferredTrinityMeshes(references) {
+  const groups=new Map();
+  for(let i=0;i<references.length;i++){
+    const ref=references[i];
+    const name=ref.replaceAll('\\\\','/').split('/').at(-1);
+    const lod=name.match(/(?:^|[_\\.-])lod[_-]?(\\d+)(?=$|[_\\.-])/i);
+    const family=name.replace(/(?:^|[_\\.-])lod[_-]?\\d+(?=$|[_\\.-])/i,'')
+      .replace(/[_.-]+/g,'_').replace(/^_|_$/g,'').toLowerCase();
+    // Untagged meshes are the primary asset, whereas LOD 0 is the highest
+    // marked level. For duplicate families keep exactly one.
+    const rank=lod?Number(lod[1]):0;
+    const prev=groups.get(family);
+    if(!prev || rank<prev.rank || (rank===prev.rank && lod && !prev.tagged)){
+      groups.set(family,{ref,index:i,rank,tagged:!!lod});
+    }
+  }
+  return [...groups.values()].sort((a,b)=>a.index-b.index).map(x=>x.ref);
+}
+
 export async function loadTrinityModel(project, selected, report = () => {}, options = {}) {
   const entry = project.items.find(item => item.path === selected);
   if (!entry) throw new TrinityError('Selected Trinity model not found');
@@ -718,8 +740,11 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   const parts = [];
   // LOD meshes are alternate versions of the same surface. Drawing all of
   // them at once overlays three skins and produces flicker during animation.
-  const primaryMeshes = meta.meshFiles.filter(ref => !/[_-]lod[1-9]\d*(?:\.|$)/i.test(ref));
-  for (const meshRef of primaryMeshes.length ? primaryMeshes : meta.meshFiles) {
+  const primaryMeshes = preferredTrinityMeshes(meta.meshFiles);
+  if(primaryMeshes.length!==meta.meshFiles.length)
+    report('Using highest-detail native LOD: '+primaryMeshes.length+
+      ' mesh(es) instead of '+meta.meshFiles.length+' mixed resolution references.');
+  for (const meshRef of primaryMeshes) {
     const shape = suffix === '.trmsh'
       ? entry
       : findResource(project, meshRef, selected, '.trmsh');
