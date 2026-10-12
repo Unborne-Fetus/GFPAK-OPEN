@@ -11,6 +11,7 @@ import shutil
 import json
 import mmap
 import struct
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -48,6 +49,7 @@ class GFPak:
     def __init__(self, source: str | Path):
         self.source = Path(source)
         self._bytes = None
+        self._length = self.source.stat().st_size
         self.version = 0
         self.relocated = 0
         self.resources: list[Resource] = []
@@ -84,14 +86,16 @@ class GFPak:
 
     def _read(self, fmt: str, at: int) -> tuple:
         size = struct.calcsize(fmt)
-        if at < 0 or at + size > len(self._bytes):
+        if at < 0 or size > self._length - at:
             raise GFPakError(f"Invalid archive: out-of-bounds structure at 0x{at:X}")
-        return struct.unpack_from(fmt, self._bytes, at)
+        if self._bytes is not None:
+            return struct.unpack_from(fmt, self._bytes, at)
+        return struct.unpack(fmt, self._range(at, size))
 
     def _parse(self) -> None:
-        if self._bytes[:8] != b"GFLXPACK":
-            raise GFPakError("Not a GFLXPACK archive")
-        if len(self._bytes) < 40:
+        if self._length < 40 or self._range(0, 8) != b"GFLXPACK":
+            raise GFPakError("Not a complete GFLXPACK archive")
+        if self._length < 40:
             raise GFPakError("Truncated GFLXPACK header")
         self.version, self.relocated, count, self.folder_count = self._read("<4I", 8)
         if count > self.MAX_FILES or self.folder_count > self.MAX_FILES:
@@ -116,7 +120,7 @@ class GFPak:
                 "<HHIIIII", table_offset + 24 * index
             )
             # Oversized resources are valid for indexing or streaming extraction.
-            if offset > len(self._bytes) or packed_size > len(self._bytes) - offset:
+            if offset > self._length or packed_size > self._length - offset:
                 raise GFPakError(f"Resource {index} extends beyond the archive")
             folder = associations.get(index)
             self.resources.append(Resource(
@@ -262,6 +266,56 @@ class GFPak:
         return paths
 
 
+
+class VirtualGFPak(GFPak):
+    """Read a GFPAK inside an NCA using bounded random-access reads.
+
+    No temporary GFPAK file or whole-game extraction is required. Header and
+    table lookups reuse small 64 KiB pages; resource payloads are read directly
+    from the owning virtual filesystem only when explicitly requested.
+    """
+
+    PAGE = 64 * 1024
+    MAX_PAGES = 24
+
+    def __init__(self, length: int, read_at, label: str = "virtual.gfpak"):
+        if not isinstance(length, int) or length < 40:
+            raise GFPakError("Virtual GFPAK is truncated")
+        self.source = Path(label)
+        self._length = length
+        self._reader = read_at
+        self._bytes = None
+        self._pages: OrderedDict[int, bytes] = OrderedDict()
+        self.version = 0
+        self.relocated = 0
+        self.resources = []
+        self.folder_count = 0
+        self._parse()
+
+    def _range(self, offset: int, size: int) -> bytes:
+        if size < 0 or offset < 0 or offset > self._length or size > self._length - offset:
+            raise GFPakError("Virtual GFPAK read exceeds its file bounds")
+        if not size:
+            return b""
+        if size > 4096 or offset // self.PAGE != (offset + size - 1) // self.PAGE:
+            block = self._reader(offset, size)
+        else:
+            page = offset // self.PAGE
+            cached = self._pages.get(page)
+            if cached is None:
+                start = page * self.PAGE
+                cached = self._reader(start, min(self.PAGE, self._length - start))
+                if len(cached) != min(self.PAGE, self._length - start):
+                    raise GFPakError("Virtual GFPAK index page was truncated")
+                self._pages[page] = cached
+                if len(self._pages) > self.MAX_PAGES:
+                    self._pages.popitem(last=False)
+            else:
+                self._pages.move_to_end(page)
+            block = cached[offset % self.PAGE:offset % self.PAGE + size]
+        if len(block) != size:
+            raise GFPakError("Virtual GFPAK resource is truncated")
+        return block
 
 def find_oodle_dll(archive: str | Path | None = None) -> Path | None:
     """Find a locally installed Oodle runtime without downloading proprietary files.
