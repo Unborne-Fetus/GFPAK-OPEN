@@ -541,7 +541,33 @@ export function chooseRigByAnimationTracks(candidates, animations) {
   return scored[0].candidate;
 }
 
-async function recoverTrinitySkeleton(project, selected, reference, report) {
+/**
+ * When names are hashed and several rigs exist, real skinning joint IDs can
+ * disqualify incompatible rigs. A rig is never selected based on bone count
+ * or arbitrary archive order alone.
+ */
+export function chooseRigByMeshInfluences(candidates,parts) {
+  if(candidates.length<2)return null;
+  const used=new Set();
+  for(const part of parts||[]){
+    const {joints,weights,count}=part.vertices||{};
+    if(!joints||!weights||!Number.isInteger(count))continue;
+    for(let i=0;i<count*4 && i<joints.length && i<weights.length;i++){
+      if(weights[i]>1e-5 && Number.isFinite(joints[i]) && joints[i]>=0)
+        used.add(Math.round(joints[i]));
+    }
+  }
+  if(used.size<2)return null;
+  const valid=candidates.filter(({value})=>{
+    const bones=value?.bones||[];
+    const mapped=new Set(bones.map(b=>b.jointInfoIndex).filter(i=>i>=0));
+    const validIds=mapped.size?mapped:new Set(bones.map((_,i)=>i));
+    return [...used].every(index=>validIds.has(index));
+  });
+  return valid.length===1?valid[0]:null;
+}
+
+async function recoverTrinitySkeleton(project, selected, reference, report, parts=[]) {
   const candidates=project.items.filter(item=>ext(item.path)==='.trskl');
   if(reference){
     try {
@@ -571,6 +597,10 @@ async function recoverTrinitySkeleton(project, selected, reference, report) {
   let chosen=own.length===1?own[0]:
     sameFolder.length===1?sameFolder[0]:
     parsed.length===1?parsed[0]:null;
+  if(!chosen && parsed.length>1){
+    chosen=chooseRigByMeshInfluences(parsed,parts);
+    if(chosen)report('Skeleton verified against the model\'s real vertex joint influences.');
+  }
   if(!chosen && parsed.length>1){
     const clips=[];
     // Bounded evidence probe: never decode hundreds of huge Oodle animations
@@ -667,7 +697,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   }
   if (!parts.length) throw new TrinityError('No renderable Trinity geometry was decoded');
 
-  const skeleton=await recoverTrinitySkeleton(project,selected,meta.skeleton,report);
+  const skeleton=await recoverTrinitySkeleton(project,selected,meta.skeleton,report,parts);
   const materialDefs=await recoverTrinityMaterials(project,selected,meta.materials,parts,report);
   const lookup=createMaterials(materialDefs);
   const created = [];
