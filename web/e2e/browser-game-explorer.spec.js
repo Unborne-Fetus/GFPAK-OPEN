@@ -183,3 +183,36 @@ test('Preview a hashed PLA GFPAK straight from an NSP without leaving to the Arc
   await expect(page.locator('#statVertices')).toHaveText('3');
   await expect(page.locator('#archivePanel')).toBeHidden();
 });
+
+
+test('Standalone GFPAK Inspector can preview a PLA Trinity model with hashed internal names',async({page})=>{
+  await page.goto('/');
+  const members=Object.entries(makeTrinityTriangle());
+  const count=members.length,table=40,hashes=40+count*24,start=hashes+count*8;
+  const archive=Buffer.alloc(start+members.reduce((size,[,data])=>size+data.length,0));
+  archive.write('GFLXPACK');
+  archive.writeUInt32LE(0x1000,8);
+  archive.writeUInt32LE(count,16);
+  archive.writeBigUInt64LE(BigInt(table),24);
+  archive.writeBigUInt64LE(BigInt(hashes),32);
+  let where=start;
+  for(const [i,[name,data]] of members.entries()){
+    archive.writeUInt32LE(data.byteLength,table+i*24+4);
+    archive.writeUInt32LE(data.byteLength,table+i*24+8);
+    archive.writeUInt32LE(where,table+i*24+16);
+    archive.writeBigUInt64LE(BigInt('0x'+fnv1a64(name)),hashes+i*8);
+    Buffer.from(data).copy(archive,where);
+    where+=data.byteLength;
+  }
+  await page.locator('#fileInput').setInputFiles({
+    name:'pm0025_00_00.gfpak',mimeType:'application/octet-stream',buffer:archive
+  });
+  await expect(page.locator('#archivePanel')).toBeVisible();
+  await expect(page.locator('#previewArchiveModel')).toBeEnabled();
+  await expect(page.locator('#previewArchiveModel')).toContainText('AUTO-DETECT');
+  await page.locator('#previewArchiveModel').click();
+  await expect(page.locator('#viewerPanel')).toBeVisible();
+  await expect(page.locator('#statMeshes')).toHaveText('1');
+  await expect(page.locator('#statVertices')).toHaveText('3');
+  await expect(page.locator('#exportButton')).toBeEnabled();
+});
