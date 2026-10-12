@@ -366,8 +366,8 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             texture_meta = browser.fast_texture_item(texture["id"])
             _, content = browser.stream_fast_preview_item(texture_meta["source"])
             self.assertEqual(b"".join(content), b"BNTX texture")
-            self.assertFalse(list((root / "workspace" / "preview").glob("*"))
-                             if (root / "workspace" / "preview").exists() else True)
+            self.assertFalse((root / "workspace" / "preview").exists(),
+                             "Fast nested GFPAK previews must not stage files on disk")
 
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
