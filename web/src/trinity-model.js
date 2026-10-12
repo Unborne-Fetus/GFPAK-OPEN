@@ -79,14 +79,23 @@ function findOptionalTexture(project, name, parentPath) {
   if (!name) return null;
   const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
   if (!candidate) return null;
+  const related = project.items.filter(item => item.linkedKind === 'texture' &&
+    TEXTURE_EXT.has(ext(item.path)));
+  const exact = item => stem(item.path) === candidate ||
+    basename(item.path).startsWith(candidate + '.');
+  const matched = related.filter(exact);
+  if (matched.length === 1) return matched[0];
+  if (matched.length > 1) return null;
   const nearby = project.items.filter(item => TEXTURE_EXT.has(ext(item.path)) &&
-    (stem(item.path) === candidate || basename(item.path).startsWith(candidate + '.')));
+    exact(item));
   const nearest = nearby.filter(item => dirname(item.path) === dirname(parentPath));
   if (nearest.length === 1) return nearest[0];
   if (nearby.length === 1) return nearby[0];
   if (nearby.length) return null;
-  // Some games store several named surfaces in one BNTX. Try a single
-  // nearby container, but the decoder must still validate the surface name.
+  // Explicitly linked texture can be stored under a different filename or in
+  // another GFPAK. If there is only one, let its real image/BNTX decoder
+  // validate the requested internal surface before applying it.
+  if (related.length === 1) return related[0];
   const packed = project.items.filter(item =>
     ext(item.path) === '.bntx' && dirname(item.path) === dirname(parentPath));
   return packed.length === 1 ? packed[0] : null;
@@ -151,6 +160,39 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
     }
   }
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
+}
+
+async function applySingleLinkedTexture(project, root, report, created) {
+  const linked = project.items.filter(item => item.linkedKind === 'texture' &&
+    TEXTURE_EXT.has(ext(item.path)));
+  if (linked.length !== 1) return [];
+  const materials = new Set();
+  root.traverse(object => {
+    if (!object.isMesh) return;
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (material) materials.add(material);
+    }
+  });
+  if (materials.size !== 1) return [];
+  const material = [...materials][0];
+  if (material.map) return [];
+  // Without explicit material channel names, one genuine matched texture and
+  // one material form an unambiguous base-map candidate. If the BNTX contains
+  // multiple surfaces the decoder rejects guessing which surface is correct.
+  try {
+    const texture = await loadDecodedTexture(linked[0], true, [material.name]);
+    created.push(texture);
+    material.map = texture;
+    material.color.setRGB(1, 1, 1);
+    material.needsUpdate = true;
+    report('Automatically applied the sole matched texture ' + linked[0].path +
+      ' to the model material.');
+    return texture.image?.close ? [texture.image] : [];
+  } catch (error) {
+    report('Linked texture ' + linked[0].path +
+      ' could not be applied: ' + (error.message || error));
+    return [];
+  }
 }
 
 function buildBones(trskl, sceneRoot) {
@@ -395,7 +437,13 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
       // wait on dozens of unrelated game assets.
       extrasPromise = (async () => {
         const [images, clips] = await Promise.all([
-          applyDecodedTextures(project, lookup, selected, report, created),
+          (async () => {
+            const images = await applyDecodedTextures(
+              project, lookup, selected, report, created);
+            const fallbackImages = await applySingleLinkedTexture(
+              project, scene, report, created);
+            return images.concat(fallbackImages);
+          })(),
           loadNativeClips(project, selected, rig, report),
         ]);
         sourceImages = images;
