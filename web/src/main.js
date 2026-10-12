@@ -120,6 +120,9 @@ function updateSource(text, isLoaded = true) {
 
 function showTab(which) {
   const archive = which === 'archive';
+  el('browserGamePanel').hidden = true;
+  el('tabBrowserGame').classList.remove('active');
+  el('tabBrowserGame').setAttribute('aria-selected', 'false');
   el('viewerPanel').hidden = archive;
   el('archivePanel').hidden = !archive;
   el('tabViewer').classList.toggle('active', !archive);
@@ -370,6 +373,10 @@ async function chooseProject(files) {
   busy(true, 'Reading source package', 'Scanning files and supported model formats…');
   try {
     const only = files.length === 1 ? files[0] : null;
+    if (only && /\.(nsp|nsz|xci|xcz)$/i.test(only.name)) {
+      window.dispatchEvent(new CustomEvent('gfpak-web-open-game',{detail:{file:only}}));
+      return;
+    }
     if (only && extension(only.name) === '.gfpak') {
       await loadArchive(only);
       return;
@@ -866,7 +873,37 @@ async function openFastDesktopPreview(detail) {
   }
 }
 
+async function previewBrowserGameModel(detail) {
+  if (state.busy || !state.stage) return;
+  const {project,selected} = detail || {};
+  if (!selected || !project?.items?.some(item=>item.path===selected)) {
+    log('Browser game preview is missing its selected source file.', 'error');
+    return;
+  }
+  busy(true,'Opening game model','Matching game meshes, textures and animation companions…');
+  try {
+    const result=await loadModel(project,selected,message=>log(message));
+    state.exportProject=project;
+    state.project=project;
+    state.desktopSource=false;
+    state.archive=null;
+    suggestGame([project.label,selected]);
+    setModel(result,extension(selected),project.label);
+    showTab('viewer');
+    completeFastPreview(result);
+    log('Opened model directly from the game-file browser without Blender.','success');
+  }catch(error){errorMessage(error);}
+  finally{busy(false);}
+}
+
 function start() {
+  window.addEventListener('gfpak-web-open-file', event => {
+    const files=event.detail?.files;
+    if(files?.length) void chooseProject(files);
+  });
+  window.addEventListener('gfpak-web-preview-model', event => {
+    void previewBrowserGameModel(event.detail);
+  });
   window.gfpakFastPreviewAvailable = true;
   window.gfpakFastTextureAvailable = true;
   window.addEventListener('gfpak-fast-native-texture', event => {
