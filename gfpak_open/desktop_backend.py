@@ -47,6 +47,9 @@ class DesktopAPI:
         self._scan_job = {"running": False, "error": "", "result": None}
         self._nsp_job = {"running": False, "kind": "", "done": 0, "total": 0, "result": None, "error": ""}
         self._nsp_cancel = threading.Event()
+        # Short-lived, per-selection read-only URLs. Nothing is extracted,
+        # and URLs never accept an arbitrary filesystem path.
+        self._quick_previews: dict[str, tuple[AssetBrowser, list[tuple]]] = {}
 
     def close(self):
         """Best-effort shutdown; only delete files the app owns in its temp cache."""
@@ -284,6 +287,36 @@ class DesktopAPI:
     def start_conversion(self):
         return self._begin_conversion(list(self.sources))
 
+    def browse_fast_preview(self, node_id: str):
+        """Prepare a browser-native preview manifest without running Blender."""
+        with self._lock:
+            manifest = self._browser.fast_preview_items(node_id)
+            token = uuid.uuid4().hex
+            records = manifest["items"]
+            # Bound retained manifests; old viewer requests fail closed.
+            if len(self._quick_previews) >= 6:
+                self._quick_previews.pop(next(iter(self._quick_previews)))
+            self._quick_previews[token] = (
+                self._browser, [entry["source"] for entry in records])
+            return {
+                "label": manifest["label"], "selected": manifest["selected"],
+                "items": [{
+                    "path": entry["path"], "size": entry["size"],
+                    "url": "/__quick_asset/" + token + "/" + str(index)
+                } for index, entry in enumerate(records)]
+            }
+
+    def quick_preview_stream(self, token: str, index: int):
+        """Resolve only a server-issued token/index pair, never client paths."""
+        with self._lock:
+            found = self._quick_previews.get(token)
+            if not found or found[0] is not self._browser:
+                return None
+            browser, records = found
+            if index < 0 or index >= len(records):
+                return None
+            return browser.stream_fast_preview_item(records[index])
+
     def preview_browser_item(self, node_id: str):
         source = self._browser.preview_source(node_id)
         return self._begin_conversion([source])
@@ -327,6 +360,7 @@ class DesktopAPI:
             return None
         with self._lock:
             self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
+            self._quick_previews.clear()
             self._configure_nca_browser()
             self._scan_job = {"running": False, "error": "", "result": None}
             root = self._browser.open(paths[0])
