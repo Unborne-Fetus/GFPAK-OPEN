@@ -22,6 +22,11 @@ test('standalone converter previews linked animations and exports the selected s
   await page.locator('#nativeConvert').click();
   await expect(page.locator('#viewerPanel')).toBeVisible();
   await expect(page.locator('#clipSelect option')).toHaveCount(1);
+  const downloadPromise=page.waitForEvent('download');
   await page.locator('#exportPokemonButton').click();
-  await expect.poll(()=>page.evaluate(()=>window.savedSource)).toBe('chosen-source');
+  const download=await downloadPromise;
+  expect(download.suggestedFilename()).toBe('test.zip');
+  // Desktop fast previews can now package the loaded GLB directly in a
+  // self-contained ZIP; they no longer require a native side-effect export.
+  expect(await page.evaluate(()=>window.savedSource)).toBe(null);
 });
