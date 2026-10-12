@@ -707,12 +707,41 @@ async function nxLoadDetails(row) {
         }
         const files = id('assetFamilyFiles');
         files.replaceChildren();
-        for (const asset of (family.files || []).slice(0, 12)) {
-          const item = document.createElement('div');
-          item.textContent = asset.kind + ' · ' + asset.path.split(/[/\\]/).at(-1);
-          item.title = asset.path;
-          files.append(item);
-        }
+        const matchedFiles = family.files || [];
+        const showRelated = (limit) => {
+          files.replaceChildren();
+          for (const asset of matchedFiles.slice(0, limit)) {
+            const item = document.createElement(asset.id && api?.browse_catalog_item
+              ? 'button' : 'div');
+            item.className = 'nx-companion-entry';
+            if (item.tagName === 'BUTTON') item.type = 'button';
+            item.textContent = asset.kind + ' · ' + asset.path.split(/[/\\]/).at(-1) +
+              (asset.confidence === 'probable' ? ' (probable)' : '');
+            item.title = [asset.path, asset.reason, asset.confidence]
+              .filter(Boolean).join(' · ');
+            if (item.tagName === 'BUTTON') {
+              item.addEventListener('click', async () => {
+                try {
+                  const related = await api.browse_catalog_item(asset.id);
+                  select(related);
+                  if (canInspectTexture(related)) void inspectTexture(related);
+                } catch (error) {
+                  showNotice(error.message || String(error), true);
+                }
+              });
+            }
+            files.append(item);
+          }
+          if (matchedFiles.length > limit) {
+            const expand = document.createElement('button');
+            expand.className = 'nx-companion-entry nx-companion-expand';
+            expand.type = 'button';
+            expand.textContent = 'Show all ' + matchedFiles.length + ' related files';
+            expand.addEventListener('click', () => showRelated(matchedFiles.length));
+            files.append(expand);
+          }
+        };
+        showRelated(24);
         id('assetFamily').title = family.note || '';
       }
     } catch (error) { /* Asset relationship hints are optional. */ }
