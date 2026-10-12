@@ -68,6 +68,37 @@ test('GFPAK decompression failures are reported instead of mistaken for missing 
   assert.ok(messages.some(message=>message.includes('First resource extraction error')));
 });
 
+test('hashed skeleton is not misclassified as the first TRMDL model',async()=>{
+  const animated=makeAnimatedTrinityTriangle();
+  const rig=animated['models/test.trskl'];
+  const models=makeTrinityTriangle();
+  const blob=gfpak({'hashed/first-rig.bin':rig,...models});
+  const {project,selected}=await prepareGfpakModelPreview(blob,'pm0025_00_00.gfpak');
+  assert.match(selected,/\\.trmdl$/);
+  assert.ok(project.items.some(item=>item.path.endsWith('.trskl')));
+  const preview=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.equal(preview.sourceStats.bones,1);
+  preview.disposeAssets();
+});
+
+test('descriptor companion aliases resolve when dictionary canonical names differ',async()=>{
+  const files=makeTrinityTriangle();
+  const named={
+    'hashed/root.trmdl':files['models/test.trmdl'],
+    'hashed/unexpected_mesh.trmsh':files['models/test.trmsh'],
+    'hashed/unexpected_buffer.trmbf':files['models/test.trmbf']
+  };
+  const dictionary=parseHashDictionary(Object.keys(named).join('\\n'));
+  const {project,selected}=await prepareGfpakModelPreview(
+    gfpak(named),'pm0025_00_00.gfpak',()=>{},dictionary);
+  assert.equal(selected,'hashed/root.trmdl');
+  const shape=project.items.find(item=>item.path.endsWith('.trmsh'));
+  assert.ok(shape.nativeAliases?.includes('test.trmsh'));
+  const preview=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.ok(preview.sourceStats.vertices>0);
+  preview.disposeAssets();
+});
+
 test('PLA GFPAK with known hash dictionary preserves real original companion filenames',async()=>{
   const blob=gfpak(makeTrinityTriangle());
   const dictionary=parseHashDictionary('models/\ntest.trmdl\ntest.trmsh\ntest.trmbf\n');
