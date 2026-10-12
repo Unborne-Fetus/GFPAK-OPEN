@@ -229,6 +229,37 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertFalse(list((root / "cache").glob("*.nca")))
             self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
 
+    def test_nca_asset_catalog_locates_models_textures_animations(self):
+        # Only file metadata is needed; no model conversion or extraction.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nsp = root / "catalog.nsp"
+            package(nsp, [("program.nca", plain_nca([("pfs", pfs0_files([
+                ("pm0025_00_00.trmdl", b"model"),
+                ("pm0025_body.bntx", b"texture"),
+                ("pm0025_idle.tranm", b"animation"),
+                ("pm0025_00_00.trmsh", b"mesh"),
+                ("unrelated.txt", b"misc")
+            ]))]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(nsp)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            self.assertEqual(catalog["counts"], {
+                "model": 1, "texture": 1, "animation": 1, "mesh": 1
+            })
+            self.assertEqual(catalog["scanned"], 5)
+            self.assertFalse(catalog["truncated"])
+            self.assertEqual(len(catalog["assets"]), 4)
+            for asset in catalog["assets"]:
+                self.assertEqual(asset["kind"], "nca_file")
+                self.assertEqual(
+                    browser.node(asset["id"])["name"], asset["name"])
+            limited = browser.scan_nca_assets(section["id"], limit=2)
+            self.assertEqual(limited["scanned"], 2)
+            self.assertTrue(limited["truncated"])
+
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
