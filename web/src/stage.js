@@ -110,10 +110,24 @@ export class ModelStage {
       root.position.y -= bottom;
       root.position.z -= center.z;
     }
-    this.mixer = animations.length ? new THREE.AnimationMixer(root) : null;
-    if (this.mixer && animations[0]) this.playAnimation(0);
+    this.setAnimations(animations);
     this.userAdjustedCamera = false;
     this.frame();
+  }
+
+  setAnimations(animations = []) {
+    // Attach deferred clips without removing or reframing the existing
+    // visible mesh. Preserve the camera angle the user already adjusted.
+    if (this.mixer && this.root) {
+      this.mixer.stopAllAction();
+      this.mixer.uncacheRoot(this.root);
+    }
+    this.animations = animations;
+    this.mixer = this.root && animations.length
+      ? new THREE.AnimationMixer(this.root) : null;
+    this.currentAction = null;
+    this.playing = false;
+    if (this.mixer) this.playAnimation(0);
   }
 
   playAnimation(index) {
