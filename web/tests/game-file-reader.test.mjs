@@ -41,7 +41,7 @@ function localFile(buffer,name) {
 function plainNCA() {
   const payload=pfs([['pm0094_00_00.trmdl',Buffer.from([1,2,3,4])],
     ['pm0094_idle.tranm',Buffer.from([5,6,7])]]);
-  const section=Buffer.concat([payload,Buffer.alloc(0x200)]);
+  const section=Buffer.concat([payload,Buffer.alloc((0x200-payload.length%0x200)%0x200)]);
   const nca=Buffer.alloc(0xc00 + section.length);
   nca.write('NCA3',0x200);
   nca.writeUInt32LE(6,0x240);
