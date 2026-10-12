@@ -10,7 +10,7 @@ import {parseNativeAnimation} from './trinity-animation.js';
 import {parseBntx} from './bntx.js';
 import {decodeGfbmdl} from './gfbmdl.js';
 
-const PROBE_LIMIT=20*1024*1024;
+const PROBE_LIMIT=64*1024*1024;
 const MAX_PROBES=1800;
 const ALLOWED=new Set(['.trmdl','.trmsh','.trmbf','.trskl','.trmtr','.bntx','.dds','.png','.jpg','.jpeg','.webp','.tranm','.gfbanm','.gfbmdl','.tracm']);
 const decoder=new TextDecoder();
@@ -68,11 +68,11 @@ function identifyTrinity(buffer){
       m.declarations?.length && m.parts?.length))return 'trmsh';
   }catch(_){}
   try {
-    const model=parseTrmdl(buffer);
-    if(model.meshFiles?.length)return 'trmdl';
+    if(hasGeometry(buffer))return 'trmbf';
   }catch(_){}
   try {
-    if(hasGeometry(buffer))return 'trmbf';
+    const model=parseTrmdl(buffer);
+    if(model.meshFiles?.length)return 'trmdl';
   }catch(_){}
   return '';
 }
@@ -376,7 +376,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ['tranm','gfbanm'].includes(row.kind)?'animation':undefined;
     items.push({
       path,size:row.resource.size,textureNames,
-      nativeAliases:row.nativeAliases||[],
+      sourceArchive:filename, nativeAliases:row.nativeAliases||[],
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
       linkedKind,
@@ -401,7 +401,7 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
   let count=0;
   for(const resource of archive.resources){
     if(![0,2,3].includes(resource.compression) ||
-      resource.size>20*1024*1024 || ++count>1000)continue;
+      resource.size>PROBE_LIMIT || ++count>MAX_PROBES)continue;
     let type='',bytes;
     try{
       const raw=await extractResourceAsync(archive,resource);
@@ -420,7 +420,8 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
     const linkedKind=['bntx','dds','png','jpg','webp'].includes(type)?'texture':
       type==='tranm'?'animation':undefined;
     list.push({
-      path:name,size:resource.size,textureNames,getBytes:async()=>bytes,
+      path:name,size:resource.size,textureNames,sourceArchive:filename,
+      getBytes:async()=>bytes,
       getText:async()=>new TextDecoder().decode(bytes),
       linkedKind,
       textureVariant: linkedKind==='texture'?textureVariant(name,textureNames):undefined,
