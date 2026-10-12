@@ -5,7 +5,7 @@
  * This is a decoder, not a substitute/cube for unknown game geometry.
  */
 import {parseGfpakFile, extractResourceAsync, resolvedName, fnv1a64} from './gfpak.js';
-import {parseTrmdl,parseTrmsh,parseTrmbf,parseTrskl,parseTrmtr} from './trinity.js';
+import {parseTrmdl,parseTrmsh,parseTrmbf,parseTrskl,parseTrmtr,decodeTrinityMeshes} from './trinity.js';
 import {parseNativeAnimation} from './trinity-animation.js';
 import {parseBntx} from './bntx.js';
 import {decodeGfbmdl} from './gfbmdl.js';
@@ -178,6 +178,40 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
   const baseName=normalize(reference).split('/').at(-1);
   const byName=filtered.filter(row=>normalize(row.known).split('/').at(-1)===baseName);
   if(byName.length===1)return markResourceMatch(byName[0],kind,reference,'verified-basename');
+  // The original TRMSH descriptor names its shapes and TRMBF carries their
+  // vertex/index buffers. Use those actual structures before considering
+  // guessed archive order: a wrong buffer often still draws something, but
+  // produces broken limbs or flat polygons.
+  if(kind==='trmbf' && filtered.length>1 && context?.meshDescriptor){
+    const compatible=[];
+    for(const row of filtered){
+      try{
+        const buffer=parseTrmbf(await read(row));
+        if(decodeTrinityMeshes(context.meshDescriptor,buffer).length)compatible.push(row);
+      }catch(_){}
+    }
+    if(compatible.length===1){
+      report('Verified TRMBF '+reference+' by index/vertex geometry compatibility.');
+      return markResourceMatch(compatible[0],kind,reference,'verified-buffer-geometry');
+    }
+  }
+  if(kind==='trmsh' && filtered.length>1){
+    const expected=normalize(reference).split('/').at(-1).replace(/\.trmsh$/,'');
+    if(expected.length>=3){
+      const named=[];
+      for(const row of filtered){
+        try{
+          const names=parseTrmsh(await read(row)).meshes.map(shape=>normalize(shape.name));
+          if(names.some(name=>name===expected ||
+            name.split(/[^a-z0-9]+/).includes(expected)))named.push(row);
+        }catch(_){}
+      }
+      if(named.length===1){
+        report('Linked TRMSH '+reference+' using the original shape name.');
+        return markResourceMatch(named[0],kind,reference,'verified-shape-name');
+      }
+    }
+  }
   if(filtered.length===1)return markResourceMatch(filtered[0],kind,reference,'unique-format-candidate');
   if(!filtered.length)throw Error('Missing '+kind+' file '+reference+' inside this GFPAK');
   // Trinity's real PLA descriptors commonly refer to "head", "body", etc.
@@ -380,7 +414,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
         if(part.material)meshMaterialNames.add(materialToken(part.material));
       assignRef(shape,'trmsh',name,stem);
       required.add(shape);
-      const buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read,context);
+      context.meshDescriptor=meshes;
+      let buffer;
+      try{
+        buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read,context);
+      }finally{context.meshDescriptor=null;}
       assignRef(buffer,'trmbf',meshes.bufferFile,stem);
       required.add(buffer);
     }
@@ -397,7 +435,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     const mesh=parseTrmsh(await read(root));
     for(const shape of mesh.meshes||[])for(const part of shape.parts||[])
       if(part.material)meshMaterialNames.add(materialToken(part.material));
-    const buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read,context);
+    context.meshDescriptor=mesh;
+    let buffer;
+    try{
+      buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read,context);
+    }finally{context.meshDescriptor=null;}
     assignRef(buffer,'trmbf',mesh.bufferFile,stem);required.add(buffer);
   }
   await recoverUnreferencedCompanions(rows,required,meshMaterialNames,read,report);
