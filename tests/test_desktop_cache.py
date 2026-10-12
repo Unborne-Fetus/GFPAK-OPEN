@@ -94,6 +94,17 @@ class TemporaryPreviewTests(unittest.TestCase):
                     self.assertEqual(
                         {entry["path"] for entry in preview["items"]},
                         {"pm0025_00_00.trmdl", "pm0025_idle.tranm", "pm0025_body.bntx"})
+                    self.assertEqual(preview["matched"], {
+                        "animation": 1, "texture": 1
+                    })
+                    for entry in preview["items"]:
+                        if entry["path"].endswith(".tranm"):
+                            self.assertEqual(entry["linkedKind"], "animation")
+                            self.assertEqual(entry["matchConfidence"], "probable")
+                        if entry["path"].endswith(".bntx"):
+                            self.assertEqual(entry["linkedKind"], "texture")
+                        if entry["path"].endswith(".trmdl"):
+                            self.assertNotIn("linkedKind", entry)
                     animations = studio.browse_scan_page(
                         origin["id"], 0, 250, "animations", "pm0025")
                     self.assertEqual(animations["total"], 1)
