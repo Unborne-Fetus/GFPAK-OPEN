@@ -115,11 +115,11 @@ test('a discovered texture opens native inspector without Blender',async({page})
       browse_choose:async()=>({
         root:{id:'root',kind:'directory',name:'textures',category:'folder',expandable:true},
         children:{root:{id:'root',name:'textures'},entries:[
-          {id:'t',kind:'file',name:'body.png',category:'texture',size:68,expandable:false}
+          {id:'t',kind:'file',name:'body.png',category:'texture',size:77,expandable:false}
         ],counts:{texture:1},note:''}
       }),
       browse_fast_texture:async()=>({
-        path:'body.png',size:68,url:'/__quick_asset/texture/0'
+        path:'body.png',size:77,url:'/__quick_asset/texture/0'
       }),
       preview_browser_item:async()=>{window.fallbackConverts++;return true;},
       browse_item_details:async()=>({notes:[],hex_lines:[]}),
@@ -128,7 +128,7 @@ test('a discovered texture opens native inspector without Blender',async({page})
     }};
   });
   const png=Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==',
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII=',
     'base64');
   await page.route('**/__quick_asset/texture/0',route=>
     route.fulfill({status:200,contentType:'image/png',body:png})
