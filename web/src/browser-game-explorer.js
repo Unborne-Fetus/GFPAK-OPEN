@@ -1,16 +1,17 @@
 import {openGamePackage, openExtractedFolder, exportIndex} from './game-file-reader.js';
 import {parseLocalKeys} from './nca-crypto.js';
+import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
 
 /** Desktop-style file viewer backed entirely by local browser File/Blob slices.
  * Index each game once, but render only expanded directories and 250 list rows
  * at a time. Never make one DOM element for every file in a large RomFS.
  */
 const el = id => document.getElementById(id);
-const PREVIEWABLE = /\.(gfpak|zip|glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i;
+const PREVIEWABLE = /\.(gfpak|zip|glb|gltf|fbx|obj|dae|stl|ply|3ds|trmdl|trmsh|gfbmdl)$/i;
 const MAX_ROWS = 250, MAX_TREE_CHILDREN = 250;
 let game=null, selected=null, currentPackage=null, localKeys=null;
 let folders=new Map(), fileByPath=new Map(), currentPath='', expanded=new Set(['']);
-let visible=MAX_ROWS, opening=false, revision=0, activeClass='all';
+let visible=MAX_ROWS, opening=false, revision=0, activeClass='all', previewing=false;
 let displayed=[], lastNotice='';
 
 function formatSize(size) {
@@ -376,35 +377,57 @@ async function ingestPackage(file){
     el('webGameRescan').disabled=!currentPackage;
   }
 }
+async function showInViewer(project,modelPath) {
+  return new Promise(resolve => {
+    window.dispatchEvent(new CustomEvent('gfpak-web-preview-model',{
+      detail:{project,selected:modelPath,finish:(success,reason='')=>resolve({success,reason})}
+    }));
+  });
+}
 async function preview(){
-  if(!game||!selected)return;
+  if(!game||!selected||previewing)return;
+  const target=selected,source=game;
+  previewing=true;
+  el('webGamePreview').disabled=true;
   try{
-    if(/\.(gfpak|zip)$/i.test(selected.name)){
-      if(selected.size>400*1024*1024)
-        throw Error('This embedded package is too large for an in-memory browser preview');
-      const file=new File([await selected.getBlob()],selected.name.split('/').at(-1));
+    if(/\.gfpak$/i.test(target.name)){
+      message('Locating native model, mesh buffers, skeleton and materials inside '+target.name+'…');
+      const archiveBlob=await target.getBlob();
+      const {project,selected:modelPath}=await prepareGfpakModelPreview(
+        archiveBlob,target.name,progress=>message(progress));
+      const result=await showInViewer(project,modelPath);
+      if(!result.success)throw Error(result.reason||'Model could not be decoded by the web viewer');
+      message('Loaded '+modelPath+' from GFPAK in 3D with real model geometry.');
+      return;
+    }
+    if(/\.zip$/i.test(target.name)){
+      if(target.size>400*1024*1024)throw Error('This ZIP exceeds safe web preview size');
+      const file=new File([await target.getBlob()],target.name.split('/').at(-1));
       window.dispatchEvent(new CustomEvent('gfpak-web-open-file',{detail:{files:[file]}}));
       return;
     }
-    if(!PREVIEWABLE.test(selected.name))throw Error('Choose a supported model or GFPAK archive');
-    const source=selected.name.split('/').slice(0,-1).join('/')+'/';
-    const token=selected.name.match(/pm\d{4}(?:_\d{2}){0,2}/i)?.[0].toLowerCase()||'';
-    const items=game.entries.filter(row=>{
-      if(row===selected)return true;
+    if(!PREVIEWABLE.test(target.name))throw Error('Choose a supported 3D model or GFPAK archive');
+    const dir=target.name.split('/').slice(0,-1).join('/')+'/';
+    const token=target.name.match(/pm\d{4}(?:_\d{2}){0,2}/i)?.[0].toLowerCase()||'';
+    const all=source.entries.filter(row=>{
+      if(row===target)return true;
       if(row.category==='container')return false;
       if(token&&row.name.toLowerCase().includes(token))return true;
-      return row.name.startsWith(source) &&
+      return row.name.startsWith(dir) &&
         ['model','texture','animation','companion'].includes(row.category);
-    }).slice(0,3000).map(row=>({
+    });
+    const include=[target,...all.filter(row=>row!==target)].slice(0,3000);
+    const items=include.map(row=>({
       path:row.name,size:row.size,getBytes:row.getBytes,
       getText:async()=>new TextDecoder().decode(await row.getBytes())
     }));
-    const project={label:game.name,items};
-    message('Opening model with '+(items.length-1)+' related source assets…');
-    window.dispatchEvent(new CustomEvent('gfpak-web-preview-model',{
-      detail:{project,selected:selected.name}
-    }));
-  }catch(error){message('Cannot preview: '+(error.message||error),true);}
+    const project={label:source.name,items};
+    message('Decoding '+target.name+' with '+(items.length-1)+' associated source assets…');
+    const result=await showInViewer(project,target.name);
+    if(!result.success)throw Error(result.reason||'Model could not be decoded');
+    message('Previewed '+target.name+' in the 3D viewport.');
+  }catch(error){message('3D preview unavailable: '+(error.message||error),true);}
+  finally{previewing=false;updateInspector();}
 }
 async function exportSelected(){
   if(!selected)return;
