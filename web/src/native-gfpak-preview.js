@@ -8,6 +8,7 @@ import {parseGfpakFile, extractResourceAsync, resolvedName, fnv1a64} from './gfp
 import {parseTrmdl,parseTrmsh,parseTrmbf,parseTrskl,parseTrmtr} from './trinity.js';
 import {parseNativeAnimation} from './trinity-animation.js';
 import {parseBntx} from './bntx.js';
+import {decodeGfbmdl} from './gfbmdl.js';
 
 const PROBE_LIMIT=20*1024*1024;
 const MAX_PROBES=1800;
@@ -60,6 +61,17 @@ function identifyTrinity(buffer){
       if(kind==='trmtr' && data.materials?.length)return kind;
     }catch(_){}
   }
+  return '';
+}
+function identifyNativeModel(buffer){
+  const trinity=identifyTrinity(buffer);
+  if(trinity)return trinity;
+  // GFBMDL also uses FlatBuffers but has no reliable magic bytes. Validate
+  // its actual vertex/index geometry instead of relying on a hash dictionary.
+  try{
+    const model=decodeGfbmdl(buffer);
+    if(model.stats?.meshCount>0 && model.stats.triangleCount>0)return 'gfbmdl';
+  }catch(_){}
   return '';
 }
 function referenceHashes(reference,containerName,kind=''){
@@ -250,18 +262,26 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     }
     return row.buffer;
   };
-  let probed=0,unreadable=0;
+  let probed=0,unreadable=0,decoded=0,skippedLarge=0,skippedLimit=0;
+  let firstReadError='';
   for(const row of rows){
     const knownType=ext(row.known);
     if(ALLOWED.has(knownType)){row.kind=knownType.slice(1);continue;}
     if(row.kind)continue;
-    if(row.resource.size>PROBE_LIMIT || probed++>=MAX_PROBES)continue;
+    if(row.resource.size>PROBE_LIMIT){skippedLarge++;continue;}
+    if(probed>=MAX_PROBES){skippedLimit++;continue;}
+    probed++;
     try{
       const bytes=await read(row);
-      const type=identifyAuxiliary(bytes)||identifyTrinity(bytes);
+      decoded++;
+      const type=identifyAuxiliary(bytes)||identifyNativeModel(bytes);
       if(type) row.kind=type;
       else row.buffer=null; // Never retain thousands of unrelated decoded assets.
-    }catch(_){unreadable++;row.buffer=null;}
+    }catch(error){
+      unreadable++;
+      if(!firstReadError)firstReadError=String(error?.message||error);
+      row.buffer=null;
+    }
     if(probed % 32===0){
       report('Checked '+probed+' GFPAK resources for genuine Trinity models…');
       // WASM decompression is synchronous once initialized: yield a frame
@@ -271,9 +291,22 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   }
   const models=rows.filter(row=>['trmdl','trmsh','gfbmdl'].includes(row.kind));
   if(!models.length){
-    throw Error('No supported TRMDL/TRMSH/GFBMDL model could be decoded in this GFPAK. '+
-      (archive.resources.length-rows.length)+' resources use unrecognized compression; '+
-      'native model resources may need a hash dictionary.');
+    const unknownCodecs=archive.resources.length-rows.length;
+    const summary=probed+' unnamed resources probed, '+decoded+' successfully extracted, '+
+      unreadable+' failed extraction, '+skippedLarge+' above the '+
+      (PROBE_LIMIT/1048576)+' MiB probe limit, '+skippedLimit+
+      ' beyond the scan limit, '+unknownCodecs+' with unsupported compression.';
+    report('No model identified: '+summary);
+    if(firstReadError)report('First resource extraction error: '+firstReadError);
+    if(unreadable===probed && probed>0){
+      throw Error('GFPAK preview cannot read its model resources. All '+probed+
+        ' extraction attempts failed (the compression code being recognized does not '+
+        'mean decompression succeeded). First error: '+firstReadError+'.');
+    }
+    throw Error('No supported TRMDL/TRMSH/GFBMDL model was identified in this GFPAK. '+
+      summary+(firstReadError?' First extraction error: '+firstReadError+'.':'')+
+      ' A filename-hash dictionary can identify resources, but cannot repair '+
+      'failed decompression or unsupported model layouts.');
   }
   let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
   const required=new Set([root]);
