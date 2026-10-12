@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchingLinkedDiffuseTexture, textureVariantForItem,
-  textureVariantFromName, textureFamilyName } from '../src/texture-loader.js';
+  textureVariantFromName, textureFamilyName,
+  configurePreviewTexture } from '../src/texture-loader.js';
+import * as THREE from 'three';
 
 test('model with separate body and eyes materials receives the right linked textures',()=>{
   const items=[
@@ -61,4 +63,25 @@ test('numeric native color skins map to their own normal and shiny surfaces',()=
     textureFamilyName('pm0025_body_col01.dds'));
   assert.equal(textureFamilyName('pm0025_body_color_shiny.dds'),
     textureFamilyName('pm0025_body_color.dds'));
+});
+
+test('hashed BNTX with shiny-only internal surfaces does not claim a regular skin',()=>{
+  const shiny={path:'recovered/pm0025/resource_012.bntx',linkedKind:'texture',
+    textureNames:['body_color_shiny']};
+  assert.equal(textureVariantForItem(shiny),'shiny');
+  assert.equal(matchingLinkedDiffuseTexture([shiny],'body',1,'regular'),null);
+});
+
+test('full-resolution BNTX uses interpolated mipmapped and anisotropic filtering',()=>{
+  const native=new THREE.DataTexture(new Uint8Array(16*16*4),16,16);
+  configurePreviewTexture(native);
+  assert.equal(native.magFilter,THREE.LinearFilter);
+  assert.equal(native.minFilter,THREE.LinearMipmapLinearFilter);
+  assert.equal(native.generateMipmaps,true);
+  assert.equal(native.anisotropy,8);
+  const packed=new THREE.CompressedTexture([],16,16,THREE.RGBA_BPTC_Format);
+  configurePreviewTexture(packed,{compressed:true});
+  assert.equal(packed.minFilter,THREE.LinearFilter);
+  assert.equal(packed.generateMipmaps,false);
+  native.dispose();packed.dispose();
 });
