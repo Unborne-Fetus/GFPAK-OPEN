@@ -478,6 +478,11 @@ class DesktopAPI:
             return self._browser.children(node_id, cursor=cursor)
 
     def browse_start_scan(self, node_id: str | None = None, quick: bool = False):
+        """Always inventory the entire readable source in a background worker.
+
+        The old quick flag is accepted for existing clients but no longer
+        limits how many files, NCAs, or archive members are examined.
+        """
         with self._lock:
             browser = self._browser
             kind = None
@@ -493,40 +498,99 @@ class DesktopAPI:
                     raise ValueError("Select a nested GFPAK to locate its internal members")
             elif not browser.root_path or not browser.root_path.is_dir():
                 raise ValueError("Open an extracted folder or game package to locate assets")
+            source_id = node_id or browser.root_id
             if self._scan_job["running"]:
                 return False
-            self._scan_job = {"running": True, "error": "", "result": None}
+            cancelled = self._scan_cancel
+            self._scan_job = {"running": True, "error": "", "result": None,
+                              "scanned": 0, "stage": "Starting complete scan",
+                              "source_id": source_id}
+        def update_progress(scanned, stage):
+            with self._lock:
+                if browser is self._browser and not cancelled.is_set():
+                    self._scan_job["scanned"] = scanned
+                    self._scan_job["stage"] = str(stage)[:180]
         def run():
             try:
-                # Opening a game should never monopolize its disk while the
-                # user tries to preview a model. Auto-discovery is bounded;
-                # clicking Locate assets explicitly performs the deeper scan.
-                file_limit = 4000 if quick else 40000
+                kwargs = {"progress": update_progress,
+                          "cancelled": cancelled.is_set}
                 if kind in ("nca_section", "nca_dir"):
-                    result = browser.scan_nca_assets(node_id, limit=file_limit)
+                    result = browser.scan_nca_assets(node_id, **kwargs)
                 elif kind == "gfpak":
-                    result = browser.scan_gfpak_assets(node_id)
+                    result = browser.scan_gfpak_assets(node_id, **kwargs)
                 elif kind == "nca_file":
-                    result = browser.scan_mounted_gfpak_assets(node_id)
+                    result = browser.scan_mounted_gfpak_assets(node_id, **kwargs)
                 elif kind:
-                    result = browser.scan_game_assets(
-                        node_id, limit=file_limit,
-                        max_ncas=12 if quick else 64)
+                    result = browser.scan_game_assets(node_id, **kwargs)
                 else:
-                    result = browser.scan(limit=file_limit)
+                    result = browser.scan(**kwargs)
+                models = match_model_assets(result["assets"])
+                browser._model_matches.update(models)
+                for row in result["assets"]:
+                    if row["id"] in models:
+                        companions = models[row["id"]]
+                        counts = {}
+                        for matched in companions:
+                            counts[matched["kind"]] = counts.get(matched["kind"], 0) + 1
+                        row["companions"] = counts
                 with self._lock:
-                    if browser is self._browser:
-                        self._scan_job["result"] = result
+                    if browser is self._browser and not cancelled.is_set():
+                        self._catalogs[source_id] = result
+                        summary = {k: v for k, v in result.items() if k != "assets"}
+                        summary["source_id"] = source_id
+                        summary["matched_models"] = sum(bool(v) for v in models.values())
+                        self._scan_job["result"] = summary
+                        self._scan_job["scanned"] = result["scanned"]
+                        self._scan_job["stage"] = "Complete"
             except Exception as exc:
                 with self._lock:
-                    if browser is self._browser:
+                    if browser is self._browser and not cancelled.is_set():
                         self._scan_job["error"] = str(exc)
             finally:
                 with self._lock:
-                    if browser is self._browser:
+                    if browser is self._browser and not cancelled.is_set():
                         self._scan_job["running"] = False
         threading.Thread(target=run, daemon=True).start()
         return True
+
+    def browse_scan_page(self, source_id: str, offset: int = 0, limit: int = 250,
+                         group: str = "all", query: str = "",
+                         category: str = "all"):
+        """Page full-scan results; never send a giant catalog over the JS bridge."""
+        with self._lock:
+            result = self._catalogs.get(source_id)
+            if result is None:
+                raise ValueError("Catalog is unavailable; scan this source again")
+            if not isinstance(offset, int) or offset < 0:
+                raise ValueError("Invalid catalog page offset")
+            if not isinstance(limit, int) or not 1 <= limit <= 500:
+                raise ValueError("Catalog page size must be 1-500")
+            groups = {
+                "all": None,
+                "models": {"model", "model archive", "asset package", "mesh",
+                           "skeleton", "material"},
+                "textures": {"texture"},
+                "animations": {"animation"},
+            }
+            if group not in groups:
+                raise ValueError("Invalid asset class")
+            query = str(query).strip().casefold()[:128]
+            category = str(category).strip().casefold()[:64]
+            accepted = groups[group]
+            filtered = [
+                row for row in result["assets"]
+                if (accepted is None or row.get("category") in accepted)
+                and (category == "all" or row.get("category") == category)
+                and (not query or query in (
+                    (row.get("relative") or row.get("name") or "") + " " +
+                    (row.get("name") or "")).casefold())
+            ]
+            total = len(filtered)
+            page = filtered[offset:offset + limit]
+            return {"assets": page, "total": total, "offset": offset,
+                    "next_offset": offset + len(page) if offset + len(page) < total else None,
+                    "source_id": source_id}
+
 
     def browse_nsp_page(self, node_id: str, page: int = 0,
                         query: str = "", category: str = "all"):
