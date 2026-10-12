@@ -105,7 +105,11 @@ function summary(counts = null) {
   }
   const models = (counts.model || 0) + (counts['model archive'] || 0) +
     (counts.mesh || 0);
-  const value = (name, count) => { id(name).textContent = count.toLocaleString(); };
+  const partial = assetCatalog?.truncated || assetCatalog?.unresolved;
+  const value = (name, count) => {
+    id(name).textContent = !count && partial ? '—' :
+      count.toLocaleString() + (count && partial ? '+' : '');
+  };
   value('assetCountModel', models);
   value('assetCountAnimation', counts.animation || 0);
   value('assetCountTexture', counts.texture || 0);
