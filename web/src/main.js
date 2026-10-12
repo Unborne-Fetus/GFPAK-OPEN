@@ -254,7 +254,7 @@ async function drawCurrentTexture() {
 }
 
 async function inspectSourceTexture(item) {
-  if (state.busy || !item) return;
+  if (state.busy || !item) return false;
   busy(true,'Opening texture','Reading a native texture without requiring a model…');
   try {
     if (item.size > 256 * 1024 * 1024)
