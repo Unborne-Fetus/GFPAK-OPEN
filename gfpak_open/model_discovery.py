@@ -12,7 +12,11 @@ from pathlib import Path
 
 MASK = (1 << 64) - 1
 INV_PRIME = pow(0x100000001B3, -1, 1 << 64)
-MODEL_EXTENSIONS = (".trmdl", ".trmsh", ".trmbf", ".trmtr", ".trskl", ".trmmt")
+# Additional suffixes are inferred ONLY when sharing an independently proven
+# TRMDL/TRMSH/TRMBF family hash. A free-floating hashed member is never
+# labeled a texture or clip just because a suffix could fit by chance.
+MODEL_EXTENSIONS = (".trmdl", ".trmsh", ".trmbf", ".trmtr", ".trskl", ".trmmt",
+                    ".bntx", ".dds", ".tranm", ".gfbanm", ".trtex")
 PAIR_EXTENSIONS = (".trmsh", ".trmbf")
 
 
