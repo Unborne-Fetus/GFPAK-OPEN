@@ -96,3 +96,27 @@ test('BNTX R8, RG8, RGB565 and BGRA8 retain channel values',()=>{
    assert.deepEqual(Array.from(decoded.data.slice(0,4)),row.expected);
  }
 });
+
+test('multiple BNTX textures require an exact surface name',async()=>{
+ const {bytes,v}=sampleBntx({width:2,height:2});
+ bytes.copyWithin(0x280,0x100,0x178);
+ v.setUint32(0x24,2,true);
+ v.setBigUint64(0x88,0x280n,true);
+ v.setBigUint64(0x2e0,0x1c0n,true);
+ v.setBigUint64(0x2f0,0x1d0n,true);
+ v.setUint16(0x1c0,4,true);
+ bytes.set(new TextEncoder().encode('eyes'),0x1c2);
+ v.setBigUint64(0x1d0,0x400n,true);
+ bytes.set([255,0,0,255],0x200);
+ bytes.set([0,255,0,255],0x400);
+ const parsed=parseBntx(bytes);
+ assert.equal(parsed.textures.length,2);
+ await assert.rejects(() => loadDecodedTexture({
+   path:'packed.bntx',getBytes:async()=>bytes
+ }),/select a matching internal texture name/);
+ const texture=await loadDecodedTexture({
+   path:'packed.bntx',getBytes:async()=>bytes
+ },true,['eyes']);
+ assert.deepEqual(Array.from(texture.image.data.slice(0,4)),[0,255,0,255]);
+ texture.dispose();
+});
