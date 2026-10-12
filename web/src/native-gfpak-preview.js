@@ -247,3 +247,38 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     (unreadable?' ('+unreadable+' failed probes)':'')+'.');
   return {project:{label:filename,items},selected:original.path,archive};
 }
+
+
+/** Read real texture/animation/skeleton resources from other GFPAKs for the
+ * same Pokémon. No placeholder textures/clips or cross-species guessing.
+ */
+export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
+  const archive=await parseGfpakFile(blob,filename);
+  const list=[];
+  let count=0;
+  for(const resource of archive.resources){
+    if(![0,2,3].includes(resource.compression) ||
+      resource.size>20*1024*1024 || ++count>1000)continue;
+    let type='',bytes;
+    try{
+      const raw=await extractResourceAsync(archive,resource);
+      bytes=await peekData(raw);
+      type=identifyAuxiliary(bytes);
+      if(!type){
+        const candidate=identifyTrinity(bytes);
+        if(['trskl','trmtr'].includes(candidate))type=candidate;
+      }
+    }catch(error){continue;}
+    if(!['bntx','dds','png','jpg','webp','tranm','trskl','trmtr'].includes(type))continue;
+    const name='companions/'+filename.replace(/[^a-z0-9_-]/gi,'_')+
+      '/resource_'+resource.index+'.'+type;
+    list.push({
+      path:name,size:resource.size,getBytes:async()=>bytes,
+      getText:async()=>new TextDecoder().decode(bytes),
+      linkedKind:['bntx','dds','png','jpg','webp'].includes(type)?'texture':
+        type==='tranm'?'animation':undefined,
+    });
+  }
+  report('Found '+list.length+' actual texture/animation companion resources in '+filename);
+  return list;
+}
