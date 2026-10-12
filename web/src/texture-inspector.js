@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import {parseBntx, decodeBntxTexture} from './bntx.js';
+import {decodeDDSTexture} from './texture-loader.js';
 
 const IMAGE_MIME = new Map([
   ['.png', 'image/png'], ['.jpg', 'image/jpeg'],
@@ -14,7 +15,8 @@ const MAX_PIXELS = 4096 * 4096;
 const extension = path => '.' + String(path).split('.').at(-1).toLowerCase();
 
 export function isInspectableTexture(path) {
-  return extension(path) === '.bntx' || IMAGE_MIME.has(extension(path));
+  return extension(path) === '.bntx' || extension(path) === '.dds' ||
+    IMAGE_MIME.has(extension(path));
 }
 
 export function inspectTexture(bytes, filename) {
@@ -33,6 +35,19 @@ export function inspectTexture(bytes, filename) {
         mips: tex.mips
       }))
     };
+  }
+  if (kind === '.dds') {
+    const texture = decodeDDSTexture(input);
+    try {
+      return {
+        kind:'dds', filename, bytes:input,
+        surfaces:[{
+          index:0, name:String(filename).split(/[\\/]/).at(-1),
+          width:texture.image.width, height:texture.image.height,
+          format:'DDS ' + texture.format, mips:texture.mipmaps?.length || 1
+        }]
+      };
+    } finally { texture.dispose(); }
   }
   if (!IMAGE_MIME.has(kind)) throw new Error('Unsupported standalone texture: ' + kind);
   return {
@@ -58,6 +73,50 @@ function compressedFormat(decoded) {
     : THREE['RGBA_ASTC_' + decoded.blockWidth + 'x' + decoded.blockHeight + '_Format'];
 }
 
+function drawGpuTexture(canvas,width,height,texture,requiredExtension) {
+  let renderer, geometry, material;
+  try {
+    const gl = canvas.getContext('webgl2', {preserveDrawingBuffer:true}) ||
+      canvas.getContext('webgl', {preserveDrawingBuffer:true});
+    if (!gl) throw new Error('This compressed texture requires WebGL support');
+    if (!gl.getExtension(requiredExtension))
+      throw new Error('The GPU does not support ' + requiredExtension +
+        '; original packed bytes remain available');
+    canvas.width = width;
+    canvas.height = height;
+    renderer = new THREE.WebGLRenderer({
+      canvas,context:gl,alpha:true,antialias:false,preserveDrawingBuffer:true
+    });
+    renderer.setPixelRatio(1);
+    renderer.setSize(width,height,false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    geometry = new THREE.PlaneGeometry(2,2);
+    material = new THREE.MeshBasicMaterial({
+      map:texture,transparent:true,side:THREE.DoubleSide
+    });
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Mesh(geometry,material));
+    const camera = new THREE.OrthographicCamera(-1,1,1,-1,0.1,10);
+    camera.position.z = 1;
+    renderer.render(scene,camera);
+    return {width,height,dispose(){
+      texture.dispose();material.dispose();geometry.dispose();renderer.dispose();
+    }};
+  } catch (error) {
+    texture.dispose();material?.dispose();geometry?.dispose();renderer?.dispose();
+    throw error;
+  }
+}
+
+const DDS_S3TC_FORMATS = new Set([
+  THREE.RGB_S3TC_DXT1_Format,THREE.RGBA_S3TC_DXT1_Format,
+  THREE.RGBA_S3TC_DXT3_Format,THREE.RGBA_S3TC_DXT5_Format
+]);
+
 /** Render one texture to a new canvas. Returns a teardown function so repeated
  * previews do not leak WebGL contexts. BC7/ASTC uses the user's GPU only if
  * the necessary WebGL extension is available.
@@ -76,6 +135,27 @@ export async function drawTextureSurface(info, index, canvas) {
       return {width:bitmap.width,height:bitmap.height,dispose(){}};
     } finally { bitmap.close(); }
   }
+  if (info.kind === 'dds') {
+    const texture = decodeDDSTexture(info.bytes);
+    if (texture.isDataTexture) {
+      try {
+        const {width,height,data} = texture.image;
+        canvas.width = width;canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('2D Canvas is unavailable');
+        context.putImageData(new ImageData(new Uint8ClampedArray(data),width,height),0,0);
+        return {width,height,dispose(){}};
+      } finally { texture.dispose(); }
+    }
+    const required = texture.format === THREE.RGBA_BPTC_Format
+      ? 'EXT_texture_compression_bptc'
+      : DDS_S3TC_FORMATS.has(texture.format) ? 'WEBGL_compressed_texture_s3tc' : null;
+    if (!required) {
+      texture.dispose();
+      throw new Error('DDS GPU compression format cannot be previewed in this browser');
+    }
+    return drawGpuTexture(canvas,texture.image.width,texture.image.height,texture,required);
+  }
   const decoded = decodeBntxTexture(info.archive, entry.index);
   if (!decoded.compressed) {
     canvas.width = decoded.width;
@@ -87,46 +167,12 @@ export async function drawTextureSurface(info, index, canvas) {
     context.putImageData(new ImageData(rgba, decoded.width, decoded.height), 0, 0);
     return {width:decoded.width,height:decoded.height,dispose(){}};
   }
-  // Native BC7/ASTC blocks are not CPU-decoded. Only offer an actual GPU
-  // preview when the browser reports the relevant hardware extension.
-  const gl = canvas.getContext('webgl2', {preserveDrawingBuffer:true}) ||
-    canvas.getContext('webgl', {preserveDrawingBuffer:true});
-  if (!gl) throw new Error('This GPU texture requires WebGL support');
+  // Hardware-compressed BC7 / ASTC has no fake CPU conversion.
+  const texture = new THREE.CompressedTexture(
+    [{data:decoded.data,width:decoded.width,height:decoded.height}],
+    decoded.width, decoded.height, compressedFormat(decoded)
+  );
   const required = decoded.compressed === 'bc7'
     ? 'EXT_texture_compression_bptc' : 'WEBGL_compressed_texture_astc';
-  if (!gl.getExtension(required))
-    throw new Error('The GPU does not support ' + required + '; packed texture remains available');
-  const format = compressedFormat(decoded);
-  if (!format) throw new Error('Unknown GPU texture block dimensions');
-  canvas.width = decoded.width;
-  canvas.height = decoded.height;
-  const renderer = new THREE.WebGLRenderer({
-    canvas, context:gl, alpha:true, antialias:false, preserveDrawingBuffer:true
-  });
-  let geometry, material, texture;
-  try {
-    renderer.setPixelRatio(1);
-    renderer.setSize(decoded.width, decoded.height, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    texture = new THREE.CompressedTexture(
-      [{data:decoded.data,width:decoded.width,height:decoded.height}],
-      decoded.width, decoded.height, format
-    );
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-    geometry = new THREE.PlaneGeometry(2, 2);
-    material = new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide});
-    const scene = new THREE.Scene();
-    scene.add(new THREE.Mesh(geometry,material));
-    const camera = new THREE.OrthographicCamera(-1,1,1,-1,0.1,10);
-    camera.position.z = 1;
-    renderer.render(scene,camera);
-    return {width:decoded.width,height:decoded.height,
-      dispose() {texture.dispose();material.dispose();geometry.dispose();renderer.dispose();}};
-  } catch (error) {
-    texture?.dispose();material?.dispose();geometry?.dispose();renderer.dispose();
-    throw error;
-  }
+  return drawGpuTexture(canvas,decoded.width,decoded.height,texture,required);
 }
