@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchingLinkedDiffuseTexture, textureVariantForItem } from '../src/texture-loader.js';
+import { matchingLinkedDiffuseTexture, textureVariantForItem,
+  textureVariantFromName, textureFamilyName } from '../src/texture-loader.js';
 
 test('model with separate body and eyes materials receives the right linked textures',()=>{
   const items=[
@@ -51,4 +52,13 @@ test('mixed BNTX containers can serve either regular or shiny surfaces',()=>{
   assert.equal(textureVariantForItem(mixed),'mixed');
   assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'regular'),mixed);
   assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'shiny'),mixed);
+});
+
+test('numeric native color skins map to their own normal and shiny surfaces',()=>{
+  assert.equal(textureVariantFromName('pm0025_body_col00.dds'),'regular');
+  assert.equal(textureVariantFromName('pm0025_body_col01.dds'),'shiny');
+  assert.equal(textureFamilyName('pm0025_body_col00.dds'),
+    textureFamilyName('pm0025_body_col01.dds'));
+  assert.equal(textureFamilyName('pm0025_body_color_shiny.dds'),
+    textureFamilyName('pm0025_body_color.dds'));
 });
