@@ -138,6 +138,11 @@ function assignRef(row,kind,reference,base) {
   row.nativeAliases=unique([...(row.nativeAliases||[]),alias,name]);
   if(!row.known)row.inferred='recovered/'+base+'/'+alias;
 }
+function markResourceMatch(row,kind,reference,evidence){
+  const claim={kind,reference,evidence};
+  row.sourceMatches=[...(row.sourceMatches||[]),claim];
+  return row;
+}
 async function chooseResource(rows,kind,reference,archiveName,report,read,context=null){
   let filtered=rows.filter(row=>row.kind===kind);
   // A filename hash doesn't necessarily reveal the file extension. A native
@@ -167,12 +172,13 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
     normalize(row.known).endsWith('/'+normalize(reference)));
   const hashed=matchByHash(filtered,reference,archiveName,kind);
   const resolved=unique([...direct,...hashed]);
-  if(resolved.length===1)return resolved[0];
+  if(resolved.length===1)return markResourceMatch(resolved[0],kind,reference,
+    direct.includes(resolved[0])?'verified-filename':'verified-hash');
   if(resolved.length>1)throw Error('Multiple '+kind+' resources match '+reference);
   const baseName=normalize(reference).split('/').at(-1);
   const byName=filtered.filter(row=>normalize(row.known).split('/').at(-1)===baseName);
-  if(byName.length===1)return byName[0];
-  if(filtered.length===1)return filtered[0];
+  if(byName.length===1)return markResourceMatch(byName[0],kind,reference,'verified-basename');
+  if(filtered.length===1)return markResourceMatch(filtered[0],kind,reference,'unique-format-candidate');
   if(!filtered.length)throw Error('Missing '+kind+' file '+reference+' inside this GFPAK');
   // Trinity's real PLA descriptors commonly refer to "head", "body", etc.
   // without extensions, while GFPAK filenames are hashes. When the hashes
@@ -190,9 +196,11 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
     ];
     if(candidate){
       assignments.set(refKey,candidate);context.used.add(candidate);
-      report('Matched ambiguous '+kind+' reference "'+reference+'" to archive resource #'+
-        candidate.resource.index+' using stable resource order ('+filtered.length+
-        ' candidates; hash identity unavailable).');
+      markResourceMatch(candidate,kind,reference,'UNVERIFIED-RESOURCE-ORDER');
+      report('WARNING: Unverified '+kind+' reference "'+reference+
+        '" was assigned to resource #'+candidate.resource.index+
+        ' only by its archive order ('+filtered.length+
+        ' candidates). Geometry may render with incorrect model parts.');
       return candidate;
     }
   }
@@ -410,6 +418,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     items.push({
       path,size:row.resource.size,textureNames,
       sourceArchive:row.sourceArchive, nativeAliases:row.nativeAliases||[],
+      sourceResourceIndex:row.resource.index,pathHash:row.resource.pathHash,
+      fileHash:row.resource.fileHash,
+      resourceMatches:row.sourceMatches||[],
+      nameVerified:!!row.known,
+      detectedType:row.kind,
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
       linkedKind,
@@ -418,6 +431,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   }
   const original=items.find(item=>
     item.path===(root.known||root.inferred||pathFor(root,stem)));
+  const guessed=items.filter(item=>item.resourceMatches.some(
+    row=>row.evidence==='UNVERIFIED-RESOURCE-ORDER'));
+  if(guessed.length)report('WARNING: '+guessed.length+
+    ' mesh/buffer resource(s) linked using unverified archive order; '+
+    'export a Preview Diagnostics report before assuming the model is accurate.');
   report('Found '+models.length+' model descriptor(s) and '+items.length+
     ' genuine render resources in '+filename+
     (unreadable?' ('+unreadable+' failed probes)':'')+'.');
@@ -455,6 +473,9 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
     const alias=type==='trmtr'?materialAliasFromHash(resource,filename):'';
     list.push({
       path:name,size:resource.size,textureNames,sourceArchive:filename,
+      sourceResourceIndex:resource.index,pathHash:resource.pathHash,
+      fileHash:resource.fileHash,
+      resourceMatches:[],nameVerified:false,detectedType:type,
       nativeAliases:alias?[alias]:[],
       getBytes:async()=>bytes,
       getText:async()=>new TextDecoder().decode(bytes),
