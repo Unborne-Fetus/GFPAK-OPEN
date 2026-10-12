@@ -26,7 +26,8 @@ function nearbyTextures(project, modelPath) {
   return items.map(item => {
     const normalized = item.path.replace(/\\/g, '/').toLowerCase();
     const modelDir = modelPath.replace(/\\/g, '/').toLowerCase().split('/').slice(0, -1).join('/');
-    const score = (modelDir && normalized.startsWith(modelDir + '/') ? 10 : 0) +
+    const score = ((modelDir && normalized.startsWith(modelDir + '/')) ||
+      (!modelDir && !normalized.includes('/')) ? 10 : 0) +
       (stem && normalized.includes(stem) ? 2 : 0);
     return { item, score, base: baseName(item.path) };
   }).sort((a, b) => b.score - a.score);
