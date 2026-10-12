@@ -131,7 +131,16 @@ function makeResolver(fileItems) {
   };
   return {
     async prepare() {
+      // Desktop preview manifests supply a trusted same-origin, read-only
+      // HTTP stream per resource. Let the model loader request referenced
+      // textures itself; prefetching 250 images before showing even a simple
+      // OBJ or GLB was the main unnecessary source of preview latency.
       for (const item of fileItems) {
+        if (typeof item.url === 'string' &&
+            /^\/__quick_asset\/[a-f0-9]{32}\/[0-9]+$/.test(item.url)) {
+          objectUrls.set(item.path, item.url);
+          continue;
+        }
         const blob = new Blob([await item.getBytes()]);
         const url = URL.createObjectURL(blob);
         objectUrls.set(item.path, url);
@@ -160,12 +169,19 @@ export async function loadModel(project, selected, report = () => {}) {
   if (suffix === '.gfbmdl') return loadGfbmdl(project, selected, report);
   if (suffix === '.trmdl' || suffix === '.trmsh') return loadTrinityModel(project, selected, report);
 
-  const dependencyFiles = assetFilesForModel(project, entry.path);
-  // There may be many textures in a game dump. Only load nearby files.
-  const primaryMtl = project.items.find(item => extension(item.path) === '.mtl' &&
+  // GLBs normally embed their image data; standalone mesh formats do not
+  // need to fetch unrelated images. For OBJ only resolve external materials
+  // if an MTL is actually present, and let glTF/FBX/DAE request assets lazily.
+  const needsMtl = suffix === '.obj';
+  const primaryMtl = needsMtl ? project.items.find(item =>
+    extension(item.path) === '.mtl' &&
     normalizePath(item.path).slice(0, normalizePath(item.path).lastIndexOf('/') + 1) ===
-    normalizePath(entry.path).slice(0, normalizePath(entry.path).lastIndexOf('/') + 1));
-  const prepareFiles = dependencyFiles.filter(item => item.path !== entry.path && item.path !== primaryMtl?.path);
+    normalizePath(entry.path).slice(0, normalizePath(entry.path).lastIndexOf('/') + 1)
+  ) : null;
+  const dependencyFiles = ['.gltf', '.fbx', '.dae'].includes(suffix) ||
+    (needsMtl && primaryMtl) ? assetFilesForModel(project, entry.path) : [];
+  const prepareFiles = dependencyFiles.filter(item =>
+    item.path !== entry.path && item.path !== primaryMtl?.path);
   const resolver = makeResolver(prepareFiles);
   report('Preparing nearby texture resources…');
   await resolver.prepare();
