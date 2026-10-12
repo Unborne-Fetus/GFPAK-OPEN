@@ -53,7 +53,7 @@ test('PLA GFPAK with unknown resource hashes still resolves real TRMDL/TRMSH/TRM
   real.disposeAssets();
 });
 test('hash-only GFBMDL GFPAK recognizes and previews an actual model without a dictionary',async()=>{
-  const archive=gfpak({'hashed/unknown-resource.bin':makeGfbmdlTriangle()});
+  const archive=gfpak({'hashed/unknown-resource.bin':new Uint8Array(makeGfbmdlTriangle())});
   const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
   assert.match(selected,/\\.gfbmdl$/);
   assert.equal(project.items.length,1);
