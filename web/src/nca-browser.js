@@ -5,6 +5,8 @@
 import {decryptEcb,decryptXtsHeader,decryptXtsSector,decryptCtr} from './nca-crypto.js';
 const text = new TextDecoder('utf-8',{fatal:true});
 const BLOCK=0x200, NONE=0xffffffff;
+const matchesMagic=(bytes,offset,magic)=>
+  [...magic].every((char,i)=>bytes[offset+i]===char.charCodeAt(0));
 const MAX_FILES=200000,MAX_META=256*1024*1024,MAX_SINGLE=512*1024*1024;
 const safe64=(v,at)=>{
   const n=v.getBigUint64(at,true);
@@ -81,7 +83,7 @@ async function sectionReader(blob,head,number,start,size,mode,key,xtsEndian){
 }
 async function pfsRows(section,start,prefix) {
   const header=await section.read(start,16);
-  if(text.decode(header.subarray(0,4))!=='PFS0')throw Error('No PFS0 filesystem at declared section offset');
+  if(!matchesMagic(header,0,'PFS0'))throw Error('No PFS0 filesystem at declared section offset');
   const v=new DataView(header.buffer,header.byteOffset,header.byteLength);
   const count=v.getUint32(4,true),strings=v.getUint32(8,true);
   if(count>MAX_FILES||strings>MAX_META||count*24+strings>MAX_META)
@@ -190,7 +192,7 @@ async function romfsRows(section,start,prefix) {
   return result;
 }
 function ivfcRegion(fs) {
-  if(text.decode(fs.subarray(8,12))!=='IVFC')throw Error('Unsupported RomFS hash superblock');
+  if(!matchesMagic(fs,8,'IVFC'))throw Error('Unsupported RomFS hash superblock');
   const v=new DataView(fs.buffer,fs.byteOffset,fs.byteLength),levels=v.getUint32(0x14,true);
   if(levels<2||levels>7)throw Error('Invalid IVFC filesystem level count');
   const offset=0x18+(levels-2)*0x18;
@@ -202,7 +204,7 @@ export async function parseNcaWithKeys(entry,keys=null) {
   if(blob.size<0xc00)return {entries:[],status:'invalid',reason:'Truncated NCA header'};
   const raw=await sliceBytes(blob,0,0xc00);
   let header=raw,xtsEndian='big',encryptedHeader=false;
-  if(text.decode(header.subarray(0x200,0x204))!=='NCA3'){
+  if(!matchesMagic(header,0x200,'NCA3')){
     const key=keys?.get('nca_header_key','header_key');
     if(!key)return {entries:[],status:'locked',reason:'Requires the local nca_header_key from prod.keys'};
     const decoded=await decryptXtsHeader(raw,key);
