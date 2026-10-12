@@ -17,7 +17,7 @@ export const GAMES = Object.freeze([
     short:'Unity models and textures',hint:'Use AssetRipper or AssetStudio to export FBX and textures. The web viewer can load the exported models.' },
   { id:'pla', name:'Legends: Arceus', year:'2022', engine:'Game Freak Trinity',
     native:['.gfpak','.trmdl','.trmsh','.trmbf','.trskl','.tranm','.bntx'],tags:['legends_arceus','arceus','pla','la_poke'],
-    short:'Trinity meshes and often Oodle-compressed archives',hint:'Extract a complete TRMDL/TRMSH/TRMBF package to preview actual geometry in the browser. Compressed Oodle GFPAK, BNTX textures, native animation tracks and accurate shaders still need further work.' },
+    short:'Trinity meshes and often Oodle-compressed archives',hint:'Extract a complete TRMDL/TRMSH/TRMBF package to preview actual geometry in the browser. Compatible Oodle GFPAK resources now decode locally through WASM. Some BNTX textures, native animation tracks and game shaders still need further work.' },
   { id:'sv', name:'Scarlet / Violet + DLC', year:'2022–2024', engine:'Game Freak Trinity',
     native:['.gfpak','.trmdl','.trmsh','.trmbf','.trskl','.tranm','.bntx'],tags:['scarlet','violet','sv_poke','sv-poke','teal_mask','indigo_disk','hidden_treasure'],
     short:'Includes both expansions and epilogue',hint:'Import a decoded TRMDL with matching TRMSH/TRMBF for native browser preview and GLB export. Game-specific shader/texture variations and animation tracks still need validation.' },
@@ -55,7 +55,7 @@ export function describeSource(gameId,names){
  if(f.converted.length)return {kind:'renderable',title:String(f.converted.length)+' renderable 3D model(s)',
    message:'Load a model to preview and export GLB. Original game shaders may not survive conversion.'};
  if(f.hasGfpak)return {kind:'native',title:'GFPak model archive detected',
-   message:'Use the Archive Inspector and a matching filename-hash dictionary to preview stored/LZ4 GFBMDL or TRMDL resources. Compressed Oodle files still need a compatible decoder.'};
+   message:'Use the Archive Inspector to preview stored, LZ4 or Oodle GFPAK model resources. Unknown Trinity names can often be recovered by inspecting genuine mesh references; some codec variants remain unsupported.'};
  if(f.hasGfbmdl)return {kind:'native',title:'Native GFBMDL model available',
    message:'GFBMDL geometry can now be decoded and rendered directly in the browser, including GLB export. Game-specific shaders, BNTX textures, skeleton rigging and animations remain incomplete.'};
  if(f.hasTrmdl||f.extensions.has('.trmsh'))return {kind:'native',title:'Native Trinity model ready for inspection',
