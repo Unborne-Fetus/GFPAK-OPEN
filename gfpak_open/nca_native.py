@@ -142,6 +142,7 @@ class NativeSection:
         self._storage_tree = None
         self._storage_base = 0
         self._storage_kind = None
+        self.base_section = None
         self.logical_size = size
 
     def read(self, relative: int, size: int) -> bytes:
@@ -160,6 +161,12 @@ class NativeSection:
                         offset, size,
                         lambda physical, count: self._read_regular(physical, count),
                         sparse=True
+                    )
+                if self._storage_kind == "patch":
+                    return self._storage_tree.read_indirect(
+                        offset, size,
+                        lambda physical, count: self.base_section.read(physical, count),
+                        lambda physical, count: self._read_regular(physical, count),
                     )
         return self._read_regular(relative, size)
 
@@ -226,11 +233,30 @@ class NativeSection:
             return self._fs
         header = self.fs_header
         if self.patch_indirect_size or self.patch_crypto_size or self.encryption in (4, 6):
-            raise NativeNCAError(
-                "This update/DLC RomFS uses BKTR patch mappings and needs its "
-                "matching base NCA. Combined patch filesystem decoding is not "
-                "yet supported; other sections in this NCA remain accessible."
-            )
+            if not self.base_section:
+                raise NativeNCAError(
+                    "This update/DLC RomFS needs its matching base NCA. "
+                    "Use Link base NCA to supply the unmodified base content."
+                )
+            if self.patch_crypto_size or self.encryption not in (1,):
+                raise NativeNCAError(
+                    "Encrypted AES-CTR-Ex BKTR patch overlay cannot yet be decoded; "
+                    "the linked base NCA is preserved and unaffected sections remain readable."
+                )
+            count = _u32(header, 0x118)
+            if self.patch_indirect_offset > self.size or self.patch_indirect_size > self.size - self.patch_indirect_offset:
+                raise NativeNCAError("BKTR patch table is outside the NCA section.")
+            try:
+                tree = BucketTree(
+                    lambda at, length: self._read_regular(self.patch_indirect_offset + at, length),
+                    self.patch_indirect_size, count)
+            except BucketTreeError as exc:
+                raise NativeNCAError("Malformed BKTR patch table: " + str(exc)) from exc
+            self._storage_tree = tree
+            self._storage_base = 0
+            self._storage_kind = "patch"
+            self.logical_size = max(self.size, tree.end)
+
         if self.sparse_table_size and self.compression_table_size:
             raise NativeNCAError("Combined sparse/compressed NCA layers require a matching patch and are not decoded.")
         if self.encryption not in (1, 2, 3):
@@ -323,6 +349,24 @@ class NativeNCA:
         self.header_tweak = "big"
         self.sections: dict[int, NativeSection] = {}
         self._parse()
+
+    def attach_base(self, base: "NativeNCA") -> int:
+        """Associate matching section numbers with the user's explicit base NCA."""
+        if base is self or base.analyzer.path.resolve() == self.analyzer.path.resolve():
+            raise NativeNCAError("A patched NCA cannot use itself as a base.")
+        added = 0
+        for number, section in self.sections.items():
+            original = base.sections.get(number)
+            if original and original.fs_type == section.fs_type:
+                section.base_section = original
+                section._fs = None
+                section._storage_tree = None
+                section._storage_kind = None
+                section.logical_size = section.size
+                added += 1
+        if not added:
+            raise NativeNCAError("The base NCA has no matching filesystem section numbers/types.")
+        return added
 
     def read_raw(self, offset: int, size: int) -> bytes:
         if size < 0 or offset < 0 or offset > self.entry.size or size > self.entry.size - offset:
