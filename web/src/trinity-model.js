@@ -203,8 +203,9 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
           created.push(texture);
         }
         texture.name = selected.file || selected.name || channel.property;
-        if (uv?.length === 4 && uv.every(Number.isFinite) &&
-            texture.image.width !== texture.image.height) {
+        // Native UV transforms apply to square images too, particularly eye
+        // and mask atlases. Ignoring those yields displaced, blurry features.
+        if (uv?.length === 4 && uv.every(Number.isFinite)) {
           texture.repeat.set(uv[0], uv[1]);
           texture.offset.set(uv[2], uv[3]);
           if (uv[0] > 1) texture.wrapS = THREE.MirroredRepeatWrapping;
@@ -214,7 +215,13 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
         if (channel.property === 'nativeDisplacementMap') definition.displacementMap = texture;
         else if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
         else material[channel.property] = texture;
-        if (channel.property === 'map') material.color.setRGB(1, 1, 1);
+        if (channel.property === 'map') {
+          material.color.setRGB(1, 1, 1);
+          // Opaque-looking geometry such as a Pokémon tail/wing often uses an
+          // alpha-cutout texture for its silhouette. Transparent texels must
+          // be discarded rather than displayed as rectangular cards.
+          material.alphaTest=Math.max(material.alphaTest,0.02);
+        }
         if (channel.property === 'emissiveMap') {
           const color = definition.colors?.[channel.highlight ? 'EmissionColorLayer5' : 'EmissionColor'];
           material.emissive.setRGB(...(color?.slice(0,3) || [1,1,1]));
@@ -250,19 +257,23 @@ async function applyMatchedLinkedTextures(project, root, report, created, option
       project.items, material.name, materials.size, variant);
     if (!item) continue;
     try {
-      let texture = loaded.get(item.path);
+      // Several materials can use different surfaces within *one* BNTX.
+      // Never reuse the first decoded body texture for eyes, wings, or tails.
+      const matchingSurface=matchingLinkedDiffuseSurface(item,material.name,variant);
+      const cacheKey=item.path+'|'+variant+'|'+
+        (item.path.toLowerCase().endsWith('.bntx')
+          ? matchingSurface||material.name : '');
+      let texture = loaded.get(cacheKey);
       if (!texture) {
-        // A multi-surface BNTX must still match the real material's
-        // surface name, otherwise the decoder rejects applying a guess.
-        const matchingSurface=matchingLinkedDiffuseSurface(item,material.name,variant);
         texture = await loadDecodedTexture(item, true, matchingSurface ?
           [matchingSurface] : [material.name], {variant});
-        loaded.set(item.path, texture);
+        loaded.set(cacheKey, texture);
         created.push(texture);
         if (texture.image?.close) images.add(texture.image);
       }
       material.map = texture;
       material.color.setRGB(1, 1, 1);
+      material.alphaTest=Math.max(material.alphaTest,0.02);
       material.needsUpdate = true;
       report('Automatically applied linked texture ' + item.path +
         ' to material ' + material.name + '.');
