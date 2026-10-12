@@ -476,11 +476,13 @@ class DesktopAPI:
             if node_id:
                 source = browser.node(node_id)
                 kind = source["kind"]
-                if kind not in ("nca_section", "nca_dir", "gfpak",
+                if kind not in ("nca_section", "nca_dir", "gfpak", "nca_file",
                                 "nsp", "xci", "xci_partition", "nspfile"):
                     raise ValueError("Select a game package, GFPAK, or readable RomFS")
                 if kind == "nspfile" and not source["name"].lower().endswith((".nca", ".ncz")):
                     raise ValueError("Select a game NCA before locating game assets")
+                if kind == "nca_file" and not source["name"].lower().endswith(".gfpak"):
+                    raise ValueError("Select a nested GFPAK to locate its internal members")
             elif not browser.root_path or not browser.root_path.is_dir():
                 raise ValueError("Open an extracted folder or game package to locate assets")
             if self._scan_job["running"]:
@@ -492,6 +494,8 @@ class DesktopAPI:
                     result = browser.scan_nca_assets(node_id)
                 elif kind == "gfpak":
                     result = browser.scan_gfpak_assets(node_id)
+                elif kind == "nca_file":
+                    result = browser.scan_mounted_gfpak_assets(node_id)
                 elif kind:
                     result = browser.scan_game_assets(node_id)
                 else:
