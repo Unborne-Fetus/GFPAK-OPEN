@@ -735,9 +735,10 @@ class AssetBrowser:
         dest = Path(target)
         if not dest.parent.is_dir():
             raise ValueError("Choose an existing destination directory")
-        if kind not in {"file", "zipfile", "gfpak_resource", "nspfile", "nca_file"}:
+        if kind not in {"file", "zipfile", "gfpak_resource",
+                        "nca_gfpak_resource", "nspfile", "nca_file"}:
             raise ValueError("Select a file or resource, not a folder")
-        if packed and kind != "gfpak_resource":
+        if packed and kind not in {"gfpak_resource", "nca_gfpak_resource"}:
             raise ValueError("Packed export is supported for GFPAK resources only")
         if kind == "file" and dest.resolve() == source.resolve():
             raise ValueError("Cannot replace the source file")
@@ -750,6 +751,28 @@ class AssetBrowser:
         if kind == "gfpak_resource":
             archive = self._archive(source)
             return archive.copy_resource(archive.resources[node["index"]], dest, packed=packed)
+        if kind == "nca_gfpak_resource":
+            parent_id, number = self._virtual_gfpak_nodes[id_]
+            archive, _ = self._mounted_gfpak(parent_id)
+            resource = archive.resources[number]
+            # Direct streaming from the source virtual NCA section. Only this
+            # selected member is exported; no multi-GB GFPAK gets staged.
+            if resource.size > 512 * 1024 * 1024:
+                raise ValueError("Member exceeds the safe 512 MiB export limit")
+            with dest.open("xb") as output:
+                try:
+                    if packed or resource.compression == 0:
+                        count = resource.packed_size
+                        for at in range(0, count, 1024 * 1024):
+                            output.write(archive._range(
+                                resource.offset + at, min(1024 * 1024, count - at)))
+                    else:
+                        output.write(archive.read_resource(resource))
+                except BaseException:
+                    output.close()
+                    dest.unlink(missing_ok=True)
+                    raise
+            return dest
         with dest.open("xb") as output:
             try:
                 if kind == "file":
@@ -774,12 +797,15 @@ class AssetBrowser:
         def display_path(item: dict) -> str:
             if item["kind"] in {"nca_file", "nca_dir"}:
                 return self._nca_virtual_nodes[item["id"]][2]
+            if item["kind"] == "nca_gfpak_resource":
+                return item["name"].split(" · ", 1)[-1]
             if item["kind"] == "file":
                 return str(item["path"])
             return item["name"].split(" · ", 1)[-1]
         selected = display_path(node)
         known = [display_path(item) for item in self._nodes.values()
-                 if item["kind"] in {"file", "nca_file", "gfpak_resource", "zipfile"}]
+                 if item["kind"] in {"file", "nca_file", "gfpak_resource",
+                                       "nca_gfpak_resource", "zipfile"}]
         return group_related(selected, known)
 
     def item_details(self, id_: str) -> dict:
@@ -831,6 +857,20 @@ class AssetBrowser:
                 reader, index, section, name = self._nca_virtual_file(node)
                 data = self._nca_sections.preview_bytes(reader, index, section, name)
                 result["notes"].append("Read directly from NCA filesystem without bulk extraction.")
+            elif kind == "nca_gfpak_resource":
+                parent_id, index = self._virtual_gfpak_nodes[id_]
+                archive, _ = self._mounted_gfpak(parent_id)
+                resource = archive.resources[index]
+                result["size"] = resource.size
+                result["compression"] = resource.compression
+                result["hash"] = resource.path_hash
+                result["packed_size"] = resource.packed_size
+                result["offset"] = resource.offset
+                data, decoded = archive.peek_resource(resource)
+                result["notes"].append(
+                    "Read from the GFPAK inside RomFS without extracting the container.")
+                if not decoded:
+                    result["notes"].append("Showing packed bytes; large decoded preview unavailable.")
             elif kind == "gfpak_resource":
                 resource = self._archive(path).resources[node["index"]]
                 result["size"] = resource.size
