@@ -22,6 +22,13 @@ function valueName(data) {
     throw Error('Invalid name in NCA filesystem');
   return name;
 }
+function partitionFilename(data) {
+  const value=text.decode(data).replaceAll('\\\\','/');
+  if(!value || value.startsWith('/') || /^[A-Za-z]:/.test(value) ||
+    value.split('/').some(part=>!part || part==='.' || part==='..'))
+    throw Error('Unsafe PartitionFS filename');
+  return value;
+}
 async function sliceBytes(blob,offset,size){
   check(offset,size,blob.size,'NCA read');
   return new Uint8Array(await blob.slice(offset,offset+size).arrayBuffer());
@@ -93,7 +100,7 @@ async function pfsRows(section,start,prefix) {
     if(off>=names.length)throw Error('PartitionFS filename outside string table');
     let end=off;while(end<names.length&&names[end]!==0)end++;
     if(end===names.length)throw Error('Unterminated PartitionFS filename');
-    const name=valueName(names.subarray(off,end));
+    const name=partitionFilename(names.subarray(off,end));
     check(dataStart+offset,size,section.size,'PartitionFS file');
     output.push(virtualEntry(prefix+name,size,dataStart+offset,section));
   }
