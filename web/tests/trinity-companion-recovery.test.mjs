@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import {Builder} from 'flatbuffers';
 import {loadTrinityModel,chooseRigByAnimationTracks,
   chooseRigByMeshInfluences,trinityMaterialVariant,
-  chooseTrinityMaterialSources} from '../src/trinity-model.js';
+  chooseTrinityMaterialSources,preferredTrinityMeshes} from '../src/trinity-model.js';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 
@@ -129,4 +129,12 @@ test('hashed material aliases mark rare palettes even without filename dictionar
   assert.equal(trinityMaterialVariant(rows[1].item),'shiny');
   assert.deepEqual(chooseTrinityMaterialSources(rows,'regular'),[rows[0]]);
   assert.deepEqual(chooseTrinityMaterialSources(rows,'shiny'),rows);
+});
+
+test('native high-detail LOD wins without discarding head, body or accessory meshes',()=>{
+  const refs=['head_lod2.trmsh','body.trmsh','head_lod0.trmsh',
+    'head_lod1.trmsh','tail_lod1.trmsh','tail_lod0.trmsh','eye_left.trmsh'];
+  assert.deepEqual(preferredTrinityMeshes(refs),[
+    'body.trmsh','head_lod0.trmsh','tail_lod0.trmsh','eye_left.trmsh']);
+  assert.deepEqual(preferredTrinityMeshes(['head','body','tail']),['head','body','tail']);
 });
