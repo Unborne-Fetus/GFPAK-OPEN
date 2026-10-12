@@ -7,6 +7,19 @@ import * as THREE from 'three';
 import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
 import { parseBntx, decodeBntxTexture } from './bntx.js';
 
+/** Browser previews should sample the original full-resolution base image.
+ * DataTexture otherwise defaults to nearest-neighbor filtering (pixelated).
+ * Compressed BNTX blocks cannot generate mipmaps in Three.js without decode.
+ */
+export function configurePreviewTexture(texture,{compressed=false}={}) {
+  texture.magFilter=THREE.LinearFilter;
+  texture.minFilter=compressed ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps=!compressed;
+  texture.anisotropy=8;
+  texture.needsUpdate=true;
+  return texture;
+}
+
 function suffix(path) {
   const p = String(path).toLowerCase();
   return p.slice(p.lastIndexOf('.'));
@@ -36,7 +49,7 @@ export function decodeDDSTexture(bytes, srgb = true) {
   texture.magFilter = THREE.LinearFilter;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  texture.needsUpdate = true;
+  configurePreviewTexture(texture,{compressed:!decoded.isRGBAUncompressed});
   return texture;
 }
 
@@ -72,7 +85,9 @@ export function textureFamilyName(name) {
 export function textureVariantForItem(item) {
   if (['regular', 'shiny', 'mixed'].includes(item?.textureVariant))
     return item.textureVariant;
-  const names = [item?.path, ...(item?.textureNames || [])];
+  // Container paths are often hash aliases and cannot indicate the surface
+  // color. Never let a neutral path turn a shiny-only BNTX into "mixed".
+  const names = item?.textureNames?.length ? item.textureNames : [item?.path];
   const hasShiny = names.some(name => textureVariantFromName(name) === 'shiny');
   const hasRegular = names.some(name => matchesVariantName(name, 'regular'));
   return hasShiny && hasRegular ? 'mixed' : hasShiny ? 'shiny' : 'regular';
@@ -134,7 +149,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
     texture.name = decoded.name || item.path;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    texture.needsUpdate = true;
+    configurePreviewTexture(texture,{compressed:!!decoded.compressed});
     return texture;
   }
   if (format === '.trtex')
@@ -152,7 +167,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
   texture.flipY = true;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  texture.needsUpdate = true;
+  configurePreviewTexture(texture);
   return texture;
 }
 
