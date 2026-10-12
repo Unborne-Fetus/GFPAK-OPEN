@@ -18,7 +18,8 @@ export function selectPokemonCompanionArchives(entries,model,{maxArchives=24,max
     if(row===model||!/\.gfpak$/i.test(row.name)||!(row.size>0)||
       row.size>64*1024*1024)return false;
     const other=pokemonArchiveIdentity(row.name);
-    return other?.species===id.species;
+    return other?.species===id.species &&
+      !(other.form&&id.form&&other.form!==id.form);
   }).map(row=>{
     const other=pokemonArchiveIdentity(row.name);
     let rating=50;
