@@ -469,6 +469,11 @@ class DesktopAPI:
         with self._lock:
             return self._browser.asset_family(node_id)
 
+    def browse_catalog_item(self, node_id: str):
+        """Return only previously verified metadata for a clickable companion."""
+        with self._lock:
+            return self._browser._public(self._browser.node(node_id))
+
     def browse_item_details(self, node_id: str):
         with self._lock:
             return self._browser.item_details(node_id)
