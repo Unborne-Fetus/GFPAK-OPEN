@@ -115,7 +115,8 @@ test('hashed native PLA GFPAK discovers actual skeletal animation and skeleton f
   const assets=makeAnimatedTrinityTriangle();
   const archive=gfpak(assets);
   const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
-  assert.equal(project.items.filter(item=>item.linkedKind==='animation').length,1);
+  assert.equal(project.items.filter(item=>item.linkedKind==='animation').length,1,
+    'Detected companion items: '+JSON.stringify(project.items.map(i=>({path:i.path,kind:i.linkedKind}))));
   assert.equal(project.items.filter(item=>item.path.endsWith('.trskl')).length,1);
   const model=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
   assert.equal(model.animations.length,0);
