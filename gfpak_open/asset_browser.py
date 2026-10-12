@@ -931,6 +931,12 @@ class AssetBrowser:
             reader, index, section, name = self._nca_virtual_file(selected)
             size = self._nca_sections.file_info(reader, index, section, name).size
             descriptor = ("nca", reader, index, section, name)
+        elif kind == "nca_gfpak_resource":
+            parent_id, number = self._virtual_gfpak_nodes[selected["id"]]
+            archive, names = self._mounted_gfpak(parent_id)
+            name = names.get(number, "")
+            size = archive.resources[number].size
+            descriptor = ("nca_gfpak", parent_id, number)
         elif kind == "gfpak_resource":
             source = Path(selected["path"])
             archive = self._archive(source)
@@ -1003,6 +1009,45 @@ class AssetBrowser:
             "label": selected["name"], "selected": selected_name, "items": entries
         }
 
+    def _fast_mounted_gfpak_preview_items(self, node: dict) -> dict:
+        parent_id = node["id"] if node["kind"] == "nca_file" else (
+            self._virtual_gfpak_nodes.get(node["id"]) or (None,))[0]
+        if not parent_id:
+            raise ValueError("The native GFPAK member is no longer available")
+        archive, names = self._mounted_gfpak(parent_id)
+        models = sorted(
+            [(idx, name) for idx, name in names.items()
+             if Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}],
+            key=lambda item: (Path(item[1]).suffix.lower() != ".trmdl", item[0]))
+        if node["kind"] == "nca_gfpak_resource":
+            models = [pair for pair in models if pair[0] == node["index"]]
+        if not models:
+            raise ValueError("No verified native model family was found in this GFPAK")
+        selected_idx, selected_name = models[0]
+        family = pokemon_id(selected_name)
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL
+        entries = []
+        used = set()
+        for idx, name in [(selected_idx, selected_name)] + sorted(names.items()):
+            if idx in used or Path(name).suffix.lower() not in allowed:
+                continue
+            used.add(idx)
+            resource = archive.resources[idx]
+            if (resource.size > 128 * 1024 * 1024 and idx != selected_idx or
+                    resource.size > 450 * 1024 * 1024):
+                continue
+            if family and pokemon_id(name) not in ("", family):
+                continue
+            entries.append({
+                "path": name, "size": resource.size,
+                "source": ("nca_gfpak", parent_id, idx)
+            })
+            if len(entries) >= 400:
+                break
+        return {
+            "label": node["name"], "selected": selected_name, "items": entries
+        }
+
     def fast_preview_items(self, id_: str) -> dict:
         """Identify lazy, read-only browser-native model dependencies.
 
@@ -1013,6 +1058,10 @@ class AssetBrowser:
         selected = self.node(id_)
         if selected["kind"] in {"gfpak", "gfpak_resource"}:
             return self._fast_gfpak_preview_items(selected)
+        if selected["kind"] == "nca_gfpak_resource" or (
+                selected["kind"] == "nca_file" and
+                selected["name"].lower().endswith(".gfpak")):
+            return self._fast_mounted_gfpak_preview_items(selected)
         if selected["kind"] not in {"file", "nca_file", "zipfile"}:
             raise ValueError("This archive requires the fallback converter")
         model_name = selected["name"] if selected["kind"] != "zipfile" else selected["inner"]
@@ -1085,6 +1134,26 @@ class AssetBrowser:
     def stream_fast_preview_item(self, descriptor: tuple):
         """Return the byte length and bounded chunk generator for a whitelisted file."""
         kind = descriptor[0]
+        if kind == "nca_gfpak":
+            parent_id, index = descriptor[1], descriptor[2]
+            archive, _ = self._mounted_gfpak(parent_id)
+            if not 0 <= index < len(archive.resources):
+                raise ValueError("Unknown GFPAK member index")
+            resource = archive.resources[index]
+            if resource.size > 450 * 1024 * 1024:
+                raise ValueError("GFPAK resource exceeds preview limit")
+            def chunks():
+                if resource.compression == 0:
+                    if resource.packed_size != resource.size:
+                        raise ValueError("GFPAK stored payload has mismatched sizes")
+                    for at in range(0, resource.size, 1024 * 1024):
+                        yield archive._range(resource.offset + at,
+                                             min(1024 * 1024, resource.size - at))
+                else:
+                    decoded = archive.read_resource(resource)
+                    for at in range(0, len(decoded), 1024 * 1024):
+                        yield decoded[at:at + 1024 * 1024]
+            return resource.size, chunks()
         if kind == "gfpak":
             archive = self._archive(Path(descriptor[1]))
             index = descriptor[2]
@@ -1287,6 +1356,40 @@ class AssetBrowser:
             "truncated": truncated or sum(counts.values()) > max_results,
             "unresolved": counts.get("model archive", 0) > 0 or counts.get("archive", 0) > 0,
             "source": "RomFS", "source_node": node_id
+        }
+
+    def scan_mounted_gfpak_assets(self, node_id: str, max_results: int = 1200) -> dict:
+        """Catalog known native members inside a selected virtual RomFS GFPAK."""
+        node = self.node(node_id)
+        if node["kind"] != "nca_file" or not node["name"].lower().endswith(".gfpak"):
+            raise ValueError("Select a GFPAK in RomFS")
+        archive, names = self._mounted_gfpak(node_id)
+        counts = Counter()
+        assets = []
+        recognized = {"model", "model archive", "mesh", "texture", "animation"}
+        for resource in archive.resources:
+            name = names.get(resource.index)
+            category = classify(name) if name else "unknown"
+            counts[category] += 1
+            if category not in recognized or len(assets) >= max_results:
+                continue
+            inner = node_id + ":" + str(resource.index)
+            child = self._node("nca_gfpak_resource", Path(node["path"]),
+                               inner=inner, index=resource.index,
+                               name=f"{resource.index:04d} · {name.rsplit('/', 1)[-1]}",
+                               size=resource.size)
+            child["category"] = category
+            self._virtual_gfpak_nodes[child["id"]] = (node_id, resource.index)
+            entry = self._public(child)
+            entry["relative"] = name
+            assets.append(entry)
+        return {
+            "counts": dict(counts), "assets": assets,
+            "scanned": len(archive.resources), "source": "GFPAK inside RomFS",
+            "unresolved": bool(counts.get("unknown", 0)),
+            "truncated": sum(counts[key] for key in recognized) > max_results,
+            "note": ("Model-family hashes and referenced filenames are categorized. "
+                     f"{counts.get('unknown', 0)} packed resources remain unidentified.")
         }
 
     def scan_gfpak_assets(self, node_id: str, max_results: int = 1200) -> dict:
