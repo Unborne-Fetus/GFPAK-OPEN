@@ -4,7 +4,8 @@ import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
 import {
-  inspectTexture, drawTextureSurface, texturePngName, isInspectableTexture
+  inspectTexture, drawTextureSurface, texturePngName, isInspectableTexture,
+  detectTextureExtension
 } from './texture-inspector.js';
 import {
   projectFromFiles, projectFromZip, loadModel, modelStats, exportGlb,
@@ -258,7 +259,14 @@ async function inspectSourceTexture(item) {
   try {
     if (item.size > 256 * 1024 * 1024)
       throw new Error('Standalone texture preview is limited to 256 MiB');
-    const info = inspectTexture(await item.getBytes(),item.path);
+    const resource = await item.getBytes();
+    const bytes = resource instanceof Blob ? await resource.arrayBuffer() : resource;
+    const inferred = isInspectableTexture(item.path) ? null : detectTextureExtension(bytes);
+    if (!isInspectableTexture(item.path) && !inferred)
+      throw new Error('The selected resource is not a recognized BNTX/DDS/image. ' +
+        'Select a texture or supply a filename dictionary.');
+    const name = inferred ? item.path.replace(/\.[^./\\]+$/, '') + inferred : item.path;
+    const info = inspectTexture(bytes,name);
     disposeTexturePreview();
     state.textureInfo = info;
     const select = el('textureSurface');
@@ -412,21 +420,23 @@ function usableArchiveTextures() {
 function updateArchiveTextureButton() {
   const textures = usableArchiveTextures();
   const button = el('previewArchiveTexture');
-  button.disabled = !textures.length;
+  button.disabled = !textures.length && !state.resource;
   button.textContent = state.resource && textures.includes(state.resource)
     ? '▧ INSPECT SELECTED TEXTURE'
-    : '▧ INSPECT TEXTURES (' + textures.length + ')';
+    : state.resource ? '▧ PROBE SELECTED TEXTURE'
+      : '▧ INSPECT TEXTURES (' + textures.length + ')';
 }
 
 async function inspectArchiveTexture() {
   if (!state.archive || state.busy) return;
   const available = usableArchiveTextures();
-  const resource = available.includes(state.resource) ? state.resource : available[0];
+  const resource = state.resource || available[0];
   if (!resource) {
     log('Load the archive filename hash dictionary to identify BNTX or image entries.', 'error');
     return;
   }
-  const name = resolvedName(resource,state.dictionary);
+  const name = resolvedName(resource,state.dictionary) ||
+    'resource_' + String(resource.index).padStart(4,'0') + '.bin';
   await inspectSourceTexture({
     path:name,size:resource.size,
     getBytes:async()=>extractResourceAsync(state.archive,resource)
