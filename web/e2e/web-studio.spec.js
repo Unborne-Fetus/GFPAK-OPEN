@@ -153,7 +153,18 @@ test('desktop explorer browses extracted folders and filters animations/textures
                     kind:'gfpak', category:'model archive', expandable:true, size:1300}],
           counts:{'model archive':1}, truncated:false, note:''
         }),
-        browse_scan_status: async () => ({running:false, result:null, error:''}),
+        browse_start_scan: async () => true,
+        browse_scan_status: async () => ({running:false, error:'', result:{
+          assets:[
+            {id:'a', name:'idle.tranm',category:'animation',kind:'file',size:12},
+            {id:'t', name:'body.bntx',category:'texture',kind:'file',size:24},
+            {id:'m', name:'pm0025_00_00.gfpak',category:'model archive',kind:'gfpak',size:900},
+            {id:'nested', name:'pm0026_00_00.gfpak',category:'model archive',
+              kind:'gfpak',size:1300}
+          ],
+          counts:{animation:1,texture:1,'model archive':2},
+          scanned:5,truncated:false
+        }}),
         browse_item_details: async node => ({name:node,kind:'file',category:'animation',
           size:12,location:'C:/Models/idle.tranm',hex_lines:[],notes:[]}),
         browse_save_item: async () => 'C:/Exports/idle.tranm'
