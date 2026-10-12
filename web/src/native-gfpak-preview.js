@@ -107,6 +107,22 @@ function matchByHash(rows,reference,containerName,kind){
   const hashes=referenceHashes(reference,containerName,kind);
   return rows.filter(row=>hashes.has(row.resource.pathHash) || hashes.has(row.resource.fileHash));
 }
+/**
+ * Exact hash matches can identify a normal/rare TRMTR filename even when
+ * the user has not supplied a filename dictionary.
+ */
+function materialAliasFromHash(resource,archiveName) {
+  const source=normalize(archiveName).split('/').at(-1).replace(/\.gfpak$/,'');
+  const stems=unique([source,source.replace(/_\d{2}$/,'')]);
+  for(const stem of stems){
+    for(const suffix of ['', '_rare', '_shiny']){
+      const name=stem+suffix+'.trmtr';
+      const hashes=referenceHashes(name,archiveName,'trmtr');
+      if(hashes.has(resource.fileHash)||hashes.has(resource.pathHash))return name;
+    }
+  }
+  return '';
+}
 function pathFor(row,stem='pokemon'){
   if(row.known)return row.known;
   const base=(row.sourceArchive||stem).replace(/\.gfpak$/i,'').split('/').at(-1).replace(/[^a-z0-9_-]/gi,'_')||'pokemon';
@@ -374,6 +390,10 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     assignRef(buffer,'trmbf',mesh.bufferFile,stem);required.add(buffer);
   }
   await recoverUnreferencedCompanions(rows,required,meshMaterialNames,read,report);
+  for(const row of rows)if(row.kind==='trmtr' && !row.known){
+    const alias=materialAliasFromHash(row.resource,row.sourceArchive);
+    if(alias)row.nativeAliases=unique([...(row.nativeAliases||[]),alias]);
+  }
   for(const row of rows)if(['trskl','trmtr','bntx','dds','png','jpg','jpeg','webp','tranm','gfbanm','tracm'].includes(row.kind))
     required.add(row);
   // Unambiguous fallback works even when a PLA GFPAK has no dictionary:
@@ -432,8 +452,10 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
     if(type==='bntx')try{textureNames=parseBntx(bytes).textures.map(t=>t.name).filter(Boolean);}catch(_){}
     const linkedKind=['bntx','dds','png','jpg','webp'].includes(type)?'texture':
       type==='tranm'?'animation':undefined;
+    const alias=type==='trmtr'?materialAliasFromHash(resource,filename):'';
     list.push({
       path:name,size:resource.size,textureNames,sourceArchive:filename,
+      nativeAliases:alias?[alias]:[],
       getBytes:async()=>bytes,
       getText:async()=>new TextDecoder().decode(bytes),
       linkedKind,
