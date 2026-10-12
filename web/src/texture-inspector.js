@@ -19,6 +19,22 @@ export function isInspectableTexture(path) {
     IMAGE_MIME.has(extension(path));
 }
 
+/** Identify real texture content by its signature, not by a guessed filename. */
+export function detectTextureExtension(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (b.length >= 4 &&
+      b[0] === 0x42 && b[1] === 0x4e && b[2] === 0x54 && b[3] === 0x58) return '.bntx';
+  if (b.length >= 4 &&
+      b[0] === 0x44 && b[1] === 0x44 && b[2] === 0x53 && b[3] === 0x20) return '.dds';
+  if (b.length >= 8 &&
+      [137,80,78,71,13,10,26,10].every((v,i)=>b[i]===v)) return '.png';
+  if (b.length >= 3 && b[0]===255 && b[1]===216 && b[2]===255) return '.jpg';
+  if (b.length >= 12 &&
+      [82,73,70,70].every((v,i)=>b[i]===v) &&
+      [87,69,66,80].every((v,i)=>b[i+8]===v)) return '.webp';
+  return null;
+}
+
 export function inspectTexture(bytes, filename) {
   const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   if (!input.byteLength || input.byteLength > MAX_INPUT)
