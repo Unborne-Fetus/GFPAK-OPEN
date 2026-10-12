@@ -912,3 +912,42 @@
   font:10px/1.4 "Segoe UI",sans-serif;color:#267e73;
   white-space:nowrap;
 }
+
+/* Browser-native game reader: usable without pywebview or desktop-only styles. */
+.browser-game-panel[hidden]{display:none!important}
+.browser-game-panel{
+  background:#101d29;color:#d9e9f3;min-height:580px;
+  max-height:calc(100vh - 105px);overflow-y:auto;padding:18px 20px 25px;
+  font-family:'DM Sans','Segoe UI',sans-serif;
+}
+.browser-game-panel .asset-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px}
+.browser-game-panel .asset-hero h2{font-size:23px;margin:4px 0 7px}
+.browser-game-panel .asset-hero p{max-width:600px;margin:0;font-size:13px;line-height:1.5;color:#a5bfd0}
+.browser-game-panel .asset-actions{display:flex;flex-wrap:wrap;gap:8px}
+.browser-game-panel .asset-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+.browser-game-panel .asset-summary>div{background:#192d3c;border:1px solid #365166;padding:13px;border-radius:7px;min-width:0}
+.browser-game-panel .asset-summary span{display:block;color:#aec7d6;font-size:10px;font-weight:700;letter-spacing:.06em}
+.browser-game-panel .asset-summary strong{display:block;font-size:21px;margin-top:6px;font-variant-numeric:tabular-nums}
+.browser-game-panel .asset-toolbar,.browser-game-panel .asset-filterbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:12px 0;flex-wrap:wrap}
+.browser-game-panel .asset-filterbar .field{min-width:200px;flex:1}
+.browser-game-panel .asset-filterbar select{max-width:245px}
+.browser-game-panel .asset-breadcrumb{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.browser-game-panel .asset-notice,.browser-game-panel .asset-guidance{font-size:12px;line-height:1.6;color:#bbd3de}
+.browser-game-panel .asset-notice.native-error{color:#ffb7a9}
+.browser-game-panel .asset-guidance{border-top:1px solid #385162;padding:12px 0}
+.browser-game-panel .asset-table-wrap{border:1px solid #365166;border-radius:7px;max-height:51vh;min-height:190px;overflow:auto}
+.browser-game-table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}
+.browser-game-table th{position:sticky;top:0;background:#233b4d;color:#c6e5f2;z-index:1;padding:10px 12px}
+.browser-game-table td{border-top:1px solid #2a4254;padding:9px 12px;overflow-wrap:anywhere}
+.browser-game-table td:first-child{min-width:180px;max-width:530px;word-break:break-word}
+.browser-game-table tr{cursor:pointer}
+.browser-game-table tbody tr:hover,.browser-game-table tbody tr:focus-visible{background:#29465b;outline:none}
+.browser-game-table tr.browser-game-selected{background:#285a67;box-shadow:inset 3px 0 #5ce2c1}
+.browser-game-panel .browser-game-actions{justify-content:flex-start}
+@media(max-width:750px){
+  .browser-game-panel{padding:12px;max-height:none}
+  .browser-game-panel .asset-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .browser-game-panel .asset-hero{display:block}
+  .browser-game-panel .asset-actions{margin-top:12px}
+  .browser-game-panel .asset-filterbar select{max-width:100%}
+}
