@@ -66,3 +66,21 @@ class BucketTreeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_lz4_block_cache_serves_repeated_small_reads(self):
+        try:
+            import lz4.block
+        except ImportError:
+            self.skipTest("Native LZ4 not installed")
+        original = bytes(range(256)) * 64
+        packed = lz4.block.compress(original, store_size=False)
+        table = tree([(0, 0, (3, 0, len(packed)))],
+                     compressed=True, end=len(original))
+        accesses = []
+        def read_data(at, n):
+            accesses.append((at, n))
+            return packed[at:at+n]
+        self.assertEqual(table.read_compressed(1, 32, read_data), original[1:33])
+        self.assertEqual(table.read_compressed(4096, 32, read_data), original[4096:4128])
+        self.assertEqual(len(accesses), 1, "Repeated pages should not decompress the same block")
+        self.assertLessEqual(table._cache_bytes, 24 * 1024 * 1024)
