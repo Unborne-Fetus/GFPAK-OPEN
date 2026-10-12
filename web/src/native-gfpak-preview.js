@@ -133,7 +133,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   const models=rows.filter(row=>['trmdl','trmsh','gfbmdl'].includes(row.kind));
   if(!models.length){
     throw Error('No supported TRMDL/TRMSH/GFBMDL model could be decoded in this GFPAK. '+
-      (archive.resources.length-rows.length)+' resources use unrecognized compression; 
+      (archive.resources.length-rows.length)+' resources use unrecognized compression; '+
       'native model resources may need a hash dictionary.');
   }
   let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
