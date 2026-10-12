@@ -18,7 +18,7 @@ import zipfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
 
-from .core import GFPak, GFPakError
+from .core import GFPak, VirtualGFPak, GFPakError
 from .nsp_explorer import NSPAnalyzer, NSPEntry
 from .ncz_native import restore_ncz
 from .xci_explorer import XCIImage, XCIPartition
@@ -112,6 +112,8 @@ class AssetBrowser:
         self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
         self._section_nodes: dict[str, tuple[int, int]] = {}
         self._nca_virtual_nodes: dict[str, tuple[int, int, str]] = {}
+        self._virtual_gfpaks: dict[str, tuple[VirtualGFPak, dict[int, str]]] = {}
+        self._virtual_gfpak_nodes: dict[str, tuple[str, int]] = {}
 
     def _node(self, kind: str, path: Path, *, inner: str = "",
               index: int = -1, name: str | None = None,
@@ -167,6 +169,8 @@ class AssetBrowser:
         self._ncz_restored.clear()
         self._section_nodes.clear()
         self._nca_virtual_nodes.clear()
+        self._virtual_gfpaks.clear()
+        self._virtual_gfpak_nodes.clear()
         self._linked_extracted = None
         self._linked_nca.clear()
         self._linked_base_nca.clear()
@@ -450,6 +454,8 @@ class AssetBrowser:
             return self._section_children(node, cursor)
         if kind == "nca_dir":
             return self._virtual_nca_children(node, cursor)
+        if kind == "nca_file" and node["name"].lower().endswith(".gfpak"):
+            return self._virtual_gfpak_children(node, cursor)
         results = []
         limit = 250
         more = None
@@ -595,6 +601,8 @@ class AssetBrowser:
             item = self._node(kind, reader.path, inner=inner, name=child["name"],
                               size=child["size"])
             item["category"] = "folder" if is_dir else classify(child["name"])
+            if not is_dir and child["name"].lower().endswith(".gfpak"):
+                item["expandable"] = True
             self._nca_virtual_nodes[item["id"]] = (index, section, child["path"])
             self._nca_sources[item["id"]] = reader
             rows.append(item)
@@ -608,6 +616,83 @@ class AssetBrowser:
                      "without extracting the full game."),
             "next_cursor": more,
             "truncated": more is not None,
+        }
+
+    def _mounted_gfpak(self, node_id: str):
+        """Parse a GFPAK stored in RomFS without copying the enclosing file."""
+        if node_id in self._virtual_gfpaks:
+            return self._virtual_gfpaks[node_id]
+        node = self.node(node_id)
+        if node["kind"] != "nca_file" or not node["name"].lower().endswith(".gfpak"):
+            raise ValueError("Select a GFPAK file from the readable RomFS")
+        reader, index, section, name = self._nca_virtual_file(node)
+        fs = self._nca_sections.filesystem(reader, index, section)
+        metadata = fs.file(name)
+        def read_at(offset: int, size: int):
+            return fs.section.read(metadata.offset + offset, size)
+        archive = VirtualGFPak(metadata.size, read_at, name)
+        # Avoid misrepresenting arbitrary hash values as asset types. A native
+        # model family requires matching TRMDL/TRMSH/TRMBF suffixes.
+        names = infer_model_resources(archive.resources, Path(name).stem)
+        by_hash = {}
+        for resource in archive.resources:
+            for value in (resource.path_hash, resource.file_hash):
+                if value:
+                    by_hash.setdefault(value, []).append(resource)
+        # Bound descriptor decoding; these may reference different texture and
+        # animation basenames even when the model hash stem is not shared.
+        for resource_index, guessed in list(names.items()):
+            if Path(guessed).suffix.lower() not in {".trmdl", ".trmsh", ".trmtr"}:
+                continue
+            item = archive.resources[resource_index]
+            if item.size > 8 * 1024 * 1024:
+                continue
+            try:
+                content = archive.read_resource(item)
+            except (GFPakError, OSError, ImportError, ValueError):
+                continue
+            for match in set(REFERENCE_RE.findall(content)):
+                try:
+                    original = safe_path(match.decode("ascii")).as_posix()
+                except (UnicodeError, ConversionError, ValueError):
+                    continue
+                found = {}
+                for candidate in (fnv1a64(original),
+                                  fnv1a64(original.rsplit("/", 1)[-1])):
+                    for resolved in by_hash.get(candidate, []):
+                        found[resolved.index] = resolved
+                if len(found) == 1:
+                    names.setdefault(next(iter(found)), original)
+        self._virtual_gfpaks[node_id] = archive, names
+        return archive, names
+
+    def _virtual_gfpak_children(self, node: dict, cursor: str | None = None) -> dict:
+        archive, names = self._mounted_gfpak(node["id"])
+        start = self._archive_page_start(cursor, len(archive.resources))
+        rows = []
+        for resource in archive.resources[start:start + 250]:
+            resolved = names.get(resource.index)
+            category = classify(resolved) if resolved else "unknown"
+            display = (f"{resource.index:04d} · {resolved.rsplit('/', 1)[-1]}"
+                       if resolved else
+                       f"{resource.index:04d} · {resource.path_hash[:12]}… (unidentified)")
+            inner = node["id"] + ":" + str(resource.index)
+            child = self._node("nca_gfpak_resource", Path(node["path"]),
+                               inner=inner, index=resource.index,
+                               name=display, size=resource.size)
+            child["category"] = category
+            self._virtual_gfpak_nodes[child["id"]] = (node["id"], resource.index)
+            rows.append(child)
+        end = start + len(rows)
+        next_cursor = f"o:{end:08x}" if end < len(archive.resources) else None
+        return {
+            "root": self._public(node),
+            "entries": [self._public(child) for child in rows],
+            "counts": dict(Counter(row["category"] for row in rows)),
+            "next_cursor": next_cursor, "truncated": next_cursor is not None,
+            "note": ("Reading indexed GFPAK members directly inside RomFS. "
+                     f"{len(archive.resources) - len(names)} hashes are not verified; "
+                     "use Load more to view additional resources.")
         }
 
     def nsp_reader(self, path: Path | None = None) -> NSPAnalyzer:
@@ -1181,6 +1266,8 @@ class AssetBrowser:
                                 child = self._node("nca_file", reader.path, inner=inner,
                                                    name=entry["name"], size=entry["size"])
                                 child["category"] = category
+                                if entry["name"].lower().endswith(".gfpak"):
+                                    child["expandable"] = True
                                 self._nca_virtual_nodes[child["id"]] = (
                                     index, section, entry["path"])
                                 self._nca_sources[child["id"]] = reader
