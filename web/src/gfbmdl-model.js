@@ -21,7 +21,7 @@ function baseName(path) {
 function nearbyTextures(project, modelPath) {
   const stem = baseName(modelPath);
   const items = project.items.filter(item =>
-    ['.png', '.jpg', '.jpeg', '.webp', '.dds'].includes(getExtension(item.path))
+    ['.png', '.jpg', '.jpeg', '.webp', '.dds', '.bntx'].includes(getExtension(item.path))
   );
   return items.map(item => {
     const normalized = item.path.replace(/\\/g, '/').toLowerCase();
@@ -32,13 +32,28 @@ function nearbyTextures(project, modelPath) {
   }).sort((a, b) => b.score - a.score);
 }
 
-function findTexture(name, options) {
+export function findLegacyTexture(name, options) {
   const target = baseName(name);
   if (!target) return null;
-  const matches = options.filter(row =>
-    row.base === target || row.base.startsWith(target + '_') ||
-    target.startsWith(row.base + '_'));
-  return matches[0]?.item ?? null;
+  // Prefer an exact referenced file in the source model directory.
+  // Several identical textures in different game folders must not be
+  // silently combined into the same model.
+  const matching = options.filter(row => row.base === target ||
+    row.base.startsWith(target + '_') || target.startsWith(row.base + '_'));
+  const local = matching.filter(row => row.score >= 10);
+  if (local.length === 1) return local[0].item;
+  if (local.length > 1) {
+    const exact = local.filter(row => row.base === target);
+    return exact.length === 1 ? exact[0].item : null;
+  }
+  if (matching.length === 1) return matching[0].item;
+  if (matching.length > 1) return null;
+  // Many games pack multiple named textures into one BNTX. Let the
+  // BNTX decoder select by the exact GFBMDL texture name; never choose
+  // a random surface or one of several unrelated BNTX files.
+  const packed = options.filter(row => row.score >= 10 &&
+    getExtension(row.item.path) === '.bntx');
+  return packed.length === 1 ? packed[0].item : null;
 }
 
 function chooseMap(textureNames, material) {
@@ -200,17 +215,27 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
 
   const known = nearbyTextures(project, selected);
   const textureObjects = [];
+  const textureCache = new Map();
   for (let i = 0; i < model.materials.length; i++) {
     const match = chooseMap(model.textureNames, model.materials[i]);
     if (!match) continue;
-    const file = findTexture(model.textureNames[match.textureIndex], known);
-    if (!file) continue;
+    const referencedName = model.textureNames[match.textureIndex];
+    const file = findLegacyTexture(referencedName, known);
+    if (!file) {
+      report('Could not uniquely match texture ' + referencedName + ' to a local image or BNTX container.');
+      continue;
+    }
     try {
-      const texture = await loadDecodedTexture(file, true);
+      const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '');
+      let texture = textureCache.get(key);
+      if (!texture) {
+        texture = await loadDecodedTexture(file, true, [referencedName]);
+        textureCache.set(key, texture);
+        textureObjects.push(texture);
+      }
       materials[i].map = texture;
       materials[i].color.setRGB(1, 1, 1);
       materials[i].needsUpdate = true;
-      textureObjects.push(texture);
     } catch (error) {
       report('Could not apply texture ' + file.path + ': ' + error.message);
     }
