@@ -14,7 +14,7 @@ let catalogRevision = 0;
 let pendingCatalogRequest = null;
 let assetClass = 'all';
 const classKinds = {
-  models: new Set(['model', 'model archive', 'mesh']),
+  models: new Set(['model', 'model archive', 'asset package', 'mesh']),
   textures: new Set(['texture']),
   animations: new Set(['animation'])
 };
@@ -54,6 +54,7 @@ let nxSelectedTree = null;
 let nxDetailRevision = 0;
 const categories = {
   model: 'Model', 'model archive': 'Model archive',
+  'asset package': 'GFPAK (inspect contents)',
   animation: 'Animation', texture: 'Texture', skeleton: 'Skeleton',
   material: 'Material', mesh: 'Mesh', folder: 'Folder',
   archive: 'Archive', 'encrypted container': 'Encrypted NCA',
@@ -99,7 +100,7 @@ function summary(counts = null) {
   if (!counts) {
     const observed = pathStack.at(-1)?.listing?.counts || {};
     const localModels = (observed.model || 0) + (observed['model archive'] || 0) +
-      (observed.mesh || 0);
+      (observed['asset package'] || 0) + (observed.mesh || 0);
     for (const [key, amount] of [
       ['assetCountModel',localModels], ['assetClassModels',localModels],
       ['assetCountTexture',observed.texture || 0], ['assetClassTextures',observed.texture || 0],
@@ -109,7 +110,7 @@ function summary(counts = null) {
     return;
   }
   const models = (counts.model || 0) + (counts['model archive'] || 0) +
-    (counts.mesh || 0);
+    (counts['asset package'] || 0) + (counts.mesh || 0);
   const partial = assetCatalog?.truncated || assetCatalog?.unresolved;
   const value = (name, count) => {
     id(name).textContent = !count && partial ? '—' :
@@ -122,7 +123,7 @@ function summary(counts = null) {
   value('assetClassTextures', counts.texture || 0);
   value('assetClassAnimations', counts.animation || 0);
   value('assetCountOther', Object.entries(counts).reduce(
-    (n, [key, count]) => n + (!['model', 'mesh', 'model archive', 'animation',
+    (n, [key, count]) => n + (!['model', 'mesh', 'model archive', 'asset package', 'animation',
       'texture', 'folder'].includes(key) ? count : 0), 0
   ));
 }
@@ -1165,7 +1166,7 @@ async function scanFolder(requested = null, automatic = false) {
         assetCatalog = status.result;
         scanListing = assetClass !== 'all' ? assetCatalog : null;
         const counts = assetCatalog.counts || {};
-        const located = ['model','model archive','mesh','texture','animation']
+        const located = ['model','model archive','asset package','mesh','texture','animation']
           .reduce((n, key) => n + (counts[key] || 0), 0);
         const warnings = assetCatalog.warnings || [];
         id('assetScanSummary').textContent =
