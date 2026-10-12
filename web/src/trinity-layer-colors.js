@@ -14,6 +14,12 @@ export function applyLayerColors(definition, created, report = () => {}) {
   const material = definition.material, mask = definition.layerMaskMap;
   if (!palette || !mask || !material.map) return;
   const scalars = definition.scalars || {};
+  // Unlit effect masks are simultaneous palette weights, not four successive
+  // overlays. Successive lerps leave white albedo between purple cloud layers.
+  const weighted = /^(NonDirectional|Unlit)$/i.test(definition.shader?.name || '');
+  const blend = (base,weights) => weighted
+    ? `(${base} * max(0.0,1.0-dot(${weights},vec4(1.0))) + gfLayerColors[0]*${weights}.r + gfLayerColors[1]*${weights}.g + gfLayerColors[2]*${weights}.b + gfLayerColors[3]*${weights}.a) / max(1.0,dot(${weights},vec4(1.0)))`
+    : `mix(mix(mix(mix(${base},gfLayerColors[0],${weights}.r),gfLayerColors[1],${weights}.g),gfLayerColors[2],${weights}.b),gfLayerColors[3],${weights}.a)`;
   const scales = new THREE.Vector4(...[1, 2, 3, 4].map(i =>
     Number.isFinite(scalars['LayerMaskScale' + i]) ? scalars['LayerMaskScale' + i] : 1));
   const uniforms = {
@@ -28,9 +34,9 @@ export function applyLayerColors(definition, created, report = () => {}) {
       shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\ngfBaseUv = uv;');
       shader.fragmentShader = 'varying vec2 gfBaseUv;\nuniform mat3 gfMaskTransform;\nuniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
-        '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[0],gfWeights.r);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[1],gfWeights.g);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[2],gfWeights.b);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[3],gfWeights.a);');
+        '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = ' + blend('diffuseColor.rgb','gfWeights') + ';');
     };
-    material.customProgramCacheKey = () => 'trinity-four-color-layers';
+    material.customProgramCacheKey = () => 'trinity-four-color-layers-'+weighted;
     material.needsUpdate = true;
   };
   if (typeof document === 'undefined') { shaderFallback(); return; }
@@ -59,10 +65,7 @@ export function applyLayerColors(definition, created, report = () => {}) {
         void main(){
           vec4 weights=clamp(texture2D(gfLayerMask,(gfMaskTransform*vec3(gfUV,1.0)).xy)*gfLayerScales,0.0,1.0);
           vec4 albedo=texture2D(gfAlbedo,(gfAlbedoTransform*vec3(gfUV,1.0)).xy);
-          vec3 color=mix(albedo.rgb,gfLayerColors[0],weights.r);
-          color=mix(color,gfLayerColors[1],weights.g);
-          color=mix(color,gfLayerColors[2],weights.b);
-          color=mix(color,gfLayerColors[3],weights.a);
+          vec3 color=${blend('albedo.rgb','weights')};
           gl_FragColor=vec4(color,albedo.a);
           #include <colorspace_fragment>
         }`

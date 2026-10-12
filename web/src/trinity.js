@@ -244,7 +244,7 @@ function decodeVertices(descriptor, vertexStreams) {
   if (count <= 0 || count > MAX_VERTICES) throw new TrinityError('Invalid mesh vertex count');
   const output = {
     count, position: new Float32Array(count * 3),
-    normal: null, tangent: null, uv: null, color: null, joints: null, weights: null
+    normal: null, tangent: null, uv: null, uv1: null, color: null, joints: null, weights: null
   };
   const channels = new Set();
   const readerCache = vertexStreams.map(stream => {
@@ -257,22 +257,23 @@ function decodeVertices(descriptor, vertexStreams) {
       f32: pos => view.getFloat32(pos, true)
     };
   });
-  // UV channels beyond layer 0 and additional skin streams need separate
-  // mappings. Decode the primary channel without pretending to preserve others.
+  // Element layer identifies the semantic channel (UV0/UV1), not a buffer.
+  // The size/stride index selects the vertex stream.
   for (const element of descriptor.elements) {
-    const channel = USAGE[element.usage];
+    const channel = element.usage === 6 && element.layer === 1 ? 'uv1' : USAGE[element.usage];
+    if (element.layer > 0 && channel !== 'uv1') continue;
     if (!channel || channels.has(channel)) continue;
     const stride = descriptor.strides[element.strideIndex];
-    const source = vertexStreams[element.layer];
+    const source = vertexStreams[element.strideIndex];
     const bytes = FORMAT_BYTES[element.format];
     if (!source || !stride || !bytes || element.offset < 0 ||
         element.offset + bytes > stride || stride > 2048) {
       if (channel === 'position') throw new TrinityError('Unsupported POSITION vertex format or stride');
       continue;
     }
-    const n = channel === 'uv' ? 2 : channel === 'position' || channel === 'normal' ? 3 : 4;
+    const n = channel === 'uv' || channel === 'uv1' ? 2 : channel === 'position' || channel === 'normal' ? 3 : 4;
     if (!output[channel]) output[channel] = new Float32Array(count * n);
-    const read = readerCache[element.layer];
+    const read = readerCache[element.strideIndex];
     if (!read) continue;
     for (let i = 0; i < count; i++) {
       const offset = i * stride + element.offset;

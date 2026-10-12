@@ -15,6 +15,7 @@ import {
   TrinityError, parseTrmdl, parseTrmsh, parseTrmbf,
   parseTrmtr, parseTrskl, decodeTrinityMeshes
 } from './trinity.js';
+import { bakeNativeDisplacement, animateNativeDisplacement } from './trinity-displacement.js';
 import { parseMeshVisibility } from './trinity-visibility.js';
 import { parseNativeAnimation } from './trinity-animation.js';
 
@@ -116,15 +117,15 @@ export function createMaterials(materials) {
       const mat = new Material({
         name: info.name || 'Trinity material',
         color: 0xd9e0e7, side: info.faceCulling === 1 ? THREE.BackSide : info.faceCulling === 2 ? THREE.DoubleSide : THREE.FrontSide,
-        roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
-        metalness: 0.0, ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
+        ...(!unlit ? {roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
+        metalness: 0.0} : {}), ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
       });
       mat.userData.nativeVertexColor = shader?.flags?.EnableVertexBaseColor === 'True' || shader?.flags?.EnableVertexColor === 'True';
       mat.transparent = !!info.alphaType && !/opaque/i.test(info.alphaType);
       mat.depthWrite = !mat.transparent;
       if (shader?.flags?.EnableAlphaTest === 'True') mat.alphaTest = info.scalars?.DiscardValue || 0.5;
       lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
-        colors: info.colors, scalars: info.scalars });
+        colors: info.colors, scalars: info.scalars, shader });
     }
   }
   return lookup;
@@ -133,6 +134,7 @@ export function createMaterials(materials) {
 export async function applyDecodedTextures(project, lookup, modelPath, report, created) {
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
+    { names: /^displacementmap$/i, property: 'nativeDisplacementMap', srgb: false },
     { names: /^layermaskmap$/i, property: 'layerMaskMap', srgb: false },
     { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false },
     { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false },
@@ -159,7 +161,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
       try {
         const requestedNames = [selected.file, selected.name];
         const uv = definition.colors?.[channel.property === 'normalMap'
-          ? 'UVScaleOffsetNormal' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
+          ? 'UVScaleOffsetNormal' : channel.property === 'nativeDisplacementMap' ? 'UVScaleOffset3' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
         const cacheKey = textureItem.path + '|' + (uv?.join(',') || '') + '|' + channel.srgb +
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
@@ -177,7 +179,8 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
           texture.updateMatrix();
         }
         const material = definition.material;
-        if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
+        if (channel.property === 'nativeDisplacementMap') definition.displacementMap = texture;
+        else if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
         else material[channel.property] = texture;
         if (channel.property === 'map') material.color.setRGB(1, 1, 1);
         if (channel.property === 'emissiveMap') {
@@ -248,9 +251,10 @@ export class NativeBone extends THREE.Bone {
       const scale = this.parent.scale;
       const inverse = value => Math.abs(value) > 1e-10 ? 1/value : 1;
       this.inverseParentScale.makeScale(inverse(scale.x),inverse(scale.y),inverse(scale.z));
-      // Native local pose = inverse parent scale * T * R * S. Keep authored
-      // scale properties intact so animation channels do not accumulate.
+      // Compensation applies to the joint basis, after translation (T*IS*R*S).
+      // Cancelling the translation prevents scaled chains from retracting.
       this.matrix.premultiply(this.inverseParentScale);
+      this.matrix.setPosition(this.position);
     }
   }
 }
@@ -308,6 +312,11 @@ export function makeMesh(part, material, skeletonInfo) {
     const uv = vertices.uv.slice();
     for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
     geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
+  if (vertices.uv1) {
+    const uv = vertices.uv1.slice();
+    for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
+    geometry.setAttribute('uv1', new THREE.BufferAttribute(uv, 2));
   }
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
@@ -549,6 +558,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
           (async () => {
             const images = await applyDecodedTextures(
               project, lookup, selected, report, created);
+            if (!disposed) bakeNativeDisplacement(scene, lookup, report);
             const fallbackImages = await applyMatchedLinkedTextures(
               project, scene, report, created);
             return images.concat(fallbackImages);
@@ -556,7 +566,10 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
           loadNativeClips(project, selected, rig, report, scene),
         ]);
         sourceImages = images;
-        if (!disposed) animations.push(...clips);
+        if (!disposed) {
+          await animateNativeDisplacement(scene, lookup, project, clips, report);
+          animations.push(...clips);
+        }
         report('Finished ' + created.length + ' texture(s) and ' +
           clips.length + ' native animation clip(s).');
         return animations;
