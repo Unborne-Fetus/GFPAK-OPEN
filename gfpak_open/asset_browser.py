@@ -24,6 +24,7 @@ from .ncz_native import restore_ncz
 from .xci_explorer import XCIImage, XCIPartition
 from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
+from .resource_discovery import discover_resource_names
 from .pokemon_assets import group_related, pokemon_id
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
                         fnv1a64, REFERENCE_RE, safe_path, ConversionError)
@@ -224,37 +225,7 @@ class AssetBrowser:
                 except (OSError, ValueError):
                     # A bad optional dictionary should not disable browsing.
                     pass
-            # Decode only known model descriptors/materials. Their verified file
-            # references can identify texture/skeleton/animation entries that
-            # are otherwise indistinguishable hashed FlatBuffer resources.
-            hashes = {}
-            for resource in archive.resources:
-                for key in (resource.path_hash, resource.file_hash):
-                    if key:
-                        hashes.setdefault(key, []).append(resource)
-            for index, guessed in list(names.items()):
-                if Path(guessed).suffix.lower() not in {".trmdl", ".trmtr", ".trmsh"}:
-                    continue
-                resource = archive.resources[index]
-                if resource.size > 16 * 1024 * 1024:
-                    continue
-                try:
-                    content = archive.read_resource(resource)
-                except (GFPakError, OSError, ImportError):
-                    continue
-                for match in set(REFERENCE_RE.findall(content)):
-                    try:
-                        original = safe_path(match.decode("ascii")).as_posix()
-                    except (UnicodeError, ConversionError):
-                        continue
-                    basename = original.rsplit("/", 1)[-1]
-                    found = {}
-                    for value in (fnv1a64(original), fnv1a64(basename)):
-                        for target in hashes.get(value, []):
-                            found[target.index] = target
-                    if len(found) == 1:
-                        target = next(iter(found.values()))
-                        names.setdefault(target.index, original)
+            names = discover_resource_names(archive, names)
             self._inferred[path] = names
         return self._inferred[path]
 
@@ -640,35 +611,7 @@ class AssetBrowser:
         # Avoid misrepresenting arbitrary hash values as asset types. A native
         # model family requires matching TRMDL/TRMSH/TRMBF suffixes.
         names = infer_model_resources(archive.resources, Path(name).stem)
-        by_hash = {}
-        for resource in archive.resources:
-            for value in (resource.path_hash, resource.file_hash):
-                if value:
-                    by_hash.setdefault(value, []).append(resource)
-        # Bound descriptor decoding; these may reference different texture and
-        # animation basenames even when the model hash stem is not shared.
-        for resource_index, guessed in list(names.items()):
-            if Path(guessed).suffix.lower() not in {".trmdl", ".trmsh", ".trmtr"}:
-                continue
-            item = archive.resources[resource_index]
-            if item.size > 8 * 1024 * 1024:
-                continue
-            try:
-                content = archive.read_resource(item)
-            except (GFPakError, OSError, ImportError, ValueError):
-                continue
-            for match in set(REFERENCE_RE.findall(content)):
-                try:
-                    original = safe_path(match.decode("ascii")).as_posix()
-                except (UnicodeError, ConversionError, ValueError):
-                    continue
-                found = {}
-                for candidate in (fnv1a64(original),
-                                  fnv1a64(original.rsplit("/", 1)[-1])):
-                    for resolved in by_hash.get(candidate, []):
-                        found[resolved.index] = resolved
-                if len(found) == 1:
-                    names.setdefault(next(iter(found)), original)
+        names = discover_resource_names(archive, names)
         self._virtual_gfpaks[node_id] = archive, names
         return archive, names
 
@@ -800,6 +743,18 @@ class AssetBrowser:
     def asset_family(self, id_: str) -> dict:
         """Display catalog-wide evidence-backed model companions when available."""
         node = self.node(id_)
+        # Archive contents need not share the archive's pm#### basename:
+        # body.bntx and idle.tranm are still real companions in this package.
+        if node["kind"] == "gfpak" or (node["kind"] == "nca_file" and
+                node["name"].lower().endswith(".gfpak")):
+            names = (self._known_names(Path(node["path"])) if node["kind"] == "gfpak"
+                     else self._mounted_gfpak(id_)[1])
+            files = [{"path": name, "kind": classify(name)} for name in names.values()]
+            return {"asset_id": pokemon_id(node["name"]),
+                    "engine": "Identified GFPAK contents",
+                    "counts": dict(Counter(item["kind"] for item in files)),
+                    "files": files, "truncated": False,
+                    "note": "Contents identified from hashes, references or decoded format evidence."}
         if node["category"] == "model" and id_ in self._model_matches:
             matches = self._model_matches[id_]
             counts = dict(Counter(item["kind"] for item in matches))
@@ -1173,9 +1128,9 @@ class AssetBrowser:
     def fast_preview_items(self, id_: str) -> dict:
         """Identify lazy, read-only browser-native model dependencies.
 
-        Only filenames and byte lengths are indexed here. No Blender process,
-        full NCA extraction, GFPAK unpack or texture decompression occurs until
-        the web-native decoder requests a particular selected file.
+        Discovery is cached; unresolved members may be decoded to identify
+        their formats. Preview payloads remain lazy and do not require Blender
+        or extraction of the enclosing NCA.
         """
         selected = self.node(id_)
         if selected["kind"] in {"gfpak", "gfpak_resource"}:

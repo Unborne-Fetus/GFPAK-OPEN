@@ -17,6 +17,7 @@ ASSET_EXTENSIONS = {
     ".trmsh": "mesh",
     ".trmbf": "mesh buffer",
     ".trmtr": "material",
+    ".trmmt": "material",
     ".trskl": "skeleton",
     ".bntx": "texture",
     ".trtex": "texture",
