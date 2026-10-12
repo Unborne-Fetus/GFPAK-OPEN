@@ -305,9 +305,13 @@ class DesktopAPI:
                 self._browser, [entry["source"] for entry in records])
             return {
                 "label": manifest["label"], "selected": manifest["selected"],
+                "matched": manifest.get("matched", {}),
                 "items": [{
                     "path": entry["path"], "size": entry["size"],
-                    "url": "/__quick_asset/" + token + "/" + str(index)
+                    "url": "/__quick_asset/" + token + "/" + str(index),
+                    **({key: entry[key] for key in (
+                        "linkedKind", "matchConfidence", "matchReason")
+                        if key in entry})
                 } for index, entry in enumerate(records)]
             }
 
