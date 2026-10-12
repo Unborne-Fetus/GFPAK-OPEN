@@ -363,6 +363,19 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(section.read(file_info.offset + file_info.size - 2, 2), b"OK")
             self.assertEqual(original.sections[0].read(logical_end - 2, 2), romfs[-2:])
 
+            # The desktop file explorer resolves the same overlay through an
+            # explicit base-file selection, without modifying either archive.
+            base_file = root / "original.nca"
+            base_file.write_bytes(plain_nca([("romfs", romfs)]))
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            browse_root = browser.open(update_file)
+            update_node = browser.children(browse_root["id"])["entries"][0]
+            linked = browser.attach_base_nca(update_node["id"], base_file)
+            self.assertEqual(linked["matching_sections"], 1)
+            section_node = browser.children(update_node["id"])["entries"][0]
+            self.assertEqual(section_node["name"], "Section 0")
+            self.assertEqual(browser.children(section_node["id"])["entries"][0]["name"], "bin")
+
     def test_plaintext_sparse_nca_maps_data_and_zero_filled_holes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
