@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import { makeGfbmdlTriangle } from '../tests/native-gfbmdl-sample.mjs';
 
-function makeArchive(bytes, compression = 0) {
+function makeArchive(bytes, compression = 0, unpackedSize = bytes.byteLength) {
   const archive = Buffer.alloc(112 + bytes.byteLength);
   archive.write('GFLXPACK');
   archive.writeUInt32LE(0x1000, 8);
@@ -16,7 +16,7 @@ function makeArchive(bytes, compression = 0) {
   archive.writeUInt32LE(1, 64);
   archive.writeBigUInt64LE(0xABn, 72);
   archive.writeUInt16LE(compression, 90);
-  archive.writeUInt32LE(bytes.byteLength, 92);
+  archive.writeUInt32LE(unpackedSize, 92);
   archive.writeUInt32LE(bytes.byteLength, 96);
   archive.writeUInt32LE(112, 104);
   Buffer.from(bytes).copy(archive, 112);
@@ -66,4 +66,34 @@ test('Corrupted Oodle-compressed GFBMDL reports a decoder error, not false succe
   await page.locator('#previewArchiveModel').click();
   await expect(page.locator('#logBody')).toContainText('Oodle resource could not be decoded');
   await expect(page.locator('#exportButton')).toBeDisabled();
+});
+
+test('Oodle Kraken GFPAK model previews and exports GLB entirely in browser',async({page})=>{
+  await page.goto('/');
+  const original=makeGfbmdlTriangle();
+  const n=original.byteLength;
+  if(n>131071)throw Error('Fixture is too big for a single stored Oodle quantum');
+  const size=n-1;
+  const frame=Buffer.concat([
+    Buffer.from([0x8c,0x06,(size>>16)&255,(size>>8)&255,size&255]),
+    Buffer.from(original)
+  ]);
+  await page.locator('#fileInput').setInputFiles({
+    name:'kraken-model.gfpak',mimeType:'application/octet-stream',
+    buffer:makeArchive(frame,3,n)
+  });
+  await page.locator('#hashInput').setInputFiles({
+    name:'hashes.json',mimeType:'application/json',buffer:dictionary
+  });
+  await page.locator('#previewArchiveModel').click();
+  await expect(page.locator('#viewerPanel')).toBeVisible();
+  await expect(page.locator('#statMeshes')).toHaveText('1');
+  await expect(page.locator('#statVertices')).toHaveText('3');
+  await expect(page.locator('#exportButton')).toBeEnabled();
+  const [download]=await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#exportButton').click()
+  ]);
+  const buffer=await fs.readFile(await download.path());
+  expect(buffer.toString('ascii',0,4)).toBe('glTF');
 });
