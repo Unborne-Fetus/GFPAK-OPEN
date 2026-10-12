@@ -821,6 +821,61 @@ class AssetBrowser:
                 )
         return result
 
+    def _fast_gfpak_preview_items(self, selected: dict) -> dict:
+        """Expose resolved GFPAK resources as lazy native assets, without Blender.
+
+        Decoded data is streamed only when requested by the browser viewer.
+        Do not extract the whole archive or guess unresolved hashed filenames.
+        """
+        archive = self._archive(Path(selected["path"]))
+        known = self._known_names(Path(selected["path"]))
+        models = sorted(
+            ((index, name) for index, name in known.items()
+             if Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}
+             and index < len(archive.resources)),
+            key=lambda item: (Path(item[1]).suffix.lower() != ".trmdl", item[0]))
+        if selected["kind"] == "gfpak_resource":
+            models = [row for row in models if row[0] == selected["index"]]
+        if not models:
+            raise ValueError(
+                "No resolved native GFBMDL/TRMDL resource was found. "
+                "The original converter can still attempt this GFPAK.")
+        selected_index, selected_name = models[0]
+        from .pokemon_assets import pokemon_id
+        family = pokemon_id(selected_name)
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | {".bin", ".mtl"}
+        entries = []
+        selected_resource = archive.resources[selected_index]
+        if selected_resource.size > 450 * 1024 * 1024:
+            raise ValueError("Native model is too large for the direct browser preview")
+        entries.append({
+            "path": selected_name, "size": selected_resource.size,
+            "source": ("gfpak", archive.source, selected_index)
+        })
+        used_paths = {selected_name.lower()}
+        for index, name in sorted(known.items()):
+            if index == selected_index or not 0 <= index < len(archive.resources):
+                continue
+            if Path(name).suffix.lower() not in allowed:
+                continue
+            resource = archive.resources[index]
+            if resource.size > 128 * 1024 * 1024 or resource.size < 0:
+                continue
+            if family and pokemon_id(name) not in ("", family):
+                continue
+            if name.lower() in used_paths:
+                continue
+            used_paths.add(name.lower())
+            entries.append({
+                "path": name, "size": resource.size,
+                "source": ("gfpak", archive.source, index)
+            })
+            if len(entries) >= 400:
+                break
+        return {
+            "label": selected["name"], "selected": selected_name, "items": entries
+        }
+
     def fast_preview_items(self, id_: str) -> dict:
         """Identify lazy, read-only browser-native model dependencies.
 
@@ -829,6 +884,8 @@ class AssetBrowser:
         the web-native decoder requests a particular selected file.
         """
         selected = self.node(id_)
+        if selected["kind"] in {"gfpak", "gfpak_resource"}:
+            return self._fast_gfpak_preview_items(selected)
         if selected["kind"] not in {"file", "nca_file", "zipfile"}:
             raise ValueError("This archive requires the fallback converter")
         model_name = selected["name"] if selected["kind"] != "zipfile" else selected["inner"]
@@ -901,6 +958,35 @@ class AssetBrowser:
     def stream_fast_preview_item(self, descriptor: tuple):
         """Return the byte length and bounded chunk generator for a whitelisted file."""
         kind = descriptor[0]
+        if kind == "gfpak":
+            archive = self._archive(Path(descriptor[1]))
+            index = descriptor[2]
+            if not 0 <= index < len(archive.resources):
+                raise ValueError("Unknown GFPAK preview resource")
+            resource = archive.resources[index]
+            if resource.size > 450 * 1024 * 1024:
+                raise ValueError("GFPAK preview resource is too large")
+            def chunks():
+                # Directly stream stored files without extra copies. Compressed
+                # resources are decoded one at a time, never unpacking the
+                # complete archive or invoking Blender for compatible models.
+                if resource.compression == 0:
+                    remaining = resource.packed_size
+                    if resource.size != remaining:
+                        raise ValueError("Stored GFPAK resource size mismatch")
+                    with archive.source.open("rb") as file:
+                        file.seek(resource.offset)
+                        while remaining:
+                            part = file.read(min(1024 * 1024, remaining))
+                            if not part:
+                                raise ValueError("GFPAK resource ended unexpectedly")
+                            yield part
+                            remaining -= len(part)
+                else:
+                    decoded = archive.read_resource(resource)
+                    for at in range(0, len(decoded), 1024 * 1024):
+                        yield decoded[at:at + 1024 * 1024]
+            return resource.size, chunks()
         if kind == "file":
             file = descriptor[1]
             size = file.stat().st_size
