@@ -367,8 +367,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   const required=new Set([root]);
   const context={assignments:new Map(),used:new Set(),referenceOrder:[]};
   const meshMaterialNames=new Set();
+  let modelReferences=null;
   if(root.kind==='trmdl'){
     const meta=parseTrmdl(await read(root));
+    modelReferences={meshFiles:meta.meshFiles.slice(),skeleton:meta.skeleton,
+      materials:meta.materials.slice()};
     context.referenceOrder=meta.meshFiles.map(normalize);
     for(const name of meta.meshFiles){
       const shape=await chooseResource(rows,'trmsh',name,filename,report,read,context);
@@ -439,7 +442,30 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   report('Found '+models.length+' model descriptor(s) and '+items.length+
     ' genuine render resources in '+filename+
     (unreadable?' ('+unreadable+' failed probes)':'')+'.');
-  return {project:{label:filename,items},selected:original.path,archive};
+  const kindCounts={};
+  for(const row of rows)kindCounts[row.kind||'UNIDENTIFIED']=
+    (kindCounts[row.kind||'UNIDENTIFIED']||0)+1;
+  const unidentified=rows.filter(row=>!row.kind).slice(0,250).map(row=>({
+    sourceArchive:row.sourceArchive,
+    resourceIndex:row.resource.index,
+    pathHash:row.resource.pathHash,
+    fileHash:row.resource.fileHash,
+    uncompressedSize:row.resource.size,
+    compression:row.resource.compression
+  }));
+  const scanSummary={
+    archives:archives.map(source=>({name:source.filename,resources:source.resources.length})),
+    totalResources:archives.reduce((sum,source)=>sum+source.resources.length,0),
+    classification:kindCounts,
+    successfullyExtracted:decoded,
+    extractionErrors:unreadable,
+    probed,
+    omittedLarge:skippedLarge,
+    omittedScanLimit:skippedLimit,
+    modelReferences,
+    unidentified
+  };
+  return {project:{label:filename,items,scanSummary},selected:original.path,archive};
 }
 
 
