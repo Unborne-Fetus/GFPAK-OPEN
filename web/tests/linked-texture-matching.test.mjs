@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchingLinkedDiffuseTexture } from '../src/texture-loader.js';
+import { matchingLinkedDiffuseTexture, textureVariantForItem } from '../src/texture-loader.js';
 
 test('model with separate body and eyes materials receives the right linked textures',()=>{
   const items=[
@@ -31,4 +31,24 @@ test('single matched diffuse image can be applied without shader metadata',()=>{
     {path:'textures/pm0026_eyes.dds'}
   ];
   assert.equal(matchingLinkedDiffuseTexture(files,'MeshStandardMaterial',1),files[0]);
+});
+
+test('regular texture variant is preferred while shiny remains selectable',()=>{
+  const files=[
+    {path:'textures/pm0025_body_color.dds',linkedKind:'texture'},
+    {path:'textures/pm0025_body_color_shiny.dds',linkedKind:'texture'},
+    {path:'textures/pm0025_body_normal.dds',linkedKind:'texture'}
+  ];
+  assert.equal(textureVariantForItem(files[0]),'regular');
+  assert.equal(textureVariantForItem(files[1]),'shiny');
+  assert.equal(matchingLinkedDiffuseTexture(files,'BodyMaterial',2,'regular'),files[0]);
+  assert.equal(matchingLinkedDiffuseTexture(files,'BodyMaterial',2,'shiny'),files[1]);
+});
+
+test('mixed BNTX containers can serve either regular or shiny surfaces',()=>{
+  const mixed={path:'textures/pm0025_body.bntx',linkedKind:'texture',
+    textureNames:['body_color','body_color_shiny']};
+  assert.equal(textureVariantForItem(mixed),'mixed');
+  assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'regular'),mixed);
+  assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'shiny'),mixed);
 });

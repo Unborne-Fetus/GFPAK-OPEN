@@ -27,8 +27,11 @@ const state = {
   archive: null,
   dictionary: new Map(),
   loaded: null,
+  loadedFormat: '',
+  loadedPackage: '',
   resource: null,
   busy: false,
+  textureVariant: 'regular',
   textureInfo: null,
   textureDispose: null,
   textureRevision: 0,
@@ -107,6 +110,8 @@ function busy(value, title = 'Processing assets', message = '') {
   el('loadSelected').disabled = value || !state.project?.models.length;
   el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
     isInspectableTexture(item.path));
+  if (el('textureVariantSelect')) el('textureVariantSelect').disabled =
+    value || el('textureVariantSelect').hidden;
 }
 
 function currentFile(text) {
@@ -145,6 +150,9 @@ function resetInspector() {
   el('clipSelect').disabled = true;
   el('toggleAnimation').disabled = true;
   el('toggleAnimation').textContent = '▶ PLAY ANIMATION';
+  el('textureVariantLabel').hidden = true;
+  el('textureVariantSelect').hidden = true;
+  el('textureVariantSelect').disabled = true;
   el('exportButton').disabled = true;
   el('exportPokemonButton').disabled = true;
   el('emptyState').hidden = false;
@@ -156,6 +164,8 @@ function setModel(result, format, packageName) {
   state.stage.setModel(result.root, result.animations);
   previous?.disposeAssets?.();
   state.loaded = result;
+  state.loadedFormat = format;
+  state.loadedPackage = packageName;
   // Native models populate textures/clips asynchronously. Never package a
   // half-loaded preview as a ready-to-import Pokédex model.
   result.companionsReady = !result.postLoad;
@@ -185,9 +195,46 @@ function setModel(result, format, packageName) {
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
   refreshAnimationControls(result);
+  refreshTextureVariantControls();
   log('Loaded ' + info.meshes + ' mesh(es)' +
     (result.postLoad ? '; companion textures and clips are loading in the background.' :
       ' and ' + info.clips + ' animation clip(s).'), 'success');
+}
+
+function projectHasShinyTextures() {
+  return (state.project?.items || []).some(item =>
+    item.linkedKind === 'texture' &&
+    (item.textureVariant === 'shiny' || item.textureVariant === 'mixed' ||
+      /(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/i
+        .test(String(item.path || '') + ' ' + String(item.textureNames || ''))));
+}
+
+function refreshTextureVariantControls() {
+  const select = el('textureVariantSelect');
+  const visible = state.loaded?.sourceFormat === 'TRMDL' && projectHasShinyTextures();
+  el('textureVariantLabel').hidden = !visible;
+  select.hidden = !visible;
+  select.disabled = !visible || state.busy;
+  select.value = state.textureVariant;
+}
+
+async function reloadTextureVariant() {
+  if (!state.project || !state.loaded || state.busy) return;
+  const selected = state.loaded.selected;
+  if (!selected || !state.project.items.some(item => item.path === selected)) return;
+  busy(true, 'Switching textures', 'Reloading native material maps…');
+  try {
+    const result = await loadModel(state.project, selected, message => log(message), {
+      fastPreview: true,
+      textureVariant: state.textureVariant
+    });
+    setModel(result, state.loadedFormat || extension(selected), state.loadedPackage || state.project.label);
+    completeFastPreview(result);
+  } catch (error) {
+    errorMessage(error);
+  } finally {
+    busy(false);
+  }
 }
 
 function refreshAnimationControls(result) {
@@ -280,7 +327,9 @@ async function openModel() {
   if (!selected) return;
   busy(true, 'Loading model', 'Reading mesh and texture resources…');
   try {
-    const result = await loadModel(state.project, selected, message => log(message));
+    const result = await loadModel(state.project, selected, message => log(message), {
+      textureVariant: state.textureVariant
+    });
     state.exportProject = state.project; state.desktopSource=false;
     setModel(result, extension(selected), state.project.label);
     showTab('viewer');
@@ -593,7 +642,9 @@ async function previewGfbmdlInArchive() {
         info=>log(info),dictionary);
       project=prepared.project;name=prepared.selected;
     }
-    const result=await loadModel(project,name,message=>log(message),{fastPreview:true});
+    const result=await loadModel(project,name,message=>log(message),{
+      fastPreview:true, textureVariant:state.textureVariant
+    });
     // Preserve original decoded archive members, including unknown files.
     // The project used for preview may contain only the model companions.
     state.exportProject={items:archive.resources.map(resource=>({
@@ -834,6 +885,10 @@ function attachEvents() {
     const playing = state.stage.toggleAnimation(Number(el('clipSelect').value) || 0);
     el('toggleAnimation').textContent = playing ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
   });
+  el('textureVariantSelect').addEventListener('change', event => {
+    state.textureVariant = event.target.value === 'shiny' ? 'shiny' : 'regular';
+    reloadTextureVariant();
+  });
   el('archiveSearch').addEventListener('input', renderArchiveTable);
   el('previewArchiveModel').addEventListener('click', previewGfbmdlInArchive);
   el('previewArchiveTexture').addEventListener('click', inspectArchiveTexture);
@@ -882,6 +937,7 @@ async function openFastDesktopPreview(detail) {
         return {
           path:item.path, size:item.size, getBytes,
           linkedKind:item.linkedKind || null,
+          textureVariant:item.textureVariant || null,
           matchConfidence:item.matchConfidence || null,
           matchReason:item.matchReason || '',
           getText:async () => new TextDecoder().decode(await getBytes())
@@ -896,8 +952,9 @@ async function openFastDesktopPreview(detail) {
         '. Importing compatible textures and animations automatically.');
     }
     const result = await loadModel(project, manifest.selected,
-      message => log(message), {fastPreview:true});
+      message => log(message), {fastPreview:true, textureVariant:state.textureVariant});
     state.exportProject = project; state.desktopSource=true;
+    state.project = project;
     state.desktopExport = {key: manifest.exportKey || null, nodeId: manifest.exportNodeId || null};
     setModel(result, extension(manifest.selected), project.label);
     // The desktop explorer is a separate tab; make the loaded 3D viewport
@@ -937,7 +994,9 @@ async function previewBrowserGameModel(detail) {
   try {
     // A PLA game archive may have dozens of BNTX/TRANM resources. Render the
     // geometry first, then decode companions while the viewport is responsive.
-    const result=await loadModel(project,selected,message=>log(message),{fastPreview:true});
+    const result=await loadModel(project,selected,message=>log(message),{
+      fastPreview:true, textureVariant:state.textureVariant
+    });
     state.exportProject=project;
     state.project=project;
     state.desktopSource=false;

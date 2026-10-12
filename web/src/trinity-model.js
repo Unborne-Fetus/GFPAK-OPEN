@@ -1,5 +1,6 @@
 import {
-  loadDecodedTexture, matchingLinkedDiffuseTexture, matchingLinkedDiffuseSurface
+  loadDecodedTexture, matchingLinkedDiffuseTexture, matchingLinkedDiffuseSurface,
+  textureVariantForItem
 } from './texture-loader.js';
 import { applyLayerColors } from './trinity-layer-colors.js';
 import { associatedNativeAnimations } from './animation-association.js';
@@ -87,12 +88,14 @@ async function bytesFor(item) {
 
 function normalizeMaterialName(value) {return String(value||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 
-function findOptionalTexture(project, name, parentPath) {
+function findOptionalTexture(project, name, parentPath, variant='regular') {
   if (!name) return null;
   const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
   if (!candidate) return null;
   const related = project.items.filter(item => item.linkedKind === 'texture' &&
-    TEXTURE_EXT.has(ext(item.path)));
+    TEXTURE_EXT.has(ext(item.path)) &&
+    (textureVariantForItem(item) === 'mixed' || textureVariantForItem(item) === variant ||
+      (variant === 'regular' && textureVariantForItem(item) !== 'shiny')));
   const exact = item => stem(item.path) === candidate ||
     basename(item.path).startsWith(candidate + '.');
   const matchesSurface = item => (item.textureNames||[]).some(value =>
@@ -141,7 +144,8 @@ export function createMaterials(materials) {
   return lookup;
 }
 
-export async function applyDecodedTextures(project, lookup, modelPath, report, created) {
+export async function applyDecodedTextures(project, lookup, modelPath, report, created, options = {}) {
+  const variant = options.textureVariant || 'regular';
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
     { names: /^displacementmap$/i, property: 'nativeDisplacementMap', srgb: false },
@@ -163,7 +167,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
         !/(normal|mask|rough|metal|occlusion|ao|emissive|emission)/i.test(textures[0].name) &&
         !/(?:_|-)(nrm|lym|msk|ao)(?:\.|$)/i.test(textures[0].file) ? textures[0] : null);
       if (!selected) continue;
-      const textureItem = findOptionalTexture(project, selected.file, modelPath);
+      const textureItem = findOptionalTexture(project, selected.file, modelPath, variant);
       if (!textureItem) {
         report('No decoded image for ' + selected.file + ' (' + materialName + ')');
         continue;
@@ -176,7 +180,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
         if (!texture) {
-          texture = await loadDecodedTexture(textureItem, channel.srgb, requestedNames);
+          texture = await loadDecodedTexture(textureItem, channel.srgb, requestedNames, {variant});
           textureCache.set(cacheKey, texture);
           created.push(texture);
         }
@@ -211,7 +215,8 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
 }
 
-async function applyMatchedLinkedTextures(project, root, report, created) {
+async function applyMatchedLinkedTextures(project, root, report, created, options = {}) {
+  const variant = options.textureVariant || 'regular';
   const materials = new Set();
   root.traverse(object => {
     if (!object.isMesh) return;
@@ -224,16 +229,16 @@ async function applyMatchedLinkedTextures(project, root, report, created) {
   for (const material of materials) {
     if (material.map) continue;
     const item = matchingLinkedDiffuseTexture(
-      project.items, material.name, materials.size);
+      project.items, material.name, materials.size, variant);
     if (!item) continue;
     try {
       let texture = loaded.get(item.path);
       if (!texture) {
         // A multi-surface BNTX must still match the real material's
         // surface name, otherwise the decoder rejects applying a guess.
-        const matchingSurface=matchingLinkedDiffuseSurface(item,material.name);
+        const matchingSurface=matchingLinkedDiffuseSurface(item,material.name,variant);
         texture = await loadDecodedTexture(item, true, matchingSurface ?
-          [matchingSurface] : [material.name]);
+          [matchingSurface] : [material.name], {variant});
         loaded.set(item.path, texture);
         created.push(texture);
         if (texture.image?.close) images.add(texture.image);
@@ -633,10 +638,10 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
         const [images, clips] = await Promise.all([
           (async () => {
             const images = await applyDecodedTextures(
-              project, lookup, selected, report, created);
+              project, lookup, selected, report, created, options);
             if (!disposed) bakeNativeDisplacement(scene, lookup, report);
             const fallbackImages = await applyMatchedLinkedTextures(
-              project, scene, report, created);
+              project, scene, report, created, options);
             return images.concat(fallbackImages);
           })(),
           loadNativeClips(project, selected, rig, report, scene),

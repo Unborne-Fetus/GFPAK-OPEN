@@ -169,6 +169,20 @@ function plausibleRig(data){
     (bones.length===1 && /^(?:root|root_joint|rootnode|joint_0|bone_0)$/i.test(bones[0].name));
 }
 const materialToken=value=>String(value||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function textureVariantName(name){
+  const value=String(name||'').replaceAll('\\','/').split('/').pop().toLowerCase();
+  if(/(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/.test(value))
+    return 'shiny';
+  if(/(?:^|[_\-.])(normal|regular|default|color[ _-]?0|col[ _-]?0|s0)(?:$|[_\-.])/.test(value))
+    return 'regular';
+  return 'regular';
+}
+function textureVariant(path,names=[]){
+  const values=[path,...names];
+  const hasShiny=values.some(value=>textureVariantName(value)==='shiny');
+  const hasRegular=values.some(value=>textureVariantName(value)!=='shiny');
+  return hasShiny&&hasRegular?'mixed':hasShiny?'shiny':'regular';
+}
 async function recoverUnreferencedCompanions(rows,required,materialNames,read,report){
   // A model with no rig pointer still frequently has one valid TRSKL member.
   if(![...required].some(row=>row.kind==='trskl')){
@@ -307,12 +321,14 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     if(row.kind==='bntx')try{
       textureNames=parseBntx(await read(row)).textures.map(t=>t.name).filter(Boolean);
     }catch(_){}
+    const linkedKind=['bntx','dds','png','jpg','jpeg','webp'].includes(row.kind)?'texture':
+      ['tranm','gfbanm'].includes(row.kind)?'animation':undefined;
     items.push({
       path,size:row.resource.size,textureNames,
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
-      linkedKind:['bntx','dds','png','jpg','jpeg','webp'].includes(row.kind)?'texture':
-        ['tranm','gfbanm'].includes(row.kind)?'animation':undefined
+      linkedKind,
+      textureVariant: linkedKind==='texture'?textureVariant(path,textureNames):undefined
     });
   }
   const original=items.find(item=>
@@ -357,11 +373,13 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
       '/resource_'+resource.index+'.'+type;
     let textureNames=[];
     if(type==='bntx')try{textureNames=parseBntx(bytes).textures.map(t=>t.name).filter(Boolean);}catch(_){}
+    const linkedKind=['bntx','dds','png','jpg','webp'].includes(type)?'texture':
+      type==='tranm'?'animation':undefined;
     list.push({
       path:name,size:resource.size,textureNames,getBytes:async()=>bytes,
       getText:async()=>new TextDecoder().decode(bytes),
-      linkedKind:['bntx','dds','png','jpg','webp'].includes(type)?'texture':
-        type==='tranm'?'animation':undefined,
+      linkedKind,
+      textureVariant: linkedKind==='texture'?textureVariant(name,textureNames):undefined,
     });
   }
   report('Found '+list.length+' actual texture/animation companion resources in '+filename);
