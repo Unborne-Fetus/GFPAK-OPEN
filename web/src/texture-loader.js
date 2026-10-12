@@ -47,9 +47,9 @@ function normalizeTextureName(name) {
 
 export function textureVariantFromName(name) {
   const value = String(name || '').replaceAll('\\', '/').split('/').pop().toLowerCase();
-  if (/(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/.test(value))
+  if (/(?:^|[_\-.])(shiny|rare|col(?:or)?[ _-]?0?1|s1)(?:$|[_\-.])/.test(value))
     return 'shiny';
-  if (/(?:^|[_\-.])(normal|regular|default|color[ _-]?0|col[ _-]?0|s0)(?:$|[_\-.])/.test(value))
+  if (/(?:^|[_\-.])(normal|regular|default|col(?:or)?[ _-]?0?0|s0)(?:$|[_\-.])/.test(value))
     return 'regular';
   return 'regular';
 }
