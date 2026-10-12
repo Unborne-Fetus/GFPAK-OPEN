@@ -182,7 +182,7 @@ test('Rights-managed NCAs need a matching title key beyond prod.keys',async()=>{
   const notEnough=parseLocalKeys(source.keyLines.slice(0,2).join('\n'));
   const blocked=await openGamePackage(source.file,{keys:notEnough});
   assert.equal(blocked.entries.length,1);
-  assert.equal(blocked.entries[0].ncaStatus,'locked');
+  assert.equal(blocked.entries[0].ncaStatus,'locked',blocked.warnings.join('; '));
   const both=parseLocalKeys(source.keyLines.join('\n'));
   const decoded=await openGamePackage(source.file,{keys:both});
   assert.equal(decoded.entries.length,2,decoded.warnings.join('; '));
