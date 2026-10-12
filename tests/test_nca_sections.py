@@ -276,7 +276,7 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             browser = AssetBrowser(nca_workspace=root / "cache")
             main = browser.open(game)
             catalog = browser.scan_game_assets(main["id"])
-            self.assertGreaterEqual(catalog["counts"].get("model", 0), 1)
+            self.assertGreaterEqual(catalog["counts"].get("model", 0), 1, repr(catalog))
             self.assertGreaterEqual(catalog["counts"].get("texture", 0), 1)
             self.assertGreaterEqual(catalog["counts"].get("animation", 0), 1)
             self.assertGreaterEqual(catalog["counts"].get("model archive", 0), 1)
