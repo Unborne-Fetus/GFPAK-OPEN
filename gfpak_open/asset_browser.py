@@ -1006,6 +1006,73 @@ class AssetBrowser:
             "and standalone animations/textures are inspection-only."
         )
 
+    def scan_nca_assets(self, node_id: str, limit: int = 40000,
+                        max_results: int = 1200) -> dict:
+        """Locate native model/texture/animation names across a RomFS subtree.
+
+        Uses only directory metadata (no file payloads, Blender, or archive
+        extraction). Traversal and returned nodes have independent bounds.
+        Newly discovered files remain real navigable virtual-NCA nodes.
+        """
+        node = self.node(node_id)
+        if node["kind"] == "nca_section":
+            if node_id not in self._section_nodes:
+                raise ValueError("Selected NCA section has expired")
+            index, section = self._section_nodes[node_id]
+            folder = ""
+        elif node["kind"] == "nca_dir":
+            index, section, folder = self._nca_virtual_nodes[node_id]
+        else:
+            raise ValueError("Choose a readable NCA section or directory")
+        reader = self._nca_sources.get(node_id) or self.nsp_reader(Path(node["path"]))
+        fs = self._nca_sections.filesystem(reader, index, section)
+        limit = min(max(1, int(limit)), 80000)
+        max_results = min(max(1, int(max_results)), 5000)
+        pending = [folder]
+        found = []
+        counts = Counter()
+        scanned = 0
+        truncated = False
+        while pending:
+            current = pending.pop()
+            cursor = None
+            while True:
+                page = fs.children_page(current, cursor=cursor, limit=250)
+                for entry in page["entries"]:
+                    scanned += 1
+                    if entry["type"] == "directory":
+                        # Keep traversal bounded even with huge nested RomFS trees.
+                        pending.append(entry["path"])
+                    else:
+                        category = classify(entry["name"])
+                        if category in ("model", "model archive", "mesh",
+                                        "texture", "animation"):
+                            counts[category] += 1
+                            if len(found) < max_results:
+                                inner = f"{node_id}:{index}:{section}:{entry['path']}"
+                                child = self._node("nca_file", reader.path, inner=inner,
+                                                   name=entry["name"], size=entry["size"])
+                                child["category"] = category
+                                self._nca_virtual_nodes[child["id"]] = (
+                                    index, section, entry["path"])
+                                self._nca_sources[child["id"]] = reader
+                                row = self._public(child)
+                                row["relative"] = entry["path"]
+                                found.append(row)
+                    if scanned >= limit:
+                        truncated = True
+                        break
+                if truncated or not page["next_cursor"]:
+                    break
+                cursor = page["next_cursor"]
+            if truncated:
+                break
+        return {
+            "counts": dict(counts), "assets": found, "scanned": scanned,
+            "truncated": truncated or len(found) >= max_results,
+            "source": "RomFS", "source_node": node_id
+        }
+
     def scan(self, limit: int = 40000, max_results: int = 1200) -> dict:
         """Bounded recursive metadata scan of a user-selected extracted directory."""
         if not self.root_path:
