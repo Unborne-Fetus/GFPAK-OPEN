@@ -37,6 +37,16 @@ class AssetMatchingTests(unittest.TestCase):
         self.assertEqual(grouped["1"], [])
         self.assertEqual(grouped["2"], [])
 
+    def test_same_game_cross_archive_species_matches_are_probable(self):
+        model = item(1, "model/pm0025_00_00.trmdl", "model", "archive-one")
+        animation = item(2, "motion/pm0025_idle.tranm", "animation", "archive-two")
+        unrelated = item(3, "motion/pm0026_idle.tranm", "animation", "archive-two")
+        for row in (model, animation, unrelated):
+            row["game_scope"] = "my-game"
+        grouped = match_model_assets([model, animation, unrelated])
+        self.assertEqual([row["id"] for row in grouped["1"]], ["2"])
+        self.assertEqual(grouped["1"][0]["confidence"], "probable")
+
     def test_single_model_can_match_generic_companions_in_same_folder(self):
         rows = [item(1, "p/pm0025.trmdl", "model"),
                 item(2, "p/body.bntx", "texture"),
