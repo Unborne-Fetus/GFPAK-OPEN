@@ -82,7 +82,14 @@ function findOptionalTexture(project, name, parentPath) {
   const nearby = project.items.filter(item => TEXTURE_EXT.has(ext(item.path)) &&
     (stem(item.path) === candidate || basename(item.path).startsWith(candidate + '.')));
   const nearest = nearby.filter(item => dirname(item.path) === dirname(parentPath));
-  return (nearest.length === 1 ? nearest[0] : nearby.length === 1 ? nearby[0] : null);
+  if (nearest.length === 1) return nearest[0];
+  if (nearby.length === 1) return nearby[0];
+  if (nearby.length) return null;
+  // Some games store several named surfaces in one BNTX. Try a single
+  // nearby container, but the decoder must still validate the surface name.
+  const packed = project.items.filter(item =>
+    ext(item.path) === '.bntx' && dirname(item.path) === dirname(parentPath));
+  return packed.length === 1 ? packed[0] : null;
 }
 
 function createMaterials(materials) {
@@ -123,10 +130,12 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
         continue;
       }
       try {
-        const cacheKey = textureItem.path + '|' + channel.srgb;
+        const requestedNames = [selected.file, selected.name];
+        const cacheKey = textureItem.path + '|' + channel.srgb +
+          (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
         if (!texture) {
-          texture = await loadDecodedTexture(textureItem, channel.srgb);
+          texture = await loadDecodedTexture(textureItem, channel.srgb, requestedNames);
           textureCache.set(cacheKey, texture);
           created.push(texture);
         }
