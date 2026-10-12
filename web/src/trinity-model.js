@@ -537,10 +537,18 @@ async function recoverTrinitySkeleton(project, selected, reference, report) {
       parsed.push({item,value});
     }catch(error){report('Skipped invalid skeleton '+item.path+': '+error.message);}
   }
-  if(parsed.length===1){
-    report('Recovered unambiguous '+parsed[0].value.bones.length+
-      '-bone skeleton from '+parsed[0].item.path+' (model did not identify its rig).');
-    return parsed[0].value;
+  const modelItem=project.items.find(item=>item.path===selected);
+  const origin=modelItem?.sourceArchive;
+  const own=origin?parsed.filter(row=>row.item.sourceArchive===origin):[];
+  const sameFolder=parsed.filter(row=>dirname(row.item.path)===dirname(selected));
+  const chosen=own.length===1?own[0]:
+    sameFolder.length===1?sameFolder[0]:
+    parsed.length===1?parsed[0]:null;
+  if(chosen){
+    report('Recovered '+chosen.value.bones.length+'-bone skeleton from '+
+      chosen.item.path+(own.length===1?' in the model\'s own archive.':
+        ' (unique model companion).'));
+    return chosen.value;
   }
   if(!parsed.length)
     report('No valid TRSKL rig available for this model; bones and skeletal clips cannot load.');
