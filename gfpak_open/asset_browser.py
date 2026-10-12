@@ -1108,6 +1108,57 @@ class AssetBrowser:
             "label": node["name"], "selected": selected_name, "items": entries
         }
 
+    def _matched_preview(self, node: dict, manifest: dict) -> dict:
+        """Add catalog-confirmed companion files, including other RomFS folders.
+
+        No file payload is opened here; the renderer still requests only
+        resources required by its native mesh/material/animation decoders.
+        """
+        matches = self._model_matches.get(node["id"], ())
+        if not matches:
+            return manifest
+        entries = list(manifest["items"])
+        paths = {row["path"].casefold() for row in entries}
+        for companion in matches:
+            if len(entries) >= 1000:
+                break
+            try:
+                item = self.node(companion["id"])
+                if item["category"] not in ("mesh", "skeleton", "material",
+                                            "texture", "animation"):
+                    continue
+                kind = item["kind"]
+                if kind == "nca_file":
+                    reader, index, section, name = self._nca_virtual_file(item)
+                    source = ("nca", reader, index, section, name)
+                elif kind == "nca_gfpak_resource":
+                    parent_id, idx = self._virtual_gfpak_nodes[item["id"]]
+                    _, names = self._mounted_gfpak(parent_id)
+                    name = names.get(idx, "")
+                    source = ("nca_gfpak", parent_id, idx)
+                elif kind == "gfpak_resource":
+                    name = self._known_names(Path(item["path"])).get(item["index"], "")
+                    source = ("gfpak", Path(item["path"]), item["index"])
+                elif kind == "file":
+                    name = item["name"]
+                    source = ("file", Path(item["path"]))
+                elif kind == "zipfile":
+                    name = item["inner"]
+                    source = ("zip", Path(item["path"]), name)
+                else:
+                    continue
+                if not name or name.casefold() in paths:
+                    continue
+                if item["size"] < 0 or item["size"] > 128 * 1024 * 1024:
+                    continue
+                entries.append({"path": name, "size": item["size"],
+                                "source": source})
+                paths.add(name.casefold())
+            except (KeyError, ValueError, OSError):
+                continue
+        return {**manifest, "items": entries,
+                "matched": len(matches)}
+
     def fast_preview_items(self, id_: str) -> dict:
         """Identify lazy, read-only browser-native model dependencies.
 
@@ -1117,11 +1168,13 @@ class AssetBrowser:
         """
         selected = self.node(id_)
         if selected["kind"] in {"gfpak", "gfpak_resource"}:
-            return self._fast_gfpak_preview_items(selected)
+            return self._matched_preview(
+                selected, self._fast_gfpak_preview_items(selected))
         if selected["kind"] == "nca_gfpak_resource" or (
                 selected["kind"] == "nca_file" and
                 selected["name"].lower().endswith(".gfpak")):
-            return self._fast_mounted_gfpak_preview_items(selected)
+            return self._matched_preview(
+                selected, self._fast_mounted_gfpak_preview_items(selected))
         if selected["kind"] not in {"file", "nca_file", "zipfile"}:
             raise ValueError("This archive requires the fallback converter")
         model_name = selected["name"] if selected["kind"] != "zipfile" else selected["inner"]
@@ -1189,7 +1242,8 @@ class AssetBrowser:
                     break
         if not entries or entries[0]["path"] != model_name:
             raise ValueError("The selected native model is not readable")
-        return {"label": selected["name"], "selected": model_name, "items": entries}
+        return self._matched_preview(
+            selected, {"label": selected["name"], "selected": model_name, "items": entries})
 
     def stream_fast_preview_item(self, descriptor: tuple):
         """Return the byte length and bounded chunk generator for a whitelisted file."""
