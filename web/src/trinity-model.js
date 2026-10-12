@@ -85,6 +85,8 @@ async function bytesFor(item) {
   return data;
 }
 
+function normalizeMaterialName(value) {return String(value||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+
 function findOptionalTexture(project, name, parentPath) {
   if (!name) return null;
   const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
@@ -93,7 +95,10 @@ function findOptionalTexture(project, name, parentPath) {
     TEXTURE_EXT.has(ext(item.path)));
   const exact = item => stem(item.path) === candidate ||
     basename(item.path).startsWith(candidate + '.');
-  const matched = related.filter(exact);
+  const matchesSurface = item => (item.textureNames||[]).some(value =>
+    stem(value)===candidate || basename(value)===candidate ||
+    normalizeMaterialName(value)===normalizeMaterialName(candidate));
+  const matched = related.filter(item=>exact(item)||matchesSurface(item));
   if (matched.length === 1) return matched[0];
   if (matched.length > 1) return null;
   const nearby = project.items.filter(item => TEXTURE_EXT.has(ext(item.path)) &&
