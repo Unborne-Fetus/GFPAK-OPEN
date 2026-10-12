@@ -11,7 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gfpak_open.asset_browser import AssetBrowser
-from gfpak_open.nca_native import Keyset, NativeNCA, NativeNCAError
+from gfpak_open.nca_native import (
+    Keyset, NativeNCA, NativeNCAError, NativeSection, _ivfc_data_region
+)
 from gfpak_open.nca_sections import LocalNCASections
 from gfpak_open.nsp_explorer import NSPAnalyzer
 
@@ -129,6 +131,66 @@ def package(path: Path, entries: list[tuple[str, bytes]]):
 
 
 class NativeNCAIntegrationTests(unittest.TestCase):
+    def test_seven_level_ivfc_uses_last_of_six_descriptors(self):
+        # Actual Switch NCAs normally report MaxLayers=7, even though
+        # only six 0x18-byte descriptors follow the count. The old reader
+        # rejected these headers, particularly visible in large RomFS NCAs.
+        romfs = romfs_nested()
+        nca_bytes = plain_nca([("romfs", romfs)])
+        fs_header = nca_bytes[0x400:0x600]
+        offset, size = _ivfc_data_region(fs_header)
+        self.assertEqual((offset, size), (0, len(romfs)))
+        self.assertEqual(struct.unpack_from("<I", fs_header, 0x14)[0], 7)
+        with tempfile.TemporaryDirectory() as tmp:
+            package_path = Path(tmp) / "game.nsp"
+            package(package_path, [("program.nca", nca_bytes)])
+            section = NativeNCA(NSPAnalyzer(package_path), 0).sections[0]
+            self.assertEqual(section.filesystem().children()[0]["name"], "bin")
+
+    def test_large_ivfc_data_offset_is_64_bit_and_read_lazily(self):
+        # Exercise a huge logical section without creating a multi-GB fixture.
+        # All actual bytes are mapped by a fake sparse read-only source.
+        from types import SimpleNamespace
+        romfs = romfs_nested()
+        large_offset = (1 << 32) + 0x200
+        header = bytearray(0x200)
+        header[2:5] = bytes([3, 3, 1])
+        header[8:12] = b"IVFC"
+        struct.pack_into("<I", header, 0x14, 7)
+        struct.pack_into("<QQII", header, 0x18 + 5*0x18,
+                         large_offset, len(romfs), 12, 0)
+        physical_start = 0xC00
+        requested = []
+        def read_raw(offset, size):
+            requested.append((offset, size))
+            start = physical_start + large_offset
+            if offset < start or offset + size > start + len(romfs):
+                raise AssertionError("Reader escaped the virtual RomFS region")
+            return romfs[offset-start:offset-start+size]
+        nca = SimpleNamespace(read_raw=read_raw)
+        section = NativeSection(
+            nca, number=0, start=physical_start,
+            size=large_offset + len(romfs), fs_header=bytes(header),
+            encryption=1, key=None
+        )
+        filesystem = section.filesystem()
+        self.assertEqual(filesystem.children()[0]["name"], "bin")
+        self.assertTrue(requested)
+        self.assertTrue(all(length <= 65536 for _, length in requested))
+
+    def test_ivfc_rejects_invalid_counts_and_truncated_real_layer(self):
+        header = bytearray(0x200)
+        header[8:12] = b"IVFC"
+        for bad in (0, 1, 8, 0xFFFFFFFF):
+            struct.pack_into("<I", header, 0x14, bad)
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                NativeNCAError, "invalid IVFC level count"
+            ):
+                _ivfc_data_region(header)
+        struct.pack_into("<I", header, 0x14, 7)
+        with self.assertRaisesRegex(NativeNCAError, "zero length"):
+            _ivfc_data_region(header)
+
     def test_read_plaintext_sections_and_nested_romfs_directly(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
