@@ -451,7 +451,7 @@ async function loadArchive(file) {
   showTab('archive');
   log('Opened ' + file.name + ': ' + archive.count + ' entries in ' + archive.folderCount + ' folders.', 'success');
   if (archive.compressionTypes['3']) {
-    log('Found ' + archive.compressionTypes['3'] + ' Oodle-compressed resources: browser extraction of those files is not supported.');
+    log('Found ' + archive.compressionTypes['3'] + ' Oodle resources. Browser WASM will decode supported Kraken/Mermaid/Selkie/Leviathan blocks on demand.', 'success');
   }
 }
 
@@ -515,7 +515,7 @@ function updateArchiveModelButton() {
   const candidates = usableArchiveModels();
   const selected = state.resource;
   const preview = el('previewArchiveModel');
-  const recoverable=state.archive?.resources.some(row=>row.compression===0||row.compression===2);
+  const recoverable=state.archive?.resources.some(row=>[0,2,3].includes(row.compression));
   preview.disabled = !candidates.length && !recoverable;
   preview.textContent = selected && candidates.includes(selected)
     ? '◈ PREVIEW SELECTED 3D MESH'
@@ -571,7 +571,7 @@ async function previewGfbmdlInArchive() {
   }finally{busy(false);}
 }
 
-function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle' : 'Type ' + c; }
+function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle (WASM)' : 'Type ' + c; }
 function formatBytes(n) {
   if (!Number.isFinite(n)) return '—';
   if (n < 1024) return n + ' B';
@@ -639,7 +639,7 @@ async function readHashFile(file) {
     log('Loaded filename dictionary ' + file.name + ' (' + state.dictionary.size + ' entries).', 'success');
     renderArchiveTable();
     const models = usableArchiveModels();
-    if (models.length) log('Identified ' + models.length + ' GFBMDL model resource(s). Use PREVIEW 3D MESH to decode compatible uncompressed or LZ4 data.', 'success');
+    if (models.length) log('Identified ' + models.length + ' model resource(s). Preview accepts stored, LZ4 and supported Oodle blocks.', 'success');
   } catch (err) { errorMessage(err); }
 }
 
