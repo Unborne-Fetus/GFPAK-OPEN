@@ -55,7 +55,7 @@ test('PLA GFPAK with unknown resource hashes still resolves real TRMDL/TRMSH/TRM
 test('hash-only GFBMDL GFPAK recognizes and previews an actual model without a dictionary',async()=>{
   const archive=gfpak({'hashed/unknown-resource.bin':new Uint8Array(makeGfbmdlTriangle())});
   const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
-  assert.match(selected,/\\.gfbmdl$/);
+  assert.match(selected,/\.gfbmdl$/);
   assert.equal(project.items.length,1);
   assert.deepEqual(new Uint8Array(await project.items[0].getBytes()),new Uint8Array(makeGfbmdlTriangle()));
 });
@@ -74,7 +74,7 @@ test('hashed skeleton is not misclassified as the first TRMDL model',async()=>{
   const models=makeTrinityTriangle();
   const blob=gfpak({'hashed/first-rig.bin':rig,...models});
   const {project,selected}=await prepareGfpakModelPreview(blob,'pm0025_00_00.gfpak');
-  assert.match(selected,/\\.trmdl$/);
+  assert.match(selected,/\.trmdl$/);
   assert.ok(project.items.some(item=>item.path.endsWith('.trskl')));
   const preview=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
   assert.equal(preview.sourceStats.bones,1);
@@ -88,7 +88,7 @@ test('descriptor companion aliases resolve when dictionary canonical names diffe
     'hashed/unexpected_mesh.trmsh':files['models/test.trmsh'],
     'hashed/unexpected_buffer.trmbf':files['models/test.trmbf']
   };
-  const dictionary=parseHashDictionary(Object.keys(named).join('\\n'));
+  const dictionary=parseHashDictionary(Object.keys(named).join('\n'));
   const {project,selected}=await prepareGfpakModelPreview(
     gfpak(named),'pm0025_00_00.gfpak',()=>{},dictionary);
   assert.equal(selected,'hashed/root.trmdl');
