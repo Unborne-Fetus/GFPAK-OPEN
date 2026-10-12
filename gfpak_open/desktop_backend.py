@@ -469,7 +469,7 @@ class DesktopAPI:
         with self._lock:
             return self._browser.children(node_id, cursor=cursor)
 
-    def browse_start_scan(self, node_id: str | None = None):
+    def browse_start_scan(self, node_id: str | None = None, quick: bool = False):
         with self._lock:
             browser = self._browser
             kind = None
@@ -490,16 +490,22 @@ class DesktopAPI:
             self._scan_job = {"running": True, "error": "", "result": None}
         def run():
             try:
+                # Opening a game should never monopolize its disk while the
+                # user tries to preview a model. Auto-discovery is bounded;
+                # clicking Locate assets explicitly performs the deeper scan.
+                file_limit = 4000 if quick else 40000
                 if kind in ("nca_section", "nca_dir"):
-                    result = browser.scan_nca_assets(node_id)
+                    result = browser.scan_nca_assets(node_id, limit=file_limit)
                 elif kind == "gfpak":
                     result = browser.scan_gfpak_assets(node_id)
                 elif kind == "nca_file":
                     result = browser.scan_mounted_gfpak_assets(node_id)
                 elif kind:
-                    result = browser.scan_game_assets(node_id)
+                    result = browser.scan_game_assets(
+                        node_id, limit=file_limit,
+                        max_ncas=12 if quick else 64)
                 else:
-                    result = browser.scan()
+                    result = browser.scan(limit=file_limit)
                 with self._lock:
                     if browser is self._browser:
                         self._scan_job["result"] = result
