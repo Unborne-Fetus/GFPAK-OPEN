@@ -712,9 +712,9 @@ export function preferredTrinityMeshes(references) {
   const groups=new Map();
   for(let i=0;i<references.length;i++){
     const ref=references[i];
-    const name=ref.replaceAll('\\\\','/').split('/').at(-1);
-    const lod=name.match(/(?:^|[_\\.-])lod[_-]?(\\d+)(?=$|[_\\.-])/i);
-    const family=name.replace(/(?:^|[_\\.-])lod[_-]?\\d+(?=$|[_\\.-])/i,'')
+    const name=ref.replaceAll('\\','/').split('/').at(-1);
+    const lod=name.match(/(?:^|[_.-])lod[_-]?(\d+)(?=$|[_.-])/i);
+    const family=name.replace(/(?:^|[_.-])lod[_-]?\d+(?=$|[_.-])/i,'')
       .replace(/[_.-]+/g,'_').replace(/^_|_$/g,'').toLowerCase();
     // Untagged meshes are the primary asset, whereas LOD 0 is the highest
     // marked level. For duplicate families keep exactly one.
