@@ -9,6 +9,9 @@ let selected = null;
 let scanListing = null;
 let assetCatalog = null;
 const catalogsBySource = new Map();
+const catalogPagesBySource = new Map();
+let catalogPageRevision = 0;
+let catalogSearchTimer = null;
 let catalogBusy = false;
 let catalogRevision = 0;
 let pendingCatalogRequest = null;
@@ -29,9 +32,59 @@ function selectAssetClass(group) {
     button.setAttribute('aria-pressed', String(active));
   }
   if (group !== 'all') id('assetCategory').value = 'all';
-  scanListing = group !== 'all' ? assetCatalog : null;
-  if (pathStack.length) renderListing();
+  if (group === 'all') {
+    scanListing = null;
+    if (pathStack.length) renderListing();
+  } else if (assetCatalog) {
+    void loadCatalogPage(true);
+  } else if (pathStack.length) {
+    scanListing = null;
+    renderListing();
+  }
 }
+
+async function loadCatalogPage(reset = true) {
+  const catalog = assetCatalog;
+  if (!catalog || assetClass === 'all') return;
+  const revision = ++catalogPageRevision;
+  if (!api?.browse_scan_page) {
+    // Compatibility with older/test desktop bridges.
+    scanListing = catalog;
+    renderListing();
+    return;
+  }
+  const saved = !reset ? catalogPagesBySource.get(catalog.source_id) : null;
+  const offset = saved?.next_offset ?? 0;
+  if (!reset && saved?.next_offset == null) return;
+  if (reset) {
+    scanListing = {...catalog, assets:[], total:0, next_offset:null};
+    renderListing();
+  }
+  try {
+    const page = await api.browse_scan_page(
+      catalog.source_id, offset, 250, assetClass,
+      id('assetSearch').value, id('assetCategory').value
+    );
+    if (revision !== catalogPageRevision ||
+        assetCatalog?.source_id !== catalog.source_id) return;
+    const listing = {
+      ...catalog, assets: reset ? page.assets : [...(saved?.assets || []), ...page.assets],
+      total:page.total, next_offset:page.next_offset
+    };
+    catalogPagesBySource.set(catalog.source_id, listing);
+    scanListing = listing;
+    renderListing();
+  } catch (error) {
+    if (revision === catalogPageRevision)
+      showNotice('Unable to read catalog page: ' + (error.message || error), true);
+  }
+}
+
+function searchCatalogDebounced() {
+  if (catalogSearchTimer) window.clearTimeout(catalogSearchTimer);
+  catalogSearchTimer = window.setTimeout(() => void loadCatalogPage(true), 180);
+}
+
 function setScanAvailability() {
   const root = pathStack.at(-1)?.root;
   const source = pathStack[0]?.root;
@@ -716,11 +769,11 @@ function renderRows(rows) {
     cell.colSpan = 4;
     cell.className = 'table-empty';
     cell.textContent = assetClass !== 'all' && !assetCatalog
-      ? (catalogBusy ? 'Locating game assets…' :
-          'Game inventory not ready. Select Locate assets to search beyond this folder.')
-      : assetClass !== 'all' && assetCatalog?.truncated
-        ? 'No matching asset in the partial scan. More files may exist; narrow to a readable section.'
-        : 'No assets match this filter or directory.';
+      ? (catalogBusy ? 'Scanning every readable file and archive…' :
+          'Asset catalog not ready. Open a game or choose Locate assets.')
+      : assetClass !== 'all' && assetCatalog?.unresolved
+        ? 'No verified matches in the readable files. Some encrypted or unidentified assets could not be classified.'
+        : 'No matching assets found in the completed catalog.';
     row.append(cell);
     body.append(row);
     // A match may exist on a later NCA page. Keep Load more visible.
@@ -738,6 +791,15 @@ function renderRows(rows) {
       item.category === 'texture' ? '◈' :
       item.category === 'model' || item.category === 'mesh' ? '◇' : '▤';
     name.append(icon, document.createTextNode(item.relative || item.name));
+    if (item.category === 'model' && item.companions) {
+      const detail = document.createElement('span');
+      detail.className = 'nx-matched-companions';
+      const found = item.companions;
+      detail.textContent = ' · ' + (found.texture || 0) + ' textures / ' +
+        (found.animation || 0) + ' animations';
+      detail.title = 'Conservatively matched native companions; select the model for evidence.';
+      name.append(detail);
+    }
     const type = document.createElement('td');
     const tag = document.createElement('span');
     tag.className = 'asset-type ' + (item.category || 'other').replaceAll(' ', '-');
@@ -780,6 +842,26 @@ function renderRows(rows) {
     body.append(row);
   }
   const step = pathStack.at(-1);
+  if (scanListing && scanListing.next_offset != null) {
+    const moreRow = document.createElement('tr');
+    moreRow.className = 'nx-pagination-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'nx-pagination-button button button-secondary';
+    more.textContent = '＋ Load next 250 assets (' +
+      scanListing.assets.length.toLocaleString() + ' of ' +
+      scanListing.total.toLocaleString() + ')';
+    more.addEventListener('click', () => {
+      more.disabled = true;
+      more.textContent = 'Loading more matches…';
+      void loadCatalogPage(false);
+    });
+    cell.append(more);
+    moreRow.append(cell);
+    body.append(moreRow);
+  }
   if (!scanListing && step?.listing?.next_cursor) {
     const moreRow = document.createElement('tr');
     moreRow.className = 'nx-pagination-row';
@@ -835,9 +917,13 @@ function renderListing() {
   // catalog inside an individual nested GFPAK. Returning to a parent restores
   // its previous verified counts instead of showing the last visited folder.
   if (!catalogBusy) {
-    assetCatalog = [...pathStack].reverse().map(step =>
+    const currentSource = [...pathStack].reverse().map(step =>
       catalogsBySource.get(step.root.id)).find(Boolean) || null;
-    scanListing = assetClass === 'all' ? null : assetCatalog;
+    if (currentSource?.source_id !== assetCatalog?.source_id) {
+      assetCatalog = currentSource;
+      scanListing = assetClass === 'all' ? null :
+        catalogPagesBySource.get(currentSource?.source_id) || currentSource;
+    }
   }
   const breadcrumbs = pathStack.map(step => step.root.name).join('  /  ');
   id('assetBreadcrumb').textContent = scanListing ? breadcrumbs + '  /  Asset catalog' : breadcrumbs;
@@ -926,6 +1012,8 @@ async function openSource(mode) {
     ++catalogRevision;
     assetCatalog = null;
     catalogsBySource.clear();
+    catalogPagesBySource.clear();
+    ++catalogPageRevision;
     pendingCatalogRequest = null;
     scanListing = null;
     catalogBusy = false;
@@ -1238,11 +1326,17 @@ function initialize() {
     renderListing();
   });
   id('assetSearch').addEventListener('input', () => {
-    if (pathStack.at(-1)?.root.kind === 'nsp') scheduleNSPSearch();
+    if (assetClass !== 'all' && assetCatalog && api?.browse_scan_page)
+      searchCatalogDebounced();
+    else if (pathStack.at(-1)?.root.kind === 'nsp' && assetClass === 'all')
+      scheduleNSPSearch();
     else renderRows(current);
   });
   id('assetCategory').addEventListener('change', () => {
-    if (pathStack.at(-1)?.root.kind === 'nsp') loadNSPPage(0);
+    if (assetClass !== 'all' && assetCatalog && api?.browse_scan_page)
+      void loadCatalogPage(true);
+    else if (pathStack.at(-1)?.root.kind === 'nsp' && assetClass === 'all')
+      loadNSPPage(0);
     else renderRows(current);
   });
   id('nspPrev').addEventListener('click', () => {
