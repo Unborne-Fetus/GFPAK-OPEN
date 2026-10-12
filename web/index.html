@@ -270,12 +270,22 @@
           <div class="asset-toolbar">
             <button type="button" id="assetBack" class="button button-secondary" disabled title="Go back one folder">← Back</button>
             <div id="assetBreadcrumb" class="asset-breadcrumb">No game source selected</div>
-            <button type="button" id="assetScan" class="button button-secondary" disabled>⌕ Scan assets</button>
+            <button type="button" id="assetScan" class="button button-secondary" disabled>⌕ Locate assets</button>
           </div>
           <div id="ncaReaderBar" class="nca-reader-bar" hidden>
             <span class="nca-reader-label">BUILT-IN NCA / ROMFS READER</span>
             <button id="ncaSelectKeyset" type="button" class="button button-secondary">Select existing keys file (encrypted NCAs)</button>
             <span id="ncaReaderStatus" class="nca-reader-status" aria-live="polite">Native NCA reading is included in GFPAK-OPEN. No other application needed.</span>
+          </div>
+          <div class="asset-class-browser" aria-label="Asset classes">
+            <span class="asset-class-title">FOUND GAME ASSETS</span>
+            <div class="asset-class-actions" role="group" aria-label="Show asset class">
+              <button type="button" class="asset-class-button active" data-asset-class="all" aria-pressed="true">▤ All files</button>
+              <button type="button" class="asset-class-button" data-asset-class="models" aria-pressed="false">◇ Models <strong id="assetClassModels">0</strong></button>
+              <button type="button" class="asset-class-button" data-asset-class="textures" aria-pressed="false">▧ Textures <strong id="assetClassTextures">0</strong></button>
+              <button type="button" class="asset-class-button" data-asset-class="animations" aria-pressed="false">▶ Animations <strong id="assetClassAnimations">0</strong></button>
+            </div>
+            <p class="asset-class-hint" id="assetClassHint">Open a game section, then choose Locate assets to find models, textures and animations.</p>
           </div>
           <div class="asset-filterbar">
             <input id="assetSearch" class="field" type="search" placeholder="Filter filenames, hashes, Pokémon IDs…" aria-label="Filter discovered assets" />
