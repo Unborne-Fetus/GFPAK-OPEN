@@ -87,15 +87,20 @@ function formatSize(n) {
 }
 
 function summary(counts = null) {
-  // A directory listing is not a game inventory. Until a real scan finishes,
-  // show an unknown count rather than the misleading "0" in each category.
+  // The visible page can provide a lower bound, never proof that a class
+  // contains zero across the entire game. Keep positive observed counts
+  // while the game-wide index runs in the background.
   const unknown = catalogBusy ? '…' : '—';
   if (!counts) {
-    for (const name of ['assetCountModel', 'assetCountTexture',
-      'assetCountAnimation', 'assetCountOther', 'assetClassModels',
-      'assetClassTextures', 'assetClassAnimations']) {
-      id(name).textContent = unknown;
-    }
+    const observed = pathStack.at(-1)?.listing?.counts || {};
+    const localModels = (observed.model || 0) + (observed['model archive'] || 0) +
+      (observed.mesh || 0);
+    for (const [key, amount] of [
+      ['assetCountModel',localModels], ['assetClassModels',localModels],
+      ['assetCountTexture',observed.texture || 0], ['assetClassTextures',observed.texture || 0],
+      ['assetCountAnimation',observed.animation || 0], ['assetClassAnimations',observed.animation || 0],
+      ['assetCountOther',0]
+    ]) id(key).textContent = amount ? amount.toLocaleString() : unknown;
     return;
   }
   const models = (counts.model || 0) + (counts['model archive'] || 0) +
@@ -820,7 +825,6 @@ function renderListing() {
   id('assetBack').disabled = pathStack.length <= 1 && !scanListing;
   summary(assetCatalog?.counts ?? null);
   if (scanListing) renderRows(scanListing.assets);
-  else if (assetClass !== 'all') renderRows([]);
   else renderRows(node.listing.entries);
   const notice = scanListing
     ? (scanListing.note || 'Showing verified files discovered by the asset scanner.')
