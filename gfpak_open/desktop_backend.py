@@ -456,17 +456,21 @@ class DesktopAPI:
         with self._lock:
             return self._browser.children(node_id, cursor=cursor)
 
-    def browse_start_scan(self):
+    def browse_start_scan(self, node_id: str | None = None):
         with self._lock:
-            if not self._browser.root_path or not self._browser.root_path.is_dir():
-                raise ValueError("Open an extracted game folder to scan for assets")
+            browser = self._browser
+            if node_id:
+                source = browser.node(node_id)
+                if source["kind"] not in ("nca_section", "nca_dir"):
+                    raise ValueError("Select a readable NCA section or folder before scanning")
+            elif not browser.root_path or not browser.root_path.is_dir():
+                raise ValueError("Open an extracted game folder or a readable RomFS section")
             if self._scan_job["running"]:
                 return False
-            browser = self._browser
             self._scan_job = {"running": True, "error": "", "result": None}
         def run():
             try:
-                result = browser.scan()
+                result = browser.scan_nca_assets(node_id) if node_id else browser.scan()
                 with self._lock:
                     if browser is self._browser:
                         self._scan_job["result"] = result
