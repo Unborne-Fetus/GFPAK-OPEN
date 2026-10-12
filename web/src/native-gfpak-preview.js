@@ -23,7 +23,9 @@ function peekData(raw) {
 }
 function hasGeometry(buffer){
   const info=parseTrmbf(buffer);
-  return info && Array.isArray(info.buffers) && info.buffers.length>0;
+  return Boolean(info?.buffers?.some(part =>
+    part.vertexBuffers?.some(b=>b.byteLength>=12) &&
+    part.indexBuffers?.some(b=>b.byteLength>=2)));
 }
 function identifyTrinity(buffer){
   for(const kind of probeOrder){
@@ -70,8 +72,19 @@ function assignRef(row,kind,reference,base) {
     if(!row.known)row.inferred='recovered/'+base+'/'+name.split('/').at(-1);
   }
 }
-function chooseResource(rows,kind,reference,archiveName,report){
-  const filtered=rows.filter(row=>row.kind===kind);
+async function chooseResource(rows,kind,reference,archiveName,report,read){
+  let filtered=rows.filter(row=>row.kind===kind);
+  // A filename hash doesn't necessarily reveal the file extension. A native
+  // descriptor has the real reference, so retry unknown members by parsing
+  // the required target format before declaring the model incomplete.
+  if(kind==='trmbf'&&!filtered.length){
+    for(const row of rows.filter(row=>!row.kind||row.kind==='trmsh')){
+      if(row.resource.size>PROBE_LIMIT)continue;
+      try{
+        if(hasGeometry(await read(row))){row.kind='trmbf';filtered.push(row);}
+      }catch(_){}
+    }
+  }
   const direct=filtered.filter(row=>normalize(row.known)===normalize(reference) ||
     normalize(row.known).endsWith('/'+normalize(reference)));
   const hashed=matchByHash(filtered,reference,archiveName);
@@ -108,8 +121,8 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   let probed=0,unreadable=0;
   for(const row of rows){
     const knownType=ext(row.known);
-    if(ALLOWED.has(knownType))row.kind=knownType.slice(1);
-    if(row.kind && !['trmdl','trmsh','trmbf'].includes(row.kind))continue;
+    if(ALLOWED.has(knownType)){row.kind=knownType.slice(1);continue;}
+    if(row.kind)continue;
     if(row.resource.size>PROBE_LIMIT || probed++>=MAX_PROBES)continue;
     try{
       const bytes=await read(row);
@@ -128,11 +141,11 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   if(root.kind==='trmdl'){
     const meta=parseTrmdl(await read(root));
     for(const name of meta.meshFiles){
-      const shape=chooseResource(rows,'trmsh',name,filename,report);
+      const shape=await chooseResource(rows,'trmsh',name,filename,report,read);
       const meshes=parseTrmsh(await read(shape));
       assignRef(shape,'trmsh',name,stem);
       required.add(shape);
-      const buffer=chooseResource(rows,'trmbf',meshes.bufferFile,filename,report);
+      const buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read);
       assignRef(buffer,'trmbf',meshes.bufferFile,stem);
       required.add(buffer);
     }
@@ -141,13 +154,13 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ['trmtr',meta.materials||[]]
     ])for(const name of names){
       try{
-        const match=chooseResource(rows,kind,name,filename,report);
+        const match=await chooseResource(rows,kind,name,filename,report,read);
         assignRef(match,kind,name,stem);required.add(match);
       }catch(e){report(e.message);}
     }
   }else if(root.kind==='trmsh'){
     const mesh=parseTrmsh(await read(root));
-    const buffer=chooseResource(rows,'trmbf',mesh.bufferFile,filename,report);
+    const buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read);
     assignRef(buffer,'trmbf',mesh.bufferFile,stem);required.add(buffer);
   }
   for(const row of rows)if(['trskl','trmtr','bntx','dds','png','jpg','jpeg','webp','tranm','gfbanm','tracm'].includes(row.kind))
