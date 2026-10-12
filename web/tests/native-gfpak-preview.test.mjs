@@ -275,3 +275,12 @@ test('full hashed GFPAK rig/material/animation association works without TRMDL p
   assert.match(reports.join(' '),/Recovered TRMTR materials/);
   model.disposeAssets();
 });
+
+test('hashed rare TRMTR gets its variant identity without a filename dictionary',async()=>{
+  const data={...makeTrinityTriangle(),
+    'pm0025_00_00_rare.trmtr':unreferencedTrmtr()};
+  const {project}=await prepareGfpakModelPreview(gfpak(data),'pm0025_00_00.gfpak');
+  const rare=project.items.find(item=>item.path.endsWith('.trmtr'));
+  assert.ok(rare,'a real material definition was decoded');
+  assert.ok(rare.nativeAliases.includes('pm0025_00_00_rare.trmtr'));
+});
