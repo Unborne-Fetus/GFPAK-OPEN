@@ -3,6 +3,7 @@
  * Encrypted NCA sections and NCZ payloads are NOT silently interpreted.
  * No original game bytes leave the browser.
  */
+import {parseNcaWithKeys} from './nca-browser.js';
 const decoder = new TextDecoder();
 const MAX_ENTRIES = 50000;
 const MAX_NAMES = 8 * 1024 * 1024;
@@ -126,7 +127,7 @@ export async function parsePlainNcaRows(entry) {
   return {entries,status:readable ? 'partial-plaintext' : locked ? 'locked' : 'unsupported',
     locked,unsupported,readable};
 }
-export async function openGamePackage(file,{scanPlainNCAs=true,onProgress=()=>{}}={}) {
+export async function openGamePackage(file,{scanPlainNCAs=true,keys=null,onProgress=()=>{}}={}) {
   if (!file || typeof file.slice !== 'function') throw Error('Select a local package File');
   const title = file.name || 'Game package';
   const initial = await bytes(file,0,Math.min(0x200,file.size),'package signature');
@@ -160,10 +161,13 @@ export async function openGamePackage(file,{scanPlainNCAs=true,onProgress=()=>{}
     for (let i=0;i<list.length;i++) {
       const item=list[i];
       try {
-        const decoded=await parsePlainNcaRows(item);
-        entries.push(...decoded.entries);
+        const decoded=await parseNcaWithKeys(item,keys);
+        entries.push(...decoded.entries.map(row=>({
+          ...row, category:assetCategory(row.name)
+        })));
         item.ncaStatus=decoded.status;
-        if (decoded.entries.length) warnings.push(item.name + ': ' + decoded.entries.length + ' plaintext PartitionFS files');
+        if (decoded.entries.length) warnings.push(item.name + ': ' + decoded.entries.length + ' decrypted/readable NCA files');
+        if(decoded.reason)warnings.push(item.name+': '+decoded.reason);
       } catch(e) {
         item.ncaStatus='unavailable';
         warnings.push(item.name + ': ' + e.message);
@@ -172,7 +176,7 @@ export async function openGamePackage(file,{scanPlainNCAs=true,onProgress=()=>{}
     }
   }
   const locked=entries.filter(e=>e.ncaStatus==='locked').length;
-  if (locked) warnings.push(locked + ' encrypted or unreadable NCA(s) require a compatible local key reader; their contents were NOT scanned.');
+  if (locked) warnings.push(locked + ' encrypted or unreadable NCA(s) still require compatible local keys; their locked contents were NOT scanned.');
   if (entries.some(e=>/\.ncz$/i.test(e.name))) warnings.push('NCZ compressed payload decoding is not supported by this browser reader.');
   return {name:title,type:container,headerBytes,entries,originals,warnings};
 }
