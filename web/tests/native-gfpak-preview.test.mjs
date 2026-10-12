@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
+import {Builder} from 'flatbuffers';
 import {prepareGfpakModelPreview} from '../src/native-gfpak-preview.js';
 import {loadTrinityModel} from '../src/trinity-model.js';
 import {fnv1a64,parseHashDictionary} from '../src/gfpak.js';
@@ -73,4 +74,38 @@ test('Oodle-compressed PLA GFPAK decodes original Trinity mesh and renders in br
   assert.equal(meshes,1);
   assert.equal(vertices,3);
   model.disposeAssets();
+});
+
+function bareNameTrmdl(names) {
+  const b=new Builder(1024);
+  const members=names.map(name=>{
+    const value=b.createString(name);
+    b.startObject(1);b.addFieldOffset(0,value,0);return b.endObject();
+  });
+  b.startVector(4,members.length,4);
+  for(let i=members.length-1;i>=0;i--)b.addOffset(members[i]);
+  const list=b.endVector();
+  b.startObject(7);b.addFieldOffset(1,list,0);
+  b.finish(b.endObject());
+  return b.asUint8Array().slice();
+}
+test('Extensionless head/body/tail resolve across three indistinguishable hashed PLA meshes',async()=>{
+  const triangle=makeTrinityTriangle();
+  const data={
+    'models/pm0094.trmdl':bareNameTrmdl(['head','body','tail']),
+    'hidden/mesh_1.trmsh':triangle['models/test.trmsh'],
+    'hidden/mesh_2.trmsh':triangle['models/test.trmsh'],
+    'hidden/mesh_3.trmsh':triangle['models/test.trmsh'],
+    'hidden/buffers.trmbf':triangle['models/test.trmbf']
+  };
+  const notes=[];
+  const result=await prepareGfpakModelPreview(gfpak(data),'pm0094.gfpak',line=>notes.push(line));
+  assert.deepEqual(result.project.items.filter(item=>item.path.endsWith('.trmsh'))
+    .map(item=>item.path.split('/').at(-1)).sort(),['body.trmsh','head.trmsh','tail.trmsh']);
+  assert.match(notes.join(' '),/ambiguous trmsh reference/);
+  const loaded=await loadTrinityModel(result.project,result.selected,()=>{},{fastPreview:true});
+  let count=0;
+  loaded.root.traverse(node=>{if(node.isMesh)count++;});
+  assert.equal(count,3);
+  loaded.disposeAssets();
 });
