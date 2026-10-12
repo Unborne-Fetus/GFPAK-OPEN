@@ -1,4 +1,4 @@
-/** Game Freak's base-color layers multiply albedo by RGBA mask weights.
+/** Game Freak's four color layers blend over albedo using RGBA mask weights.
  * Bake these colors to an ordinary map so preview and GLB retain the skin.
  */
 import * as THREE from 'three';
@@ -18,15 +18,17 @@ export function applyLayerColors(definition, created, report = () => {}) {
     Number.isFinite(scalars['LayerMaskScale' + i]) ? scalars['LayerMaskScale' + i] : 1));
   const uniforms = {
     gfLayerMask: {value:mask}, gfLayerColors:{value:palette},
-    gfLayerScales:{value:scales}
+    gfLayerScales:{value:scales}, gfMaskTransform:{value:mask.matrix}
   };
   // Fallback for an unavailable offscreen GPU; preserves colors in preview.
   const shaderFallback = () => {
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, uniforms);
-      shader.fragmentShader = 'uniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + shader.fragmentShader;
+      shader.vertexShader = 'varying vec2 gfBaseUv;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\ngfBaseUv = uv;');
+      shader.fragmentShader = 'varying vec2 gfBaseUv;\nuniform mat3 gfMaskTransform;\nuniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
-        '#include <map_fragment>\nvec4 gfWeights = texture2D(gfLayerMask, vMapUv) * gfLayerScales;\ndiffuseColor.rgb *= gfLayerColors[0]*gfWeights.r + gfLayerColors[1]*gfWeights.g + gfLayerColors[2]*gfWeights.b + gfLayerColors[3]*gfWeights.a;');
+        '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[0],gfWeights.r);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[1],gfWeights.g);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[2],gfWeights.b);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[3],gfWeights.a);');
     };
     material.customProgramCacheKey = () => 'trinity-four-color-layers';
     material.needsUpdate = true;
@@ -48,17 +50,20 @@ export function applyLayerColors(definition, created, report = () => {}) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     pass = new THREE.ShaderMaterial({
-      uniforms:{...uniforms, gfAlbedo:{value:material.map}},
+      uniforms:{...uniforms, gfAlbedo:{value:material.map}, gfAlbedoTransform:{value:material.map.matrix}},
       vertexShader:'varying vec2 gfUV; void main(){gfUV=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
       fragmentShader:`varying vec2 gfUV;
         uniform sampler2D gfAlbedo; uniform sampler2D gfLayerMask;
         uniform vec3 gfLayerColors[4]; uniform vec4 gfLayerScales;
+        uniform mat3 gfMaskTransform; uniform mat3 gfAlbedoTransform;
         void main(){
-          vec4 weights=texture2D(gfLayerMask,gfUV)*gfLayerScales;
-          vec3 color=gfLayerColors[0]*weights.r+gfLayerColors[1]*weights.g+
-                     gfLayerColors[2]*weights.b+gfLayerColors[3]*weights.a;
-          vec4 albedo=texture2D(gfAlbedo,gfUV);
-          gl_FragColor=vec4(albedo.rgb*color,albedo.a);
+          vec4 weights=clamp(texture2D(gfLayerMask,(gfMaskTransform*vec3(gfUV,1.0)).xy)*gfLayerScales,0.0,1.0);
+          vec4 albedo=texture2D(gfAlbedo,(gfAlbedoTransform*vec3(gfUV,1.0)).xy);
+          vec3 color=mix(albedo.rgb,gfLayerColors[0],weights.r);
+          color=mix(color,gfLayerColors[1],weights.g);
+          color=mix(color,gfLayerColors[2],weights.b);
+          color=mix(color,gfLayerColors[3],weights.a);
+          gl_FragColor=vec4(color,albedo.a);
           #include <colorspace_fragment>
         }`
     });
@@ -72,7 +77,7 @@ export function applyLayerColors(definition, created, report = () => {}) {
     baked.name = material.name + ' layered base color';
     baked.colorSpace = THREE.SRGBColorSpace;
     baked.wrapS = baked.wrapT = THREE.RepeatWrapping;
-    baked.repeat.copy(material.map.repeat); baked.offset.copy(material.map.offset);
+    // UV transforms were sampled into this map; applying them again distorts it.
     baked.minFilter = baked.magFilter = THREE.LinearFilter;
     baked.needsUpdate = true; created.push(baked);
     material.map = baked; material.needsUpdate = true;

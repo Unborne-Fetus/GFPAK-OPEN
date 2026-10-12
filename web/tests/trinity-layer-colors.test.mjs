@@ -36,11 +36,11 @@ test('native material color parameters reach masked base-color shader',()=>{
   const mat=new THREE.MeshStandardMaterial({map:new THREE.Texture()});
   const mask=new THREE.Texture();
   applyLayerColors({...info,material:mat,layerMaskMap:mask},[]);
-  const shader={uniforms:{},fragmentShader:'#include <map_fragment>'};
+  const shader={uniforms:{},fragmentShader:'#include <map_fragment>',vertexShader:'#include <uv_vertex>'};
   mat.onBeforeCompile(shader);
   assert.equal(shader.uniforms.gfLayerMask.value,mask);
   assert.ok(shader.uniforms.gfLayerColors.value[0].x>.47);
-  assert.match(shader.fragmentShader,/diffuseColor.rgb \*=/);
+  assert.match(shader.fragmentShader,/diffuseColor.rgb = mix/);
 });
 
 test('ordinary material without native layer palette retains normal shading',()=>{
