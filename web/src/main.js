@@ -314,7 +314,7 @@ async function previewGfbmdlInArchive() {
   }
   const name = resolvedName(selectedResource, state.dictionary);
   const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
-    '.tranm', '.gfbanm', '.png', '.jpg', '.jpeg', '.webp']);
+    '.tranm', '.gfbanm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
   // Deferred extraction avoids decompressing unrelated resources. Every
   // associated file is resolved by its original path/hash dictionary entry.
   const resources = state.archive.resources
