@@ -14,12 +14,12 @@ GFPAK OPEN recognizes model packages from Pokémon Switch games from **Let's Go 
 | Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Native GFBMDL mesh preview/export; also converted assets | Built-in FlatBuffers decoder; original shaders and GFBANM are not yet decoded |
 | New Pokémon Snap | NUSRCMDLB / NUTEXB | Converted 3D assets | Game-specific extraction required |
 | Brilliant Diamond / Shining Pearl | Unity assets and asset bundles | Converted 3D assets | AssetStudio / AssetRipper to FBX/OBJ/GLB |
-| Legends: Arceus | GFPAK / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native experimental Trinity decoder; Oodle GFPAKs still blocked |
+| Legends: Arceus | GFPAK / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native Trinity decoder; compatible Oodle GFPAKs now decode using WASM |
 | Scarlet / Violet + Teal Mask + Indigo Disk | Trinity / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native experimental Trinity decoder; textures/animations still partial |
 | Legends: Z-A + Mega Dimension | Revised Trinity / TRMDL | Compatible native TRMDL geometry; converted 3D assets | Experimental Trinity decoder; model revisions still need real-data testing |
 | Other Switch Pokémon spin-offs | Varies (Unity, custom engines) | Converted 3D assets | Separate extraction may be necessary |
 
-**Important:** Browser-side geometry decoding now handles compatible **GFBMDL** and **TRMDL/TRMSH/TRMBF** resources. Trinity skeleton data (TRSKL) can supply bones/skin weights, and decoded PNG/JPEG material maps can provide approximate PBR shading. Compatible skeletal TRANM and GFBANM tracks now have experimental browser animation playback and GLB export. Some BNTX texture variants, original shaders, unsupported animation variations and **Oodle-compressed** resources still require further decoding, and revised Z-A files have not yet been validated. Only stored or LZ4-compressed GFPAK resources with a matching filename-hash dictionary can be previewed directly; a static GitHub Pages app cannot use a Windows Oodle DLL or Blender.
+**Important:** Browser-side geometry decoding now handles compatible **GFBMDL** and **TRMDL/TRMSH/TRMBF** resources. Trinity skeleton data (TRSKL) can supply bones/skin weights, and decoded PNG/JPEG material maps can provide approximate PBR shading. Compatible skeletal TRANM and GFBANM tracks now have experimental browser animation playback and GLB export. Some BNTX texture variants, original shaders, unsupported animation variations and unsupported Oodle revisions still require further work, and revised Z-A files have not yet been validated. Stored, LZ4 and compatible Oodle GFPAK resources can be previewed directly; a static GitHub Pages app cannot use a Windows Oodle DLL or Blender.
 
 ## GitHub Pages — web 3D studio
 
@@ -28,11 +28,11 @@ The sidebar includes a game selector with automatic filename-based suggestions. 
 - GLB, GLTF, FBX, OBJ + MTL, DAE, STL, PLY, 3DS, **GFBMDL, TRMDL and TRMSH** model rendering, using actual geometry decoders.
 - ZIP and folder imports with associated local textures and experimental native skeletal animation clips.
 - **Standalone texture inspector:** Open individual BNTX/DDS/PNG/JPEG/WebP files or select them inside a ZIP/folder. A Nintendo BNTX container lists every internal named surface; choose a surface, view its original dimensions/format, and save a decoded PNG preview. RGBA8/BGRA8, R8/RG8/RGB565 and BC1–BC5 use CPU decoding; BC7/ASTC previews require WebGL GPU extensions. The original data never leaves your device.
-- **Texture inspection inside GFPAKs:** Select any resource and click **PROBE SELECTED TEXTURE** to detect supported BNTX/DDS/PNG/JPEG/WebP signatures without a filename-hash dictionary. A matching dictionary lets you filter known textures and choose the correct names. Only the requested stored/LZ4 entry is extracted; Oodle entries still require a separate compatible decoder.
+- **Texture inspection inside GFPAKs:** Select any resource and click **PROBE SELECTED TEXTURE** to detect supported BNTX/DDS/PNG/JPEG/WebP signatures without a filename-hash dictionary. A matching dictionary lets you filter known textures and choose the correct names. Only the requested resource is extracted; compatible Oodle entries use the browser's lazy WASM decoder.
 - Compatible **GFBMDL material references can now load BNTX textures**, including named surfaces from a single local BNTX container; ambiguous matches are skipped rather than assigning incorrect Pokémon markings.
 - Orbit controls, zoom/pan, automatic camera framing, model statistics, and compatible animation playback.
 - Export to actual GLB with meshes; empty output is rejected.
-- GFPAK inspection, including archives inside ZIPs; filename-hash lists; metadata JSON exports; stored/LZ4 resource extraction and Oodle packed-resource export. When a hash dictionary identifies a stored/LZ4 **GFBMDL or TRMDL with its companion files**, click **PREVIEW 3D MESH** to decode it and export real geometry as GLB.
+- GFPAK inspection, including archives inside ZIPs; filename-hash lists; metadata JSON exports; stored/LZ4/Oodle resource extraction and packed-resource export. When a hash dictionary identifies a stored/LZ4/Oodle **GFBMDL or TRMDL with its companion files**, click **PREVIEW 3D MESH** to decode it and export real geometry as GLB.
 - Specific feedback for unsupported native resources, with browser GFBMDL/Trinity geometry decoding and warnings when shaders, textures, rigging or animations cannot be reconstructed.
 
 No files are sent to our server. Original game models and other assets are not distributed.
@@ -102,7 +102,7 @@ The recursive scan is bounded to at most 40,000 scanned files per request and th
 
 GFPAK indexes are now **lazy on Windows and the web**. The desktop reader maps the index briefly and releases the file immediately; it does not copy a multi-gigabyte GFPAK into RAM. The web studio uses local File/Blob range reads rather than `file.arrayBuffer()` on the whole archive. Opening and searching a GFPAK therefore requires only its metadata. Resource content is fetched on demand.
 
-The built-in explorer shows resource offsets, compressed sizes, hashes and bounded hexadecimal previews. **Save selected file** streams stored entries; **Save packed bytes** streams the original compressed block without requiring a decoder, including for entries larger than 512 MiB. Existing output files are never silently replaced. The browser exports stored and packed resources as Blob slices. LZ4 decoding remains capped at 512 MiB of output; browser Oodle and unsupported game-specific compression are not claimed to work. A large resource can be indexed and inspected even if it cannot yet be decoded to a usable model.
+The built-in explorer shows resource offsets, compressed sizes, hashes and bounded hexadecimal previews. **Save selected file** streams stored entries; **Save packed bytes** streams the original compressed block without requiring a decoder, including for entries larger than 512 MiB. Existing output files are never silently replaced. The browser exports stored and packed resources as Blob slices. LZ4 decoding remains capped at 512 MiB of output; supported Oodle resources decode locally; unsupported game-specific compression may still fail. A large resource can be indexed and inspected even if it cannot yet be decoded to a usable model.
 
 Windows and Node regression tests use synthetic GFPAK fixtures, including a >512 MiB sparse file and an instrumented browser Blob that disallows reading the whole archive. These tests do not validate every Pokémon game or proprietary compression variant.
 
@@ -204,11 +204,32 @@ Python unit tests:
 - [ ] Validate native GFBMDL decoder against real Let's Go and Sword/Shield samples; currently tested with synthetic FlatBuffers-based geometry and browser GLB exports.
 - [ ] Validate each other native game family with representative real mesh, texture and animation samples.
 - [ ] Decode raw Unity and NUSRCMDLB models directly.
-- [ ] Browser-native Oodle decompression (decoder license/performance review), CPU fallbacks for GPU-only BC7/ASTC BNTX textures, and validation of actual Trinity revisions.
+- [x] Browser-native Oodle decompression for supported codecs via on-demand WASM (GPL notice in THIRD_PARTY_LICENSES.md).\n- [ ] CPU fallbacks for GPU-only BC7/ASTC BNTX textures and validation of additional Trinity revisions.
 - [ ] Validate native model skeletal skinning, native animation interpolation and all shader/material variations against actual game files.
 
 Only process models and game assets you own or are authorized to use.
 
+
+## Browser-native Oodle decompression
+
+GFPAK compression type **3** now uses an on-demand local WebAssembly decoder
+for compatible **Kraken, Mermaid, Selkie, Leviathan, LZNA and Bitknit** Oodle
+streams. No external `oo2core` DLL, Blender, backend service, key download or
+game upload is involved. Load your PLA NSP with your own locally provided keys,
+browse to a `.gfpak`, and select **Preview in 3D**. The standalone **GFPAK
+Inspector** can also auto-detect model resources in an Oodle-compressed archive.
+
+The browser does not decompress whole games automatically. Only selected model
+and companion blocks are decoded; on very large archives, background scanning
+yields to the UI and releases unused buffers. Per-resource in-memory decoding
+is limited to **512 MiB**. **Oodle formats are not all identical**: unsupported
+new versions and some game-specific variants may still fail. The original
+packed resource remains exportable if decoding fails.
+
+The `ooz-wasm` dependency is **GPL-3.0-or-later**. The upstream and license
+notices are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Because GPL software has copyleft obligations, review the repository's
+licensing before redistributing a combined web build.
 
 ## Browser-first game explorer (no Windows app required)
 
@@ -225,7 +246,7 @@ The web reader streams **index metadata** from local files (rather than loading 
 - Full extracted-folder indexing, model/texture/animation filters, filename search, save selected original, and export full index JSON
 - Browser GFPAK inspection of package resources, plus native 3D preview and GLB / Pokémon ZIP export for compatible decoded models and companions
 - **Pokémon Legends: Arceus direct 3D preview:** Select a decrypted/readable `.gfpak` in **OPEN GAME FILES** and press **Preview in 3D**. The browser now scans original archive resources for `.trmdl`, `.trmsh` and `.trmbf` geometry and reconstructs unambiguous companion references even when the archive stores only filename hashes. Alternatively, open a GFPAK directly and click **AUTO-DETECT 3D MODEL** in the GFPAK Inspector. The shared viewport loads geometry first, then matches available textures and compatible animation clips.
-- Web model previews cover common GLB/glTF, FBX, OBJ, DAE, STL, PLY, 3DS and native Trinity/GFBMDL formats (where their original bytes and required dependencies can be decoded). **Oodle-compressed GFPAK blocks are not yet browser-decodable**, so not every PLA model will succeed yet; an explicit error is shown rather than a fake or empty mesh.
+- Web model previews cover common GLB/glTF, FBX, OBJ, DAE, STL, PLY, 3DS and native Trinity/GFBMDL formats (where their original bytes and required dependencies can be decoded). **Compatible Oodle-compressed GFPAK blocks now decode via WASM**, but not every PLA model will succeed yet; an explicit error is shown rather than a fake or empty mesh.
 - A shared preview pipeline: select a readable GFBMDL/TRMDL/GLB model and press **Preview selected in 3D**; the 3D viewer can export GLB or a Pokémon ZIP when appropriate.
 
 ### Decrypting game contents in the browser
