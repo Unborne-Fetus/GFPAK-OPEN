@@ -99,7 +99,7 @@ function normalizeMaterialName(value) {return String(value||'').toLowerCase().re
 
 function findOptionalTexture(project, name, parentPath, variant='regular') {
   if (!name) return null;
-  const candidate = basename(name).replace(/\\.(bntx|bntx\\.gz|dds|ktx2)$/i, '');
+  const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
   if (!candidate) return null;
   const eligible = item => {
     const type=textureVariantForItem(item);
