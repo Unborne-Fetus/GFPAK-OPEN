@@ -887,3 +887,28 @@
   .asset-class-browser{padding:9px}
   .asset-class-button{padding:7px 9px;font-size:11px}
 }
+
+/* Evidence-backed companions in the full-scanned model catalog. */
+.desktop-app .nx-fileviewer .nx-family-files .nx-companion-entry {
+  display:block;width:100%;text-align:left;background:transparent;color:#356078;
+  padding:5px 6px;margin:1px 0;border:0;border-radius:3px;
+  font:11px/1.45 "Segoe UI",sans-serif;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.desktop-app .nx-fileviewer .nx-family-files button.nx-companion-entry {
+  cursor:pointer;border:1px solid transparent;
+}
+.desktop-app .nx-fileviewer .nx-family-files button.nx-companion-entry:hover,
+.desktop-app .nx-fileviewer .nx-family-files button.nx-companion-entry:focus-visible {
+  background:#e6f4fd;border-color:#a9ccdf;outline:none;
+}
+.desktop-app .nx-fileviewer .nx-family-files button.nx-companion-expand {
+  font-weight:700;color:#176c91;white-space:normal;
+}
+.desktop-app .nx-fileviewer .nx-family-files {
+  max-height:235px;
+}
+.desktop-app .nx-matched-companions {
+  font:10px/1.4 "Segoe UI",sans-serif;color:#267e73;
+  white-space:nowrap;
+}
