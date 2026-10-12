@@ -27,8 +27,8 @@ The sidebar includes a game selector with automatic filename-based suggestions. 
 
 - GLB, GLTF, FBX, OBJ + MTL, DAE, STL, PLY, 3DS, **GFBMDL, TRMDL and TRMSH** model rendering, using actual geometry decoders.
 - ZIP and folder imports with associated local textures and experimental native skeletal animation clips.
-- **Standalone texture inspector:** Open individual BNTX/PNG/JPEG/WebP files or select them inside a ZIP/folder. A Nintendo BNTX container lists every internal named surface; choose a surface, view its original dimensions/format, and save a decoded PNG preview. RGBA8/BGRA8, R8/RG8/RGB565 and BC1–BC5 use CPU decoding; BC7/ASTC previews require WebGL GPU extensions. The original data never leaves your device.
-- **Texture inspection inside GFPAKs:** Load a matching filename-hash dictionary, select a stored or LZ4-compressed BNTX or image resource, and click **INSPECT TEXTURES**. Extracts only the requested resource; Oodle entries require a separate compatible decoder.
+- **Standalone texture inspector:** Open individual BNTX/DDS/PNG/JPEG/WebP files or select them inside a ZIP/folder. A Nintendo BNTX container lists every internal named surface; choose a surface, view its original dimensions/format, and save a decoded PNG preview. RGBA8/BGRA8, R8/RG8/RGB565 and BC1–BC5 use CPU decoding; BC7/ASTC previews require WebGL GPU extensions. The original data never leaves your device.
+- **Texture inspection inside GFPAKs:** Select any resource and click **PROBE SELECTED TEXTURE** to detect supported BNTX/DDS/PNG/JPEG/WebP signatures without a filename-hash dictionary. A matching dictionary lets you filter known textures and choose the correct names. Only the requested stored/LZ4 entry is extracted; Oodle entries still require a separate compatible decoder.
 - Compatible **GFBMDL material references can now load BNTX textures**, including named surfaces from a single local BNTX container; ambiguous matches are skipped rather than assigning incorrect Pokémon markings.
 - Orbit controls, zoom/pan, automatic camera framing, model statistics, and compatible animation playback.
 - Export to actual GLB with meshes; empty output is rejected.
