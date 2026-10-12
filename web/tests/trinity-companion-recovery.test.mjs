@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Builder} from 'flatbuffers';
 import {loadTrinityModel,chooseRigByAnimationTracks,
-  chooseRigByMeshInfluences} from '../src/trinity-model.js';
+  chooseRigByMeshInfluences,trinityMaterialVariant,
+  chooseTrinityMaterialSources} from '../src/trinity-model.js';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 
@@ -98,4 +99,34 @@ test('joint index evidence resolves only one structurally compatible skeleton',(
   assert.equal(chooseRigByMeshInfluences([candidates[1],{
     value:{bones:[{jointInfoIndex:0},{jointInfoIndex:2}]}
   }],[mesh]),null);
+});
+
+test('regular material palette does not get replaced by a rare/shiny TRMTR',async()=>{
+  const files={...makeTrinityTriangle(),
+    'models/pm0212_00_00.trmtr':minimalTrmtr(),
+    'models/pm0212_00_00_rare.trmtr':minimalTrmtr()};
+  const project=from(files);
+  const normalLog=[],shinyLog=[];
+  const normal=await loadTrinityModel(project,'models/test.trmdl',
+    line=>normalLog.push(line),{fastPreview:true,textureVariant:'regular'});
+  const rare=await loadTrinityModel(project,'models/test.trmdl',
+    line=>shinyLog.push(line),{fastPreview:true,textureVariant:'shiny'});
+  assert.equal(normalLog.filter(line=>/Matched 1 material definition/.test(line)).length,1,
+    normalLog.join('\\n'));
+  assert.equal(shinyLog.filter(line=>/Matched 1 material definition/.test(line)).length,2,
+    shinyLog.join('\\n'));
+  normal.disposeAssets();rare.disposeAssets();
+});
+
+test('hashed material aliases mark rare palettes even without filename dictionary',()=>{
+  const rows=[
+    {item:{path:'recovered/material_001.trmtr',
+      nativeAliases:['pm0212_00_00.trmtr']},data:{materials:[{name:'body'}]}},
+    {item:{path:'recovered/material_002.trmtr',
+      nativeAliases:['pm0212_00_00_rare.trmtr']},data:{materials:[{name:'body'}]}}
+  ];
+  assert.equal(trinityMaterialVariant(rows[0].item),'regular');
+  assert.equal(trinityMaterialVariant(rows[1].item),'shiny');
+  assert.deepEqual(chooseTrinityMaterialSources(rows,'regular'),[rows[0]]);
+  assert.deepEqual(chooseTrinityMaterialSources(rows,'shiny'),rows);
 });
