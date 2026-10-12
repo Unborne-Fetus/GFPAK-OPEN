@@ -325,6 +325,36 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(entries[0]["name"], "bin")
             self.assertEqual(section.read(0, 4), romfs[:4])
 
+    def test_compressed_partitionfs_can_exceed_physical_nca_section_size(self):
+        # A tiny LZ4 block represents a much larger virtual filesystem.
+        # File bounds must be checked against the decompressed logical size.
+        try:
+            import lz4.block
+        except ImportError:
+            self.skipTest("lz4 Python dependency is not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            virtual = pfs0_files([("large.bin", b"A" * 100_000)])
+            packed = lz4.block.compress(virtual, store_size=False)
+            self.assertLess(len(packed), 0x400)
+            table = bytearray(0x8000)
+            struct.pack_into("<IIQ", table, 0, 0, 1, len(virtual))
+            struct.pack_into("<IIQ", table, 0x4000, 0, 1, len(virtual))
+            struct.pack_into("<qqBb2sI", table, 0x4010,
+                             0, 0, 3, 0, bytes(2), len(packed))
+            raw = bytearray(plain_nca([("pfs", packed.ljust(0x400, b"\\0") + table)]))
+            fs_header = 0x400
+            struct.pack_into("<QQ", raw, fs_header + 0x178, 0x400, len(table))
+            struct.pack_into("<4sIII", raw, fs_header + 0x188, b"BKTR", 1, 1, 0)
+            archive = root / "compressed-large.nsp"
+            package(archive, [("compressed-large.nca", bytes(raw))])
+            section = NativeNCA(NSPAnalyzer(archive), 0).sections[0]
+            fs = section.filesystem()
+            self.assertGreater(section.logical_size, section.size)
+            file_info = fs.file("large.bin")
+            self.assertEqual(file_info.size, 100_000)
+            self.assertEqual(section.read(file_info.offset + 99_990, 10), b"A" * 10)
+
     def test_plaintext_bktr_patch_reads_matching_base_nca_overlay(self):
         """A linked original NCA plus patch ranges produces readable RomFS."""
         with tempfile.TemporaryDirectory() as temp:
