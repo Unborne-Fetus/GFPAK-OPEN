@@ -152,6 +152,9 @@ function setModel(result, format, packageName) {
   state.stage.setModel(result.root, result.animations);
   previous?.disposeAssets?.();
   state.loaded = result;
+  // Native models populate textures/clips asynchronously. Never package a
+  // half-loaded preview as a ready-to-import Pokédex model.
+  result.companionsReady = !result.postLoad;
   const info = modelStats(result.root, result.animations);
   const mapping = [
     ['statMeshes', info.meshes], ['statVertices', info.vertices],
@@ -206,6 +209,7 @@ function completeFastPreview(result) {
     result.postLoad().then(() => {
       if (state.loaded !== result) return;
       state.stage.setAnimations(result.animations);
+      result.companionsReady = true;
       refreshAnimationControls(result);
       el('inspectorState').textContent = 'LOADED';
       el('objectSubtitle').textContent =
@@ -216,6 +220,7 @@ function completeFastPreview(result) {
         ' compatible animation clip(s). Select a clip to play it.', 'success');
     }).catch(error => {
       if (state.loaded === result) {
+        result.companionsReady = false;
         el('inspectorState').textContent = 'PARTIAL IMPORT';
         el('exportButton').disabled = false;
         log('Some companion resources could not be loaded: ' +
@@ -729,16 +734,32 @@ function attachEvents() {
   el('exportButton').addEventListener('click', exportModel);
   el('exportPokemonButton').addEventListener('click', async () => {
     if (!state.loaded || state.busy) return;
-    if (state.desktopSource) {
-      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail: state.desktopExport}));
+    if (!state.exportProject) {
+      if (state.desktopSource) {
+        window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail: state.desktopExport}));
+      }
       return;
     }
-    busy(true,'Exporting Pokémon','Packing original model and companion files…');
+    busy(true,'Exporting Pokémon','Packing original resources and a converted Pokédex model…');
     try {
-      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected);
+      let glb = null;
+      if (state.loaded.companionsReady) {
+        try {
+          glb = await exportGlb(state.loaded.root,state.loaded.animations);
+        } catch (error) {
+          log('GLB could not be included: ' + (error.message || error) +
+            '. Original assets are still being exported.', 'info');
+        }
+      } else {
+        log('Textures or animations have not finished importing. Exporting original assets only.', 'info');
+      }
+      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected,{
+        sourceGame:currentGame().id,glb
+      });
       const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
       downloadBlob(name,blob,'application/zip');
-      log('Exported original Pokémon assets to '+name+'.','success');
+      log('Exported ' + name + (glb ? ' with converted GLB and original companions.' :
+        ' with original assets only; a Pokédex-ready GLB is not yet available.'),'success');
     } catch(error) {errorMessage(error);}
     finally {busy(false);}
   });
