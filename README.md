@@ -224,6 +224,8 @@ The web reader streams **index metadata** from local files (rather than loading 
 - NCA3 encrypted headers (AES-XTS), AES-CTR filesystem sections, and plaintext NCA sections, with **PartitionFS and RomFS** file browsing when compatible user-supplied keys are loaded
 - Full extracted-folder indexing, model/texture/animation filters, filename search, save selected original, and export full index JSON
 - Browser GFPAK inspection of package resources, plus native 3D preview and GLB / Pokémon ZIP export for compatible decoded models and companions
+- **Pokémon Legends: Arceus direct 3D preview:** Select a decrypted/readable `.gfpak` in **OPEN GAME FILES** and press **Preview in 3D**. The browser now scans original archive resources for `.trmdl`, `.trmsh` and `.trmbf` geometry and reconstructs unambiguous companion references even when the archive stores only filename hashes. Alternatively, open a GFPAK directly and click **AUTO-DETECT 3D MODEL** in the GFPAK Inspector. The shared viewport loads geometry first, then matches available textures and compatible animation clips.
+- Web model previews cover common GLB/glTF, FBX, OBJ, DAE, STL, PLY, 3DS and native Trinity/GFBMDL formats (where their original bytes and required dependencies can be decoded). **Oodle-compressed GFPAK blocks are not yet browser-decodable**, so not every PLA model will succeed yet; an explicit error is shown rather than a fake or empty mesh.
 - A shared preview pipeline: select a readable GFBMDL/TRMDL/GLB model and press **Preview selected in 3D**; the 3D viewer can export GLB or a Pokémon ZIP when appropriate.
 
 ### Decrypting game contents in the browser
