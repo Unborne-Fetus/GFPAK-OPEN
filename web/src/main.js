@@ -4,6 +4,9 @@ import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
 import {
+  inspectTexture, drawTextureSurface, texturePngName, isInspectableTexture
+} from './texture-inspector.js';
+import {
   projectFromFiles, projectFromZip, loadModel, modelStats, exportGlb,
   downloadBlob, demoModel, extension
 } from './model.js';
@@ -20,6 +23,9 @@ const state = {
   loaded: null,
   resource: null,
   busy: false,
+  textureInfo: null,
+  textureDispose: null,
+  textureRevision: 0,
 };
 
 function currentGame() { return gameById(el('gameSource').value); }
@@ -92,6 +98,8 @@ function busy(value, title = 'Processing assets', message = '') {
   el('busyMessage').textContent = message;
   el('exportButton').disabled = value || !state.loaded;
   el('loadSelected').disabled = value || !state.project?.models.length;
+  el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
+    isInspectableTexture(item.path));
 }
 
 function currentFile(text) {
@@ -182,6 +190,93 @@ async function openModel() {
   }
 }
 
+function listProjectTextures(project) {
+  return project.items.filter(item => isInspectableTexture(item.path));
+}
+
+function populateTextureSelect(project) {
+  const textures = listProjectTextures(project);
+  const select = el('textureSelect');
+  select.replaceChildren(...textures.slice(0, 1200).map(item => new Option(item.path, item.path)));
+  el('textureCount').textContent = textures.length + ' file(s)';
+  el('textureChoice').hidden = !textures.length;
+  el('inspectSelectedTexture').disabled = !textures.length;
+}
+
+function disposeTexturePreview() {
+  state.textureRevision++;
+  state.textureDispose?.();
+  state.textureDispose = null;
+  state.textureInfo = null;
+  el('textureCanvasHost').replaceChildren();
+  el('textureSavePng').disabled = true;
+}
+
+async function drawCurrentTexture() {
+  const info = state.textureInfo;
+  if (!info) return;
+  const revision = ++state.textureRevision;
+  state.textureDispose?.();
+  state.textureDispose = null;
+  el('textureSavePng').disabled = true;
+  const host = el('textureCanvasHost');
+  host.replaceChildren();
+  const index = Number(el('textureSurface').value);
+  const surface = info.surfaces[index];
+  if (!surface) return;
+  el('textureMetadata').textContent =
+    [surface.width && surface.height ? surface.width + ' × ' + surface.height : '',
+      surface.format !== undefined ? 'BNTX format 0x' + surface.format.toString(16) : '',
+      surface.mips ? surface.mips + ' mip level(s)' : ''].filter(Boolean).join(' · ');
+  el('texturePreviewStatus').textContent = 'Decoding ' + surface.name + ' locally…';
+  const canvas = document.createElement('canvas');
+  try {
+    const drawn = await drawTextureSurface(info,index,canvas);
+    if (revision !== state.textureRevision || !el('textureDialog').open) {
+      drawn.dispose();
+      return;
+    }
+    host.replaceChildren(canvas);
+    state.textureDispose = drawn.dispose;
+    el('textureSavePng').disabled = false;
+    el('textureMetadata').textContent = drawn.width + ' × ' + drawn.height +
+      (surface.format !== undefined ? ' · BNTX 0x' + surface.format.toString(16) : '');
+    el('texturePreviewStatus').textContent = 'Texture ready · ' +
+      'choose another surface or export this preview as PNG.';
+  } catch (error) {
+    if (revision === state.textureRevision)
+      el('texturePreviewStatus').textContent = String(error.message || error);
+  }
+}
+
+async function inspectSourceTexture(item) {
+  if (state.busy || !item) return;
+  busy(true,'Opening texture','Reading a native texture without requiring a model…');
+  try {
+    if (item.size > 256 * 1024 * 1024)
+      throw new Error('Standalone texture preview is limited to 256 MiB');
+    const info = inspectTexture(await item.getBytes(),item.path);
+    disposeTexturePreview();
+    state.textureInfo = info;
+    const select = el('textureSurface');
+    select.replaceChildren(...info.surfaces.map(surface => new Option(
+      surface.name + (surface.width ? ' · ' + surface.width + '×' + surface.height : ''),
+      String(surface.index)
+    )));
+    el('textureSourceName').textContent = item.path + ' · ' +
+      info.surfaces.length + ' texture surface(s)';
+    if (!el('textureDialog').open) el('textureDialog').showModal();
+    await drawCurrentTexture();
+    log('Opened ' + item.path + ' with ' + info.surfaces.length + ' texture surface(s).','success');
+  } catch (error) { errorMessage(error); }
+  finally { busy(false); }
+}
+
+function inspectSelectedTexture() {
+  const item = state.project?.items.find(entry => entry.path === el('textureSelect').value);
+  return inspectSourceTexture(item);
+}
+
 function filterModels() {
   if (!state.project) return;
   const filter = el('modelFilter').value.toLowerCase().trim();
@@ -219,16 +314,23 @@ async function chooseProject(files) {
     resetInspector();
     state.project = project;
     state.archive = null;
+    populateTextureSelect(project);
     suggestGame([project.label, ...project.items.map(item => item.path)]);
     displayNativeGuidance(project.items.map(item => item.path));
-    updateSource(project.label + ' · ' + project.models.length + ' renderable model(s)' + (project.native?.length ? ' · ' + project.native.length + ' original resource(s)' : ''));
+    updateSource(project.label + ' · ' + project.models.length + ' renderable model(s) · ' +
+      listProjectTextures(project).length + ' inspectable texture(s)' +
+      (project.native?.length ? ' · ' + project.native.length + ' original resource(s)' : ''));
     el('modelChoice').hidden = !project.models.length;
     el('modelFilter').value = '';
     filterModels();
     log('Imported ' + project.items.length + ' files, found ' + project.models.length + ' supported model(s).', 'success');
     if (!project.models.length) {
-      const notice = describeSource(currentGame().id, project.items.map(item => item.path));
-      log(notice.title + ': ' + notice.message, notice.kind === 'native' ? 'info' : 'error');
+      if (listProjectTextures(project).length)
+        log('Native texture files found. Choose one under NATIVE TEXTURES for surface inspection.', 'success');
+      else {
+        const notice = describeSource(currentGame().id, project.items.map(item => item.path));
+        log(notice.title + ': ' + notice.message, notice.kind === 'native' ? 'info' : 'error');
+      }
       showTab('viewer');
     } else if (project.models.length === 1) {
       // Open on the next frame, once the loading overlay has closed.
@@ -248,6 +350,7 @@ async function loadArchive(file) {
   const archive = await parseGfpakFile(file, file.name);
   state.archive = archive;
   state.project = null;
+  el('textureChoice').hidden = true;
   suggestGame([file.name]);
   displayNativeGuidance([file.name]);
   state.resource = null;
@@ -266,6 +369,7 @@ async function loadArchive(file) {
   el('downloadIndex').disabled = false;
   el('downloadResource').disabled = true;
   updateArchiveModelButton();
+  updateArchiveTextureButton();
   el('archiveSearch').value = '';
   renderArchiveTable();
   showTab('archive');
@@ -292,6 +396,38 @@ function usableArchiveModels() {
     }
     return true;
   }).map(row => row.resource);
+}
+
+function usableArchiveTextures() {
+  if (!state.archive) return [];
+  return state.archive.resources.filter(resource => {
+    const name = resolvedName(resource,state.dictionary);
+    return name && isInspectableTexture(name);
+  });
+}
+
+function updateArchiveTextureButton() {
+  const textures = usableArchiveTextures();
+  const button = el('previewArchiveTexture');
+  button.disabled = !textures.length;
+  button.textContent = state.resource && textures.includes(state.resource)
+    ? '▧ INSPECT SELECTED TEXTURE'
+    : '▧ INSPECT TEXTURES (' + textures.length + ')';
+}
+
+async function inspectArchiveTexture() {
+  if (!state.archive || state.busy) return;
+  const available = usableArchiveTextures();
+  const resource = available.includes(state.resource) ? state.resource : available[0];
+  if (!resource) {
+    log('Load the archive filename hash dictionary to identify BNTX or image entries.', 'error');
+    return;
+  }
+  const name = resolvedName(resource,state.dictionary);
+  await inspectSourceTexture({
+    path:name,size:resource.size,
+    getBytes:async()=>extractResourceAsync(state.archive,resource)
+  });
 }
 
 function updateArchiveModelButton() {
@@ -394,12 +530,14 @@ function renderArchiveTable() {
       tr.classList.add('selected');
       el('downloadResource').disabled = false;
       updateArchiveModelButton();
+      updateArchiveTextureButton();
       log('Selected resource ' + r.index + ' (' + codecName(r.compression) + ').');
     });
     fragment.append(tr);
   }
   body.append(fragment);
   updateArchiveModelButton();
+  updateArchiveTextureButton();
   el('archiveRowCount').textContent = visible.length.toLocaleString() + ' of ' + all.length.toLocaleString() +
     (all.length > visible.length ? ' matching resources (first 1,500 shown)' : ' matching resources');
 }
@@ -448,6 +586,7 @@ function addDemo() {
   state.project = null;
   state.archive = null;
   el('modelChoice').hidden = true;
+  el('textureChoice').hidden = true;
   el('nativeGuide').hidden = true;
   updateSource('Built-in geometric demo model');
   setModel(demoModel(), '.glb', 'Built-in demo');
@@ -500,6 +639,22 @@ function attachEvents() {
   el('modelFilter').addEventListener('input', filterModels);
   el('modelSelect').addEventListener('dblclick', openModel);
   el('loadSelected').addEventListener('click', openModel);
+  el('textureSelect').addEventListener('dblclick', inspectSelectedTexture);
+  el('inspectSelectedTexture').addEventListener('click', inspectSelectedTexture);
+  el('textureSurface').addEventListener('change', drawCurrentTexture);
+  el('textureClose').addEventListener('click', () => el('textureDialog').close());
+  el('textureDialog').addEventListener('close', disposeTexturePreview);
+  el('textureSavePng').addEventListener('click', () => {
+    const canvas = el('textureCanvasHost').querySelector('canvas');
+    if (!canvas || !state.textureInfo) return;
+    const fileName = texturePngName(state.textureInfo, Number(el('textureSurface').value));
+    canvas.toBlob(blob => {
+      if (blob) {
+        downloadBlob(fileName,blob,'image/png');
+        log('Exported decoded texture image ' + fileName, 'success');
+      } else log('Could not encode this preview as PNG.','error');
+    },'image/png');
+  });
   el('exportButton').addEventListener('click', exportModel);
   el('tabViewer').addEventListener('click', () => showTab('viewer'));
   el('tabArchive').addEventListener('click', () => showTab('archive'));
@@ -520,6 +675,7 @@ function attachEvents() {
   });
   el('archiveSearch').addEventListener('input', renderArchiveTable);
   el('previewArchiveModel').addEventListener('click', previewGfbmdlInArchive);
+  el('previewArchiveTexture').addEventListener('click', inspectArchiveTexture);
   el('chooseHashes').addEventListener('click', () => el('hashInput').click());
   el('hashInput').addEventListener('change', event => {
     if (event.target.files?.[0]) readHashFile(event.target.files[0]);
@@ -554,6 +710,7 @@ function start() {
   window.addEventListener('beforeunload', () => {
     state.loaded?.disposeAssets?.();
     state.stage?.dispose();
+    disposeTexturePreview();
   });
 }
 
