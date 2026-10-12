@@ -654,9 +654,9 @@ class RomFS:
         if name_length > 4096 or 32 + name_length > self.file_table_size - at:
             raise NativeNCAError("Invalid RomFS filename length.")
         name = _filename(self._file_table.read(at + 32, name_length))
-        if (self.file_data_off > self.getattr(section, "logical_size", section.size) or
-                begin > self.getattr(section, "logical_size", section.size) - self.file_data_off or
-                size > self.getattr(section, "logical_size", section.size) - self.file_data_off - begin):
+        if (self.file_data_off > getattr(self.section, "logical_size", self.section.size) or
+                begin > getattr(self.section, "logical_size", self.section.size) - self.file_data_off or
+                size > getattr(self.section, "logical_size", self.section.size) - self.file_data_off - begin):
             raise NativeNCAError("RomFS file extends beyond NCA section.")
         return name, sibling, self.file_data_off + begin, size
 
