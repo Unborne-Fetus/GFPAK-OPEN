@@ -212,6 +212,10 @@ Only process models and game assets you own or are authorized to use.
 
 ## Browser-first game explorer (no Windows app required)
 
+**Same File Viewer layout as desktop:** the browser **OPEN GAME FILES** tab now uses the desktop app's three-pane interface: expandable **Content tree** on the left, the current folder's files in the center, and a **Selected Resource** inspector on the right. The File, View, Tools, and Help menus are functional without a Python/Windows bridge. Double-click a folder (or choose a branch in the tree) to navigate; double-click supported models to preview them. Global search and model/animation/texture class filters display results across the entire readable game. File lists and expanded tree leaves are paged in groups of 250 rather than allocating a huge table for every discovered asset. The existing local `prod.keys` reader and exported-asset actions are unchanged.
+
+
+
 Open the hosted site or run `npm run dev`, then choose **OPEN GAME FILES**. Drag an NSP/NSZ/XCI/XCZ to the main drop area, or use **Open NSP / XCI / GFPAK**. You can also use **Open extracted folder** to scan all available model, animation and texture files in a directory.
 
 The web reader streams **index metadata** from local files (rather than loading gigabyte-sized games into RAM) and currently supports:
