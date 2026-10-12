@@ -1539,3 +1539,12 @@
  .browser-game-panel .web-game-center{height:350px}
  .browser-game-panel .asset-inspector{grid-column:1}
 }
+
+/* Hidden controls must stay hidden even when shared desktop author styles
+   set display:flex/grid. */
+#browserGamePanel[hidden],
+#webGameFamily[hidden],
+#webGameMore[hidden],
+#webGameFile[hidden],
+#webGameFolder[hidden],
+#webGameKeysFile[hidden]{display:none!important}
