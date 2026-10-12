@@ -179,7 +179,8 @@ export function parseTrskl(bytes) {
     const joints = list(reader, root, 2, 3000).map(table => {
       const at = reader.field(table, 2);
       const matrix = at ? reader.table(reader.pointer(at)) : null;
-      return { inverseBind: matrix ? [0,1,2,3].map(slot =>
+      return { segmentScaleCompensate: !!(reader.field(table,0) && reader.u8(reader.field(table,0))),
+        inverseBind: matrix ? [0,1,2,3].map(slot =>
         asVector(reader, matrix, slot, 3, [])) : null };
     });
     return { version: reader.uint(root, 0), bones, joints };

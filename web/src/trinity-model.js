@@ -104,14 +104,17 @@ function findOptionalTexture(project, name, parentPath) {
   return packed.length === 1 ? packed[0] : null;
 }
 
-function createMaterials(materials) {
+export function createMaterials(materials) {
   const lookup = new Map();
   for (const definition of materials) {
     for (const info of definition.materials) {
-      const mat = new THREE.MeshStandardMaterial({
+      const eyeHighlight = info.textures?.some(t => /^HighlightMaskMap$/i.test(t.name));
+      const Material = eyeHighlight ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+      const mat = new Material({
         name: info.name || 'Trinity material',
         color: 0xd9e0e7, side: THREE.DoubleSide,
-        roughness: 0.8, metalness: 0.0
+        roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
+        metalness: 0.0, ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
       });
       lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
         colors: info.colors, scalars: info.scalars });
@@ -120,7 +123,7 @@ function createMaterials(materials) {
   return lookup;
 }
 
-async function applyDecodedTextures(project, lookup, modelPath, report, created) {
+export async function applyDecodedTextures(project, lookup, modelPath, report, created) {
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
     { names: /^layermaskmap$/i, property: 'layerMaskMap', srgb: false },
@@ -129,6 +132,7 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
     { names: /^metallicmap\d*$/i, property: 'metalnessMap', srgb: false },
     { names: /^aomap$/i, property: 'aoMap', srgb: false },
     { names: /^(emissivemap|emissionmap)$/i, property: 'emissiveMap', srgb: true },
+    { names: /^highlightmaskmap$/i, property: 'emissiveMap', srgb: false, highlight:true },
   ];
   const textureCache = new Map();
   for (const [materialName, definition] of lookup.entries()) {
@@ -148,7 +152,7 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
       try {
         const requestedNames = [selected.file, selected.name];
         const uv = definition.colors?.[channel.property === 'normalMap'
-          ? 'UVScaleOffsetNormal' : 'UVScaleOffset'];
+          ? 'UVScaleOffsetNormal' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
         const cacheKey = textureItem.path + '|' + (uv?.join(',') || '') + '|' + channel.srgb +
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
@@ -169,7 +173,12 @@ async function applyDecodedTextures(project, lookup, modelPath, report, created)
         if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
         else material[channel.property] = texture;
         if (channel.property === 'map') material.color.setRGB(1, 1, 1);
-        if (channel.property === 'emissiveMap') material.emissive.setRGB(1, 1, 1);
+        if (channel.property === 'emissiveMap') {
+          const color = definition.colors?.[channel.highlight ? 'EmissionColorLayer5' : 'EmissionColor'];
+          material.emissive.setRGB(...(color?.slice(0,3) || [1,1,1]));
+          const intensity = definition.scalars?.[channel.highlight ? 'EmissionIntensityLayer5' : 'EmissionIntensity'];
+          material.emissiveIntensity = Number.isFinite(intensity) ? intensity : 1;
+        }
         material.needsUpdate = true;
       } catch (error) {
         report('Could not decode texture ' + textureItem.path + ': ' + error.message);
@@ -220,10 +229,30 @@ async function applyMatchedLinkedTextures(project, root, report, created) {
   return [...images];
 }
 
+export class NativeBone extends THREE.Bone {
+  constructor() {
+    super();
+    this.segmentScaleCompensate = false;
+    this.inverseParentScale = new THREE.Matrix4();
+  }
+  updateMatrix() {
+    super.updateMatrix();
+    if (this.segmentScaleCompensate && this.parent?.isBone) {
+      const scale = this.parent.scale;
+      const inverse = value => Math.abs(value) > 1e-10 ? 1/value : 1;
+      this.inverseParentScale.makeScale(inverse(scale.x),inverse(scale.y),inverse(scale.z));
+      // Native local pose = inverse parent scale * T * R * S. Keep authored
+      // scale properties intact so animation channels do not accumulate.
+      this.matrix.premultiply(this.inverseParentScale);
+    }
+  }
+}
+
 export function buildBones(trskl, sceneRoot) {
   if (!trskl?.bones?.length) return null;
   const bones = trskl.bones.map(info => {
-    const bone = new THREE.Bone();
+    const bone = new NativeBone();
+    bone.segmentScaleCompensate = !!trskl.joints?.[info.jointInfoIndex]?.segmentScaleCompensate;
     bone.name = info.name;
     bone.position.fromArray(info.translation);
     // Native extrinsic X -> Y -> Z rotations compose as qZ*qY*qX.
