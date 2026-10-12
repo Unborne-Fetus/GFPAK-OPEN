@@ -306,6 +306,19 @@ class DesktopAPI:
                 } for index, entry in enumerate(records)]
             }
 
+    def browse_fast_texture(self, node_id: str):
+        """Give the local browser a one-time verified texture stream reference."""
+        with self._lock:
+            item = self._browser.fast_texture_item(node_id)
+            token = uuid.uuid4().hex
+            if len(self._quick_previews) >= 6:
+                self._quick_previews.pop(next(iter(self._quick_previews)))
+            self._quick_previews[token] = (self._browser, [item["source"]])
+            return {
+                "path": item["path"], "size": item["size"],
+                "url": "/__quick_asset/" + token + "/0"
+            }
+
     def quick_preview_stream(self, token: str, index: int):
         """Resolve only a server-issued token/index pair, never client paths."""
         with self._lock:
