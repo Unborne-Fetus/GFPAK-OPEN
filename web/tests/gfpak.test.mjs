@@ -40,7 +40,7 @@ test('lazy file-backed parser reads index ranges rather than the full GFPAK', as
   assert.equal((await extractResourceAsync(archive, archive.resources[0], { packed: true })).size, 5);
 });
 
-test('file-backed GFPAK rejects truncated index and lazy Oodle remains explicit', async () => {
+test('file-backed GFPAK rejects truncated index and corrupted Oodle input safely', async () => {
   await assert.rejects(parseGfpakFile(new Blob([new Uint8Array(15)])), /outside archive/);
   const archive = await parseGfpakFile(new Blob([syntheticArchive(3)]));
   await assert.rejects(extractResourceAsync(archive, archive.resources[0]), /Oodle/);
@@ -63,7 +63,7 @@ test('rejects malformed archives and out-of-bounds resource offsets', () => {
   assert.throws(() => parseGfpak(syntheticArchive(0, true)), /outside archive/);
 });
 
-test('requires Oodle for type 3 archives, supports packed export', () => {
+test('synchronous API explains asynchronous Oodle requirement; packed export works', () => {
   const a = parseGfpak(syntheticArchive(3));
   assert.throws(() => extractResource(a, a.resources[0]), /Oodle/);
   assert.equal(extractResource(a, a.resources[0], { packed: true }).byteLength, 5);
