@@ -321,7 +321,7 @@ async function loadNativeClips(project, selected, skeleton, report) {
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
  */
-export async function loadTrinityModel(project, selected, report = () => {}) {
+export async function loadTrinityModel(project, selected, report = () => {}, options = {}) {
   const entry = project.items.find(item => item.path === selected);
   if (!entry) throw new TrinityError('Selected Trinity model not found');
   const suffix = ext(entry.path);
@@ -360,7 +360,7 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
   }
   const lookup = createMaterials(materialDefs);
   const created = [];
-  const sourceImages = await applyDecodedTextures(project, lookup, selected, report, created);
+  let sourceImages = [];
   const scene = new THREE.Group();
   scene.name = basename(selected);
   const rig = buildBones(skeleton, scene);
@@ -377,18 +377,57 @@ export async function loadTrinityModel(project, selected, report = () => {}) {
     }
     scene.add(makeMesh(part, material, rig));
   }
-  const animations = await loadNativeClips(project, selected, rig, report);
+  const animations = [];
+  let disposed = false;
+  let extrasPromise = null;
+  let released = false;
+  const releaseTextures = () => {
+    if (released) return;
+    released = true;
+    for (const texture of created) texture.dispose();
+    for (const image of sourceImages) image.close?.();
+  };
+  const postLoad = () => {
+    if (disposed) return Promise.resolve([]);
+    if (!extrasPromise) {
+      // Meshes and bones are already ready to draw. Fetch optional textures
+      // and animation clips after the first 3D frame instead of making users
+      // wait on dozens of unrelated game assets.
+      extrasPromise = (async () => {
+        const [images, clips] = await Promise.all([
+          applyDecodedTextures(project, lookup, selected, report, created),
+          loadNativeClips(project, selected, rig, report),
+        ]);
+        sourceImages = images;
+        if (!disposed) animations.push(...clips);
+        report('Finished ' + created.length + ' texture(s) and ' +
+          clips.length + ' native animation clip(s).');
+        return animations;
+      })();
+      extrasPromise.finally(() => { if (disposed) releaseTextures(); }).catch(() => {});
+    }
+    return extrasPromise;
+  };
   const vCount = parts.reduce((sum, p) => sum + p.vertices.count, 0);
   report('Decoded ' + parts.length + ' Trinity mesh parts / ' + vCount.toLocaleString() +
     ' vertices' + (rig ? ' / ' + rig.bones.length + ' skeleton bones' : '') +
-    ' / ' + animations.length + ' native animation clips. Game-native shaders and some texture/track variants still require more support.');
-  return {
+    (options.fastPreview ? '. Geometry ready; loading textures and animations next.' :
+      '. Loading native textures and animations.') +
+    ' Game-native shaders and some texture/track variants still require more support.');
+  const result = {
     root: scene, animations, selected,
     sourceFormat: 'TRMDL',
     sourceStats: { meshParts: parts.length, vertices: vCount, bones: rig?.bones.length ?? 0 },
     disposeAssets: () => {
-      for (const texture of created) texture.dispose();
-      for (const image of sourceImages) image.close?.();
+      disposed = true;
+      if (extrasPromise) extrasPromise.finally(releaseTextures).catch(() => {});
+      else releaseTextures();
     }
   };
+  if (options.fastPreview) {
+    result.postLoad = postLoad;
+  } else {
+    await postLoad();
+  }
+  return result;
 }
