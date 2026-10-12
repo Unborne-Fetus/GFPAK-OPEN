@@ -136,6 +136,14 @@ test('hashed PLA GFPAK recognizes BNTX header as texture companion and preserves
   assert.deepEqual(new Uint8Array(await texture.getBytes()),bntx);
 });
 
+test('separately packed PLA skeleton with hashed member filename is recognized as TRSKL',async()=>{
+  const skeleton=makeAnimatedTrinityTriangle()['models/test.trskl'];
+  const archive=gfpak({'unresolved/unnamed-portion.bin':skeleton});
+  const items=await prepareGfpakCompanions(archive,'pm0025_00_00_skeleton.gfpak');
+  assert.equal(items.filter(item=>item.path.endsWith('.trskl')).length,1,
+    JSON.stringify(items.map(item=>item.path)));
+});
+
 test('separate matching GFPAK exposes hashed PLA texture and animation companions',async()=>{
   const files=makeAnimatedTrinityTriangle();
   const texture=new Uint8Array(64);texture.set([66,78,84,88]);
