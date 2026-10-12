@@ -82,7 +82,7 @@ test('unsupported secondary animation channel does not erase valid skeletal moti
   const info=b.endObject();
   b.startObject(2);b.addFieldOffset(0,info,0);b.addFieldOffset(1,skeletal,0);
   b.finish(b.endObject());
-  const clip=parseNativeAnimation(b.asUint8Array(),'test.tranm');
+  const clip=parseNativeAnimation(arrayBuffer(b.asUint8Array()),'test.tranm');
   assert.equal(clip.unsupportedChannels,1);
   assert.equal(clip.tracks.length,1);
   assert.deepEqual(clip.tracks[0].translation[0].value,[0.5,0,0]);
