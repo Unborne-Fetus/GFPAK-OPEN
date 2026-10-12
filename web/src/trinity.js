@@ -142,6 +142,12 @@ export function parseTrmtr(bytes) {
           name: reader.string(t, 0),
           file: reader.string(t, 1),
           slot: reader.uint(t, 2)
+        })),
+        colors: Object.fromEntries(list(reader, table, 7, 128).map(t =>
+          [reader.string(t, 0), asVector(reader, t, 1, 4, [])])),
+        scalars: Object.fromEntries(list(reader, table, 4, 128).map(t => {
+          const at = reader.field(t, 1);
+          return [reader.string(t, 0), at ? reader.f32(at) : 0];
         }))
       }))
     };

@@ -8,11 +8,11 @@ from gfpak_open.asset_matching import match_model_assets
 
 
 class Archive:
-    def __init__(self, contents):
+    def __init__(self, contents, seed=0xCBF29CE484222325):
         self.contents = contents
         self.reads = []
         self.resources = [SimpleNamespace(index=i, size=len(data),
-                          path_hash=fnv1a64(name), file_hash=fnv1a64(name))
+                          path_hash=fnv1a64(name, seed), file_hash=fnv1a64(name, seed))
                           for i, (name, data) in enumerate(contents)]
     def read_resource(self, resource):
         self.reads.append(resource.index)
@@ -75,6 +75,15 @@ class DiscoveryTests(unittest.TestCase):
         matches = match_model_assets(rows)
         self.assertEqual(matches['0'][0]['kind'], 'animation')
         self.assertEqual(matches['1'][0]['kind'], 'animation')
+
+    def test_game_freak_offset_basis_restores_exact_companion_paths(self):
+        archive = Archive([('pm0025.trmdl', b'pm0025.trmtr\0'),
+                           ('pm0025.trmtr', b'pm0025_body_alb.bntx\0'),
+                           ('pm0025_body_alb.bntx', b'BNTX\0')],
+                          seed=0xCBF29CE484222645)
+        names = discover_resource_names(archive, {0:'model.trmdl', 1:'model.trmtr'})
+        self.assertEqual(names[1], 'pm0025.trmtr')
+        self.assertEqual(names[2], 'pm0025_body_alb.bntx')
 
     def test_malformed_tables_are_not_animations(self):
         for data in (b'\0'*160, b'BNT', b'fake animation', animation()[:120]):

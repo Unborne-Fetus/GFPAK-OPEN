@@ -10,6 +10,7 @@ function nativeBntx() {
   bytes.writeBigUInt64LE(0x80n,0x28);
   bytes.writeBigUInt64LE(0x100n,0x80);
   bytes.write('BRTI',0x100,'ascii');
+  bytes[0x110]=9;bytes[0x111]=2;bytes.writeUInt16LE(1,0x112);
   bytes.writeUInt16LE(1,0x116);
   bytes.writeUInt32LE(0x0b01,0x11c);
   bytes.writeUInt32LE(2,0x124);

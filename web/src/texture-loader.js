@@ -59,7 +59,17 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
       throw new Error('BNTX contains ' + archive.textures.length +
         ' textures; select a matching internal texture name rather than guessing the first');
     }
-    const decoded = decodeBntxTexture(archive, matched[0]?.index ?? 0);
+    const surfaceIndex = matched[0]?.index ?? 0;
+    const decoded = decodeBntxTexture(archive, surfaceIndex);
+    // BC5 normal maps store only X/Y. Reconstruct positive Z before Three.js
+    // expands RGB from [0,1] to a tangent-space normal in [-1,1].
+    if (!srgb && archive.textures[surfaceIndex].format >>> 8 === 0x1e &&
+        /(?:normal|_nrm)(?:[._]|$)/i.test([item.path,...preferredNames].join(' '))) {
+      for (let i=0;i<decoded.data.length;i+=4) {
+        const x=decoded.data[i]/127.5-1, y=decoded.data[i+1]/127.5-1;
+        decoded.data[i+2]=Math.round((Math.sqrt(Math.max(0,1-x*x-y*y))+1)*127.5);
+      }
+    }
     let texture;
     if (decoded.compressed) {
       const gpuFormat = decoded.compressed === 'bc7'
@@ -74,7 +84,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
       // THREE uploads the original deswizzled blocks without fabricating pixels.
     } else {
       texture = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat);
-      texture.flipY = true;
+      texture.flipY = false;
     }
     texture.name = decoded.name || item.path;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;

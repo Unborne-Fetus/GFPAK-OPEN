@@ -29,8 +29,8 @@ HEX_HASH = re.compile(r"^(?:0x)?[0-9a-fA-F]{16}$")
 MODEL_SUFFIXES = {".trmdl", ".gfbmdl"}
 
 
-def fnv1a64(name: str) -> str:
-    value = 0xCBF29CE484222325
+def fnv1a64(name: str, seed: int = 0xCBF29CE484222325) -> str:
+    value = seed
     for c in name.encode("utf-8"):
         value = (value ^ c) * 0x100000001B3 & 0xFFFFFFFFFFFFFFFF
     return f"{value:016x}"
@@ -61,7 +61,8 @@ class HashDictionary:
         name = safe_path(name).as_posix()
         self.names.add(name)
         for item in {name, PurePosixPath(name).name, name.lower()}:
-            self.mapping.setdefault(fnv1a64(item), name)
+            for seed in (0xCBF29CE484222325, 0xCBF29CE484222645):
+                self.mapping.setdefault(fnv1a64(item, seed), name)
 
     def load(self, file: str | Path) -> None:
         file = Path(file)
@@ -238,7 +239,9 @@ def restore_referenced_paths(archive: GFPak, workspace: Path, names: dict[int, s
                 continue
             full = path.as_posix()
             filename = path.name
-            matches = lookup.get(fnv1a64(full), []) + lookup.get(fnv1a64(filename), [])
+            matches = [entry for spelling in (full, filename)
+                       for seed in (0xCBF29CE484222325, 0xCBF29CE484222645)
+                       for entry in lookup.get(fnv1a64(spelling, seed), [])]
             # Deduplicate the same resource found through both hashes.
             unique = {entry.index: entry for entry in matches}
             if len(unique) != 1:
