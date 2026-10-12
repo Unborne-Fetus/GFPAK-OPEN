@@ -266,9 +266,9 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             game = root / "whole-game.nsp"
             content = plain_nca([
                 ("pfs", pfs0_files([
-                    ("pokemon/pm0025_00_00.trmdl", b"model"),
-                    ("pokemon/body.bntx", b"texture"),
-                    ("pokemon/idle.tranm", b"animation")
+                    ("pm0025_00_00.trmdl", b"model"),
+                    ("body.bntx", b"texture"),
+                    ("idle.tranm", b"animation")
                 ])),
                 ("romfs", romfs_nested())
             ])
