@@ -1,7 +1,7 @@
 /**
  * Nintendo Switch BNTX/NX texture reader.
- * Supports bounded, read-only 2D RGBA8/BGRA8, BC1 and BC3 (UNORM/sRGB)
- * surfaces in pitch-linear and Tegra block-linear layouts.
+ * Supports bounded, read-only 2D RGBA8, R8, RG8, RGB565, BC1-BC5
+ * and GPU BC7/ASTC surfaces in pitch-linear and Tegra block-linear layouts.
  * Refuses unsupported formats rather than rendering scrambled textures.
  */
 export class BntxError extends Error {
@@ -118,29 +118,70 @@ function decodeBC(packed,width,height,alphaMode) {
     const at=(by*w+bx)*stride;
     const color=at+(alphaMode?8:0);
     const c0=packed[color]|packed[color+1]<<8,c1=packed[color+2]|packed[color+3]<<8;
-    const palette=bc1Palette(c0,c1,alphaMode);
+    const palette=bc1Palette(c0,c1,!!alphaMode);
     const bits=(packed[color+4]|packed[color+5]<<8|packed[color+6]<<16|packed[color+7]<<24)>>>0;
-    let alpha=null;
-    if(alphaMode) {
-      const a0=packed[at],a1=packed[at+1];
-      alpha=[a0,a1];
-      if(a0>a1) for(let i=1;i<=6;i++)alpha.push(Math.round(((7-i)*a0+i*a1)/7));
-      else {
-        for(let i=1;i<=4;i++)alpha.push(Math.round(((5-i)*a0+i*a1)/5));
-        alpha.push(0,255);
-      }
-    }
+
     for(let i=0;i<16;i++) {
       const x=bx*4+(i%4),y=by*4+Math.floor(i/4);
       if(x>=width||y>=height)continue;
       const dst=(y*width+x)*4,colour=palette[(bits>>>(i*2))&3];
       out.set(colour,dst);
-      if(alpha) {
-        const bit=i*3,byte=at+2+Math.floor(bit/8);
-        const mask=packed[byte]|(packed[byte+1]??0)<<8|(packed[byte+2]??0)<<16;
-        out[dst+3]=alpha[(mask>>>(bit%8))&7];
+      if(alphaMode==='bc3')out[dst+3]=decodeBCAlpha(packed,at,i);
+      else if(alphaMode==='bc2') {
+        const byte=at+(i>>1);
+        const nibble=(packed[byte]>>(i%2*4))&15;
+        out[dst+3]=nibble*17;
       }
     }
+  }
+  return out;
+}
+function decodeBCAlpha(packed, at, index) {
+  const a0=packed[at], a1=packed[at+1];
+  const values=[a0,a1];
+  if(a0>a1) for(let i=1;i<=6;i++) values.push(Math.round(((7-i)*a0+i*a1)/7));
+  else {
+    for(let i=1;i<=4;i++) values.push(Math.round(((5-i)*a0+i*a1)/5));
+    values.push(0,255);
+  }
+  const bit=index*3, byte=at+2+Math.floor(bit/8);
+  const mask=packed[byte]|(packed[byte+1]??0)<<8|(packed[byte+2]??0)<<16;
+  return values[(mask>>>(bit%8))&7];
+}
+function decodeBC45(packed,width,height,dual) {
+  const bw=Math.ceil(width/4),bh=Math.ceil(height/4),stride=dual?16:8;
+  const out=new Uint8Array(width*height*4);
+  for(let by=0;by<bh;by++)for(let bx=0;bx<bw;bx++) {
+    const at=(by*bw+bx)*stride;
+    for(let i=0;i<16;i++) {
+      const x=bx*4+(i&3),y=by*4+(i>>2);
+      if(x>=width||y>=height)continue;
+      const red=decodeBCAlpha(packed,at,i);
+      const green=dual?decodeBCAlpha(packed,at+8,i):red;
+      const p=(y*width+x)*4;
+      out[p]=red;out[p+1]=green;
+      if(dual) {
+        // BC5 is commonly used for two-channel tangent-space normal maps.
+        const nx=red/127.5-1,ny=green/127.5-1;
+        out[p+2]=Math.round((Math.sqrt(Math.max(0,1-nx*nx-ny*ny))+1)*127.5);
+      } else out[p+2]=red;
+      out[p+3]=255;
+    }
+  }
+  return out;
+}
+function decodePixels(bytes,width,height,mode) {
+  const channels=mode==='r8'?1:mode==='rg8'||mode==='rgb565'?2:4;
+  const out=new Uint8Array(width*height*4);
+  for(let i=0;i<width*height;i++){
+    const src=i*channels,dst=i*4;
+    if(mode==='r8')out.set([bytes[src],bytes[src],bytes[src],255],dst);
+    else if(mode==='rg8')out.set([bytes[src],bytes[src+1],0,255],dst);
+    else if(mode==='rgb565') {
+      const [red,green,blue]=rgb565(bytes[src]|bytes[src+1]<<8);
+      out.set([red,green,blue,255],dst);
+    } else if(mode==='bgra')out.set([bytes[src+2],bytes[src+1],bytes[src],bytes[src+3]],dst);
+    else out.set(bytes.subarray(src,src+4),dst);
   }
   return out;
 }
@@ -159,8 +200,14 @@ export function decodeBntxTexture(container,index=0) {
   };
   let blockWidth=1,blockHeight=1,blockBytes=4,mode='rgba';
   if(id===0x0b||id===0x0c){mode=id===0x0c?'bgra':'rgba';}
+  else if(id===0x02){blockBytes=1;mode='r8';}
+  else if(id===0x07){blockBytes=2;mode='rgb565';}
+  else if(id===0x09){blockBytes=2;mode='rg8';}
   else if(id===0x1a){blockWidth=blockHeight=4;blockBytes=8;mode='bc1';}
+  else if(id===0x1b){blockWidth=blockHeight=4;blockBytes=16;mode='bc2';}
   else if(id===0x1c){blockWidth=blockHeight=4;blockBytes=16;mode='bc3';}
+  else if(id===0x1d){blockWidth=blockHeight=4;blockBytes=8;mode='bc4';}
+  else if(id===0x1e){blockWidth=blockHeight=4;blockBytes=16;mode='bc5';}
   else if(id===0x20){blockWidth=blockHeight=4;blockBytes=16;mode='bc7';}
   else if(astc[id]){[blockWidth,blockHeight]=astc[id];blockBytes=16;mode='astc';}
   else throw new BntxError('Unsupported BNTX texture format 0x'+texture.format.toString(16));
@@ -171,13 +218,10 @@ export function decodeBntxTexture(container,index=0) {
       data:packed,compressed:mode,blockWidth,blockHeight};
   }
   let rgba;
-  if(mode==='bc1'||mode==='bc3')rgba=decodeBC(packed,texture.width,texture.height,mode==='bc3');
-  else {
-    rgba=packed;
-    if(mode==='bgra') {
-      rgba=packed.slice();
-      for(let i=0;i<rgba.length;i+=4)[rgba[i],rgba[i+2]]=[rgba[i+2],rgba[i]];
-    }
-  }
+  if(mode==='bc1'||mode==='bc2'||mode==='bc3')
+    rgba=decodeBC(packed,texture.width,texture.height,mode==='bc3'||mode==='bc2' ? mode : null);
+  else if(mode==='bc4'||mode==='bc5')
+    rgba=decodeBC45(packed,texture.width,texture.height,mode==='bc5');
+  else rgba=decodePixels(packed,texture.width,texture.height,mode);
   return {name:texture.name,width:texture.width,height:texture.height,data:rgba};
 }
