@@ -501,6 +501,9 @@ async function inspectArchiveTexture() {
   }
   const name = resolvedName(resource,state.dictionary) ||
     'resource_' + String(resource.index).padStart(4,'0') + '.bin';
+  // Bind the archive that owns this resource; a previous refactor left
+  // sourceArchive undefined and prevented anonymous BNTX inspection.
+  const sourceArchive = state.archive;
   await inspectSourceTexture({
     path:name,size:resource.size,
     getBytes:async()=>extractResourceAsync(sourceArchive,resource)
