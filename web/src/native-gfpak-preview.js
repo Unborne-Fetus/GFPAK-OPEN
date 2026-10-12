@@ -128,7 +128,14 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       const bytes=await read(row);
       const type=identifyTrinity(bytes);
       if(type) row.kind=type;
-    }catch(_){unreadable++;}
+      else row.buffer=null; // Never retain thousands of unrelated decoded assets.
+    }catch(_){unreadable++;row.buffer=null;}
+    if(probed % 32===0){
+      report('Checked '+probed+' GFPAK resources for genuine Trinity models…');
+      // WASM decompression is synchronous once initialized: yield a frame
+      // regularly so the browser remains responsive on larger archives.
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
   }
   const models=rows.filter(row=>['trmdl','trmsh','gfbmdl'].includes(row.kind));
   if(!models.length){
