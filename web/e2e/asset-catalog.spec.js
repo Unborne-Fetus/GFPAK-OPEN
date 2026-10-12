@@ -38,6 +38,8 @@ test('native 3D preview uses streaming OBJ before launching Blender', async ({pa
   await page.locator('#assetRows .asset-open').first().click();
   await expect(page.locator('#statMeshes')).toHaveText('1');
   await expect(page.locator('#viewerPanel')).toBeVisible();
+  await expect(page.locator('#assetBrowser')).toBeHidden();
+  await expect(page.locator('#tabViewer')).toHaveAttribute('aria-selected','true');
   expect(await page.evaluate(() => window.previewStarts)).toBe(0);
 });
 
