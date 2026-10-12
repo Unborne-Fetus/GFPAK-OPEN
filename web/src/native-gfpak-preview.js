@@ -153,6 +153,70 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
   }
   throw Error('Cannot resolve '+kind+' '+reference+' among '+filtered.length+' resources.');
 }
+/**
+ * FlatBuffers tables for TRMDL and TRSKL share a vector-of-names slot, so an
+ * unknown hashed rig can be initially identified as a model descriptor. Check
+ * rig hierarchy rather than trusting the first shallow parse result.
+ */
+function plausibleRig(data){
+  const bones=data?.bones;
+  if(!Array.isArray(bones)||!bones.length||bones.length>3000)return false;
+  if(bones.some((b,i)=>!b.name||b.parent===i||
+    b.parent>=bones.length||b.parent< -1||!b.translation?.every(Number.isFinite)))return false;
+  const hierarchy=bones.some(b=>b.parent>=0);
+  const jointed=bones.some(b=>b.jointInfoIndex>=0)||data.joints?.length>0;
+  return hierarchy||jointed||
+    (bones.length===1 && /^(?:root|root_joint|rootnode|joint_0|bone_0)$/i.test(bones[0].name));
+}
+const materialToken=value=>String(value||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+async function recoverUnreferencedCompanions(rows,required,materialNames,read,report){
+  // A model with no rig pointer still frequently has one valid TRSKL member.
+  if(![...required].some(row=>row.kind==='trskl')){
+    const rigs=[];
+    for(const row of rows){
+      if(required.has(row)||row.resource.size>PROBE_LIMIT||
+        ['tranm','gfbanm','bntx','dds','png','jpg','webp','trmsh','trmbf'].includes(row.kind))continue;
+      try{
+        const data=parseTrskl(await read(row));
+        if(plausibleRig(data))rigs.push({row,count:data.bones.length});
+      }catch(_){}
+    }
+    if(rigs.length===1){
+      const {row,count}=rigs[0];
+      row.kind='trskl';
+      required.add(row);
+      report('Recovered '+count+' TRSKL bones from resource #'+row.resource.index+
+        ': skeleton existed but its name was hashed or absent from TRMDL.');
+    }else if(rigs.length>1)report('Found '+rigs.length+
+      ' candidate skeletons but none uniquely linked; avoiding an incorrect rig.');
+    else report('No structurally valid TRSKL found inside this GFPAK.');
+  }
+  const existingMaterials=[...required].some(row=>row.kind==='trmtr');
+  if(!existingMaterials){
+    const candidates=[];
+    for(const row of rows){
+      if(required.has(row)||row.resource.size>PROBE_LIMIT ||
+        ['tranm','gfbanm','bntx','dds','png','jpg','webp','trmsh','trmbf','trskl'].includes(row.kind))continue;
+      try{
+        const data=parseTrmtr(await read(row));
+        if(!data.materials?.length)continue;
+        const overlap=data.materials.filter(m=>materialNames.has(materialToken(m.name))).length;
+        const detailed=data.materials.some(m=>m.textures?.length||m.shaders?.length||
+          Object.keys(m.colors||{}).length);
+        if(overlap>0||(detailed&&data.materials.length>0))
+          candidates.push({row,overlap,detailed});
+      }catch(_){}
+    }
+    const matches=candidates.filter(x=>x.overlap>0);
+    const chosen=matches.length?matches:candidates.length===1?candidates:[];
+    for(const {row,overlap} of chosen){
+      row.kind='trmtr';required.add(row);
+      report('Recovered TRMTR materials from resource #'+row.resource.index+
+        (overlap?' ('+overlap+' named mesh material matches).':'.'));
+    }
+    if(!chosen.length)report('No reliably linked TRMTR material resources found.');
+  }
+}
 /** Prepare a genuine directly-renderable Trinity project from any readable GFPAK. */
 export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dictionary=null) {
   const archive=await parseGfpakFile(blob,filename);
@@ -200,12 +264,15 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
   const required=new Set([root]);
   const context={assignments:new Map(),used:new Set(),referenceOrder:[]};
+  const meshMaterialNames=new Set();
   if(root.kind==='trmdl'){
     const meta=parseTrmdl(await read(root));
     context.referenceOrder=meta.meshFiles.map(normalize);
     for(const name of meta.meshFiles){
       const shape=await chooseResource(rows,'trmsh',name,filename,report,read,context);
       const meshes=parseTrmsh(await read(shape));
+      for(const mesh of meshes.meshes||[])for(const part of mesh.parts||[])
+        if(part.material)meshMaterialNames.add(materialToken(part.material));
       assignRef(shape,'trmsh',name,stem);
       required.add(shape);
       const buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read,context);
@@ -223,9 +290,12 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     }
   }else if(root.kind==='trmsh'){
     const mesh=parseTrmsh(await read(root));
+    for(const shape of mesh.meshes||[])for(const part of shape.parts||[])
+      if(part.material)meshMaterialNames.add(materialToken(part.material));
     const buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read,context);
     assignRef(buffer,'trmbf',mesh.bufferFile,stem);required.add(buffer);
   }
+  await recoverUnreferencedCompanions(rows,required,meshMaterialNames,read,report);
   for(const row of rows)if(['trskl','trmtr','bntx','dds','png','jpg','jpeg','webp','tranm','gfbanm','tracm'].includes(row.kind))
     required.add(row);
   // Unambiguous fallback works even when a PLA GFPAK has no dictionary:
