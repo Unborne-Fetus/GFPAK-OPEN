@@ -1,4 +1,6 @@
-import { loadDecodedTexture } from './texture-loader.js';
+import {
+  loadDecodedTexture, matchingLinkedDiffuseTexture
+} from './texture-loader.js';
 import { associatedNativeAnimations } from './animation-association.js';
 /**
  * Turn decoded legacy Game Freak GFBMDL mesh data into an actual Three.js scene.
@@ -268,40 +270,43 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
         }
       }
         };
-        const attachUniqueLinkedTexture = async () => {
-          const linked = project.items.filter(item => item.linkedKind === 'texture' &&
-            ['.png', '.jpg', '.jpeg', '.webp', '.dds', '.bntx']
-              .includes(getExtension(item.path)));
-          if (linked.length !== 1) return;
+        const attachMatchedLinkedTextures = async () => {
           const visible = new Set();
           root.traverse(object => {
             if (!object.isMesh) return;
-            for (const mat of Array.isArray(object.material) ?
+            for (const material of Array.isArray(object.material) ?
               object.material : [object.material]) {
-              if (mat) visible.add(mat);
+              if (material) visible.add(material);
             }
           });
-          if (visible.size !== 1) return;
-          const material = [...visible][0];
-          if (material.map) return;
-          try {
-            const texture = await loadDecodedTexture(
-              linked[0], true, [material.name]);
-            textureObjects.push(texture);
-            material.map = texture;
-            material.color.setRGB(1, 1, 1);
-            material.needsUpdate = true;
-            report('Automatically applied the sole matched texture ' +
-              linked[0].path + ' to GFBMDL material.');
-          } catch (error) {
-            report('Could not apply linked texture ' + linked[0].path +
-              ': ' + (error.message || error));
+          for (const material of visible) {
+            if (material.map) continue;
+            const item = matchingLinkedDiffuseTexture(
+              project.items, material.name, visible.size);
+            if (!item) continue;
+            try {
+              let texture = textureCache.get('linked|' + item.path);
+              if (!texture) {
+                texture = await loadDecodedTexture(
+                  item, true, [material.name]);
+                textureCache.set('linked|' + item.path, texture);
+                textureObjects.push(texture);
+              }
+              material.map = texture;
+              material.color.setRGB(1, 1, 1);
+              material.needsUpdate = true;
+              report('Automatically applied linked texture ' +
+                item.path + ' to GFBMDL material ' + material.name + '.');
+            } catch (error) {
+              report('Could not apply linked texture ' + item.path +
+                ': ' + (error.message || error));
+            }
           }
         };
         const [_, clips] = await Promise.all([
           (async () => {
             await renderTextures();
-            await attachUniqueLinkedTexture();
+            await attachMatchedLinkedTextures();
           })(),
           readLegacyAnimations(project, selected, rig, report)
         ]);
