@@ -99,6 +99,33 @@ def _u64(data: bytes, offset: int) -> int:
     return struct.unpack_from("<Q", data, offset)[0]
 
 
+def _ivfc_data_region(header: bytes) -> tuple[int, int]:
+    """Return the last IVFC region without mistaking the master hash for a level.
+
+    The on-disk MaxLayers count includes the external master-hash level.
+    For example, a normal Switch RomFS reports 7 levels but has only six
+    0x18-byte region descriptors. Region 5, not out-of-bounds region 6,
+    contains the real RomFS. All region offsets are 64-bit.
+    """
+    if header[8:12] != b"IVFC":
+        raise NativeNCAError("RomFS IVFC superblock is not supported.")
+    levels = _u32(header, 0x14)
+    if not 2 <= levels <= 7:
+        raise NativeNCAError(
+            f"RomFS has an invalid IVFC level count ({levels}); expected 2–7."
+        )
+    info_at = 0x18 + (levels - 2) * 0x18
+    # Six descriptors occupy 0x18 through 0xA7, inside the 0xF8
+    # hash-data region. Never read a fabricated seventh descriptor.
+    if info_at + 0x18 > 0xA8:
+        raise NativeNCAError("RomFS IVFC region descriptor exceeds its header.")
+    logical_offset = _u64(header, info_at)
+    logical_size = _u64(header, info_at + 8)
+    if not logical_size:
+        raise NativeNCAError("RomFS IVFC data region has zero length.")
+    return logical_offset, logical_size
+
+
 def _filename(name: bytes) -> str:
     try:
         decoded = name.decode("utf-8")
@@ -302,12 +329,7 @@ class NativeSection:
             if self.fs_type in (1, 2) and self.hash_type in (2, 5):
                 base = _u64(header, 0x40)
             elif self.fs_type in (0, 3) or self.hash_type in (3, 6):
-                if header[8:12] != b"IVFC":
-                    raise NativeNCAError("Compressed RomFS has no IVFC header.")
-                layers = _u32(header, 0x14)
-                if not 1 <= layers <= 6:
-                    raise NativeNCAError("Compressed RomFS has an invalid IVFC layer count.")
-                base = _u64(header, 0x18 + (layers - 1) * 0x18)
+                base, _length = _ivfc_data_region(header)
             else:
                 raise NativeNCAError("Unsupported compressed filesystem type.")
             table_at = base + self.compression_table_offset
@@ -331,15 +353,10 @@ class NativeSection:
                 raise NativeNCAError("PartitionFS data offset is beyond its section.")
             self._fs = PartitionFS(self, file_offset)
         elif self.fs_type in (0, 3) or self.hash_type in (3, 6):
-            # IVFC highest-level region is the actual RomFS image.
-            if header[8:12] != b"IVFC":
-                raise NativeNCAError("RomFS IVFC superblock is not supported.")
-            layers = _u32(header, 0x14)
-            if not 1 <= layers <= 6:
-                raise NativeNCAError("RomFS contains an invalid IVFC layer count.")
-            file_offset = _u64(header, 0x18 + (layers - 1) * 0x18)
-            if file_offset >= self.logical_size:
-                raise NativeNCAError("RomFS data offset is outside the NCA section.")
+            # IVFC MaxLayers includes the external master-hash level.
+            file_offset, data_length = _ivfc_data_region(header)
+            if file_offset >= self.logical_size or data_length > self.logical_size - file_offset:
+                raise NativeNCAError("RomFS IVFC data region is outside the readable NCA section.")
             self._fs = RomFS(self, file_offset)
         else:
             raise NativeNCAError("Unsupported NCA section filesystem format.")
