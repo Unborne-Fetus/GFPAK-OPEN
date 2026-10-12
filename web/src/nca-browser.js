@@ -25,8 +25,8 @@ function valueName(data) {
   return name;
 }
 function partitionFilename(data) {
-  const value=text.decode(data).replaceAll('\\\\','/');
-  if(!value || value.startsWith('/') || /^[A-Za-z]:/.test(value) ||
+  const value=text.decode(data);
+  if(!value || value.startsWith('/') || value.includes(String.fromCharCode(92)) || /^[A-Za-z]:/.test(value) ||
     value.split('/').some(part=>!part || part==='.' || part==='..'))
     throw Error('Unsafe PartitionFS filename');
   return value;
