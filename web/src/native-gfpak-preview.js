@@ -105,6 +105,18 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
       }catch(_){}
     }
   }
+  if(!filtered.length && (kind==='trskl'||kind==='trmtr')){
+    for(const row of rows.filter(row=>!row.known || ext(row.known)==='.'+kind)){
+      if(row.resource.size>PROBE_LIMIT)continue;
+      try{
+        const bytes=await read(row);
+        const data=kind==='trskl'?parseTrskl(bytes):parseTrmtr(bytes);
+        if(kind==='trskl'?data.bones?.length:data.materials?.length){
+          row.kind=kind;filtered.push(row);
+        }
+      }catch(_){}
+    }
+  }
   const direct=filtered.filter(row=>normalize(row.known)===normalize(reference) ||
     normalize(row.known).endsWith('/'+normalize(reference)));
   const hashed=matchByHash(filtered,reference,archiveName,kind);
