@@ -77,3 +77,23 @@ test('legacy GFBMDL texture mapping prefers unique exact/local matches',()=>{
   assert.equal(findLegacyTexture('eyes',[...rows,{item:second,base:'extra',score:10}]),null);
   assert.equal(findLegacyTexture('body',[...rows,{item:local,base:'body',score:10}]),null);
 });
+
+test('DDS textures expose real dimensions and retain native compressed blocks',()=>{
+  const bytes=new Uint8Array(136);
+  const view=new DataView(bytes.buffer);
+  view.setUint32(0,0x20534444,true);
+  view.setUint32(4,124,true);
+  view.setUint32(8,0xa1007,true);
+  view.setUint32(12,4,true);view.setUint32(16,4,true);
+  view.setUint32(20,8,true);view.setUint32(28,1,true);
+  view.setUint32(76,32,true);view.setUint32(80,4,true);
+  view.setUint32(84,0x31545844,true);
+  view.setUint32(108,0x1000,true);
+  bytes.set([0,248,31,0,0,0,0,0],128);
+  assert.equal(isInspectableTexture('body.dds'),true);
+  const info=inspectTexture(bytes,'textures/body.dds');
+  assert.equal(info.kind,'dds');
+  assert.equal(info.surfaces[0].width,4);
+  assert.equal(info.surfaces[0].height,4);
+  assert.equal(texturePngName(info,0),'body_body.dds.png');
+});
