@@ -679,15 +679,15 @@ async function recoverTrinityMaterials(project, selected, references, parts, rep
     }catch(error){report('Material definition could not be decoded: '+error.message);}
   }
   const variant=options.textureVariant==='shiny'?'shiny':'regular';
-  const selected=chooseTrinityMaterialSources(parsed,variant);
-  for(const item of selected)report('Matched '+item.data.materials.length+
+  const chosenDefs=chooseTrinityMaterialSources(parsed,variant);
+  for(const item of chosenDefs)report('Matched '+item.data.materials.length+
     ' material definition(s) ['+trinityMaterialVariant(item.item)+'] from '+item.item.path+
     (item.explicit?' by model reference':' by mesh material names')+'.');
   if(parsed.some(item=>trinityMaterialVariant(item.item)==='shiny'))
-    report('TRMTR color assignment: '+variant+' selected; '+selected.length+
+    report('TRMTR color assignment: '+variant+' selected; '+chosenDefs.length+
       ' of '+parsed.length+' definitions used. Shiny definitions do not override the regular skin.');
-  if(!selected.length)report('No matching '+variant+' TRMTR material definitions found; using neutral materials.');
-  return selected.map(item=>item.data);
+  if(!chosenDefs.length)report('No matching '+variant+' TRMTR material definitions found; using neutral materials.');
+  return chosenDefs.map(item=>item.data);
 }
 
 /**
