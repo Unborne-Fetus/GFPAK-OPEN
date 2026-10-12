@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Builder} from 'flatbuffers';
-import {loadTrinityModel,chooseRigByAnimationTracks} from '../src/trinity-model.js';
+import {loadTrinityModel,chooseRigByAnimationTracks,
+  chooseRigByMeshInfluences} from '../src/trinity-model.js';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 
@@ -80,4 +81,21 @@ test('animation bone evidence uniquely associates the correct rig without guessi
   assert.equal(chooseRigByAnimationTracks([roots[0],{
     ...roots[0],item:{path:'duplicate.trskl'}
   }],animations),null);
+});
+
+test('joint index evidence resolves only one structurally compatible skeleton',()=>{
+  const candidates=[
+    {value:{bones:[{jointInfoIndex:0},{jointInfoIndex:1}]}},
+    {value:{bones:[{jointInfoIndex:0},{jointInfoIndex:2},{jointInfoIndex:4}]}}
+  ];
+  const mesh={vertices:{count:1,
+    joints:new Float32Array([0,2,0,0]),
+    weights:new Float32Array([0.5,0.5,0,0])}};
+  assert.equal(chooseRigByMeshInfluences(candidates,[mesh]),candidates[1]);
+  assert.equal(chooseRigByMeshInfluences(candidates,[{
+    vertices:{count:1,joints:new Float32Array([0,0,0,0]),
+      weights:new Float32Array([1,0,0,0])}}]),null);
+  assert.equal(chooseRigByMeshInfluences([candidates[1],{
+    value:{bones:[{jointInfoIndex:0},{jointInfoIndex:2}]}
+  }],[mesh]),null);
 });
