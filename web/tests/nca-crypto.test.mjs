@@ -167,6 +167,29 @@ test('AES-CTR decrypted NCA RomFS exposes native game assets, not only PFS0 tabl
   assert.match(decoded.entries[1].name,/pm0025_00_00\.gfpak$/);
   assert.deepEqual(Buffer.from(await decoded.entries[1].getBytes()),fs.raw);
 });
+
+test('AES-XTS encrypted NCA filesystem sections decode original native model files',async()=>{
+  const original=Buffer.from('GFLXPACK test switch asset');
+  const source=nca(pfs([['pm0092_00_00.gfpak',original]]),
+    {headerEncrypted:false,encryptContent:false});
+  const file=Buffer.from(source.content);
+  const fs=0x400;
+  file[fs+4]=2; // AES-XTS content section
+  const cipher=createDecipheriv('aes-128-ecb',source.areaKey,null);
+  cipher.setAutoPadding(false);
+  const area=Buffer.concat([cipher.update(file.subarray(0x300,0x340)),cipher.final()]);
+  const xtsKey=area.subarray(0,32);
+  for(let at=0xc00,sector=0;at<file.length;at+=0x200,sector++){
+    encXts(file.subarray(at,at+0x200),xtsKey,sector).copy(file,at);
+  }
+  const packageFile=new Blob([pfs([['main.nca',file]])]);
+  packageFile.name='encrypted-content.nsp';
+  const keys=parseLocalKeys(source.keyLines.join('\\n'));
+  const result=await openGamePackage(packageFile,{keys});
+  assert.equal(result.entries.length,2,result.warnings.join('; '));
+  assert.deepEqual(Buffer.from(await result.entries[1].getBytes()),original);
+});
+
 test('Wrong content key never yields a false successful model listing',async()=>{
   const source=nca(pfs([['pm0094_00_00.trmdl',Buffer.from([1,2,3])]]));
   const bad=parseLocalKeys([
