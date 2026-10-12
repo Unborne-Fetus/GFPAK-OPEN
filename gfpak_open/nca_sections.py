@@ -55,6 +55,13 @@ class LocalNCASections:
             self._readers[identifier] = NativeNCA(analyzer, index, self._keys)
         return self._readers[identifier]
 
+    def attach_base(self, analyzer: NSPAnalyzer, index: int,
+                    base_analyzer: NSPAnalyzer, base_index: int) -> int:
+        """Attach a selected original NCA to a compatible plaintext BKTR patch."""
+        updated = self._reader(analyzer, index)
+        original = self._reader(base_analyzer, base_index)
+        return updated.attach_base(original)
+
     def sections(self, analyzer: NSPAnalyzer, index: int) -> list[int]:
         return sorted(self._reader(analyzer, index).sections)
 
