@@ -119,16 +119,26 @@ export function parseNativeAnimation(bytes, filename = 'model.tranm') {
     const frameRate = reader.uint(info, 2) || 30;
     if (frameCount > MAX_FRAMES || frameRate > 1000)
       throw new NativeAnimationError('Animation frame/rate exceeds sanity limits');
-    const tracks = reader.objects(skeletal, 0, MAX_TRACKS).map(track => ({
-      bone: reader.string(track, 0),
-      scale: dataChannel(reader, track, 'scale', 1),
-      rotation: dataChannel(reader, track, 'rotation', 3),
-      translation: dataChannel(reader, track, 'translation', 5)
-    })).filter(track => track.bone && (track.scale || track.rotation || track.translation));
+    let unsupportedChannels=0;
+    const tracks = reader.objects(skeletal, 0, MAX_TRACKS).map(track => {
+      const row={bone:reader.string(track,0),scale:null,rotation:null,translation:null};
+      for(const [kind,slot] of [['scale',1],['rotation',3],['translation',5]]){
+        try{row[kind]=dataChannel(reader,track,kind,slot);}
+        catch(error){
+          // A newer game may encode *one* channel with an unknown union
+          // variant. Keep other real keyframes rather than dropping the
+          // entire animation; never fabricate values for the unsupported one.
+          if(!(error instanceof NativeAnimationError)||
+             !/^Unsupported native animation channel type /.test(error.message))throw error;
+          unsupportedChannels++;
+        }
+      }
+      return row;
+    }).filter(track => track.bone && (track.scale || track.rotation || track.translation));
     if (!tracks.length) throw new NativeAnimationError('No skeletal keyframes could be decoded');
     return {
       name: filename.replace(/\.[^.]+$/, ''), frameCount, frameRate,
-      looped: reader.uint(info, 0) !== 0, tracks
+      looped: reader.uint(info, 0) !== 0, tracks, unsupportedChannels
     };
   } catch (error) {
     if (error instanceof NativeAnimationError) throw error;
