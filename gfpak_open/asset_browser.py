@@ -821,6 +821,113 @@ class AssetBrowser:
                 )
         return result
 
+    def fast_preview_items(self, id_: str) -> dict:
+        """Identify lazy, read-only browser-native model dependencies.
+
+        Only filenames and byte lengths are indexed here. No Blender process,
+        full NCA extraction, GFPAK unpack or texture decompression occurs until
+        the web-native decoder requests a particular selected file.
+        """
+        selected = self.node(id_)
+        if selected["kind"] not in {"file", "nca_file", "zipfile"}:
+            raise ValueError("This archive requires the fallback converter")
+        model_name = selected["name"] if selected["kind"] != "zipfile" else selected["inner"]
+        if Path(model_name).suffix.lower() not in {
+            ".glb", ".gltf", ".fbx", ".obj", ".dae",
+            ".trmdl", ".trmsh", ".gfbmdl",
+        }:
+            raise ValueError("This format requires the fallback converter")
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | {".bin", ".mtl"}
+        from .pokemon_assets import pokemon_id
+        token = pokemon_id(model_name)
+        parent = model_name.replace("\\", "/").rpartition("/")[0]
+        entries = []
+        def include(name: str, size: int, location: tuple):
+            if Path(name).suffix.lower() not in allowed or size < 0 or size > 450 * 1024 * 1024:
+                return
+            if token and pokemon_id(name) not in ("", token):
+                return
+            entries.append({"path": name, "size": size, "source": location})
+
+        if selected["kind"] == "file":
+            source = Path(selected["path"])
+            include(source.name, source.stat().st_size, ("file", source))
+            for sibling in source.parent.iterdir():
+                if len(entries) >= 400:
+                    break
+                if sibling == source or not sibling.is_file() or sibling.is_symlink():
+                    continue
+                if sibling.suffix.lower() not in allowed:
+                    continue
+                include(sibling.name, sibling.stat().st_size, ("file", sibling))
+        elif selected["kind"] == "zipfile":
+            path = Path(selected["path"])
+            _, members = self._zip_data(path)
+            full = selected["inner"]
+            parent = full.rpartition("/")[0]
+            if full not in members:
+                raise ValueError("Selected ZIP member no longer exists")
+            include(full, members[full].file_size, ("zip", path, full))
+            for filename, meta in members.items():
+                if len(entries) >= 400:
+                    break
+                if filename == full or filename.rpartition("/")[0] != parent:
+                    continue
+                include(filename, meta.file_size, ("zip", path, filename))
+        else:
+            reader, index, section, full = self._nca_virtual_file(selected)
+            parent = full.rpartition("/")[0]
+            fs = self._nca_sections.filesystem(reader, index, section)
+            info = fs.file(full)
+            include(full, info.size, ("nca", reader, index, section, full))
+            cursor = None
+            for _ in range(32):
+                page = fs.children_page(parent, cursor=cursor, limit=250)
+                for row in page["entries"]:
+                    if len(entries) >= 400:
+                        break
+                    if row["type"] != "file" or row["path"] == full:
+                        continue
+                    include(row["path"], row["size"],
+                            ("nca", reader, index, section, row["path"]))
+                cursor = page["next_cursor"]
+                if not cursor or len(entries) >= 400:
+                    break
+        if not entries or entries[0]["path"] != model_name:
+            raise ValueError("The selected native model is not readable")
+        return {"label": selected["name"], "selected": model_name, "items": entries}
+
+    def stream_fast_preview_item(self, descriptor: tuple):
+        """Return the byte length and bounded chunk generator for a whitelisted file."""
+        kind = descriptor[0]
+        if kind == "file":
+            file = descriptor[1]
+            size = file.stat().st_size
+            def chunks():
+                with file.open("rb") as handle:
+                    while part := handle.read(1024 * 1024):
+                        yield part
+            return size, chunks()
+        if kind == "zip":
+            _, archive, name = descriptor
+            with zipfile.ZipFile(archive) as zf:
+                size = zf.getinfo(name).file_size
+            def chunks():
+                with zipfile.ZipFile(archive) as zf, zf.open(name) as handle:
+                    while part := handle.read(1024 * 1024):
+                        yield part
+            return size, chunks()
+        if kind == "nca":
+            _, reader, index, section, name = descriptor
+            fs = self._nca_sections.filesystem(reader, index, section)
+            info = fs.file(name)
+            def chunks():
+                for offset in range(0, info.size, 1024 * 1024):
+                    yield fs.section.read(
+                        info.offset + offset, min(1024 * 1024, info.size - offset))
+            return info.size, chunks()
+        raise ValueError("Unsupported native asset stream")
+
     def preview_source(self, id_: str) -> Path:
         node = self.node(id_)
         kind = node["kind"]
