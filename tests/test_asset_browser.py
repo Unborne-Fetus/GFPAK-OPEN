@@ -159,6 +159,41 @@ class AssetBrowserTests(unittest.TestCase):
             matched = browser.fast_preview_items(model["id"])
             self.assertEqual(matched["selected"], manifest["selected"])
 
+    def test_native_texture_preview_is_single_file_and_preserves_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            source = folder / "body.bntx"
+            source.write_bytes(b"BNTX test native surface")
+            companion = folder / "idle.tranm"
+            companion.write_bytes(b"animation must not be decoded here")
+            browser = AssetBrowser()
+            root = browser.open(folder)
+            files = browser.children(root["id"])["entries"]
+            texture = next(row for row in files if row["category"] == "texture")
+            manifest = browser.fast_texture_item(texture["id"])
+            self.assertEqual(manifest["path"], "body.bntx")
+            size, chunks = browser.stream_fast_preview_item(manifest["source"])
+            self.assertEqual(b"".join(chunks), source.read_bytes())
+            self.assertEqual(size, source.stat().st_size)
+            animation = next(row for row in files if row["category"] == "animation")
+            with self.assertRaisesRegex(ValueError, "recognized texture"):
+                browser.fast_texture_item(animation["id"])
+            self.assertTrue(companion.exists())
+
+    def test_native_texture_preview_from_gfpak_uses_verified_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "pm0025_00_00.gfpak"
+            create_resolved_gfpak(archive)
+            browser = AssetBrowser()
+            root = browser.open(archive)
+            files = browser.children(root["id"])["entries"]
+            texture = next(row for row in files if row["category"] == "texture")
+            manifest = browser.fast_texture_item(texture["id"])
+            self.assertEqual(manifest["path"], "body.bntx")
+            size, chunks = browser.stream_fast_preview_item(manifest["source"])
+            self.assertEqual(b"".join(chunks), b"fake BNTX")
+            self.assertEqual(size, len(b"fake BNTX"))
+
     def test_link_extracted_folder_under_nsp_and_browse_full_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
