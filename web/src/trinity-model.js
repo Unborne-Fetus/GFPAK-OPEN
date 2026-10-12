@@ -265,7 +265,14 @@ export function makeMesh(part, material, skeletonInfo) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices.position, 3));
   if (vertices.normal) geometry.setAttribute('normal', new THREE.BufferAttribute(vertices.normal, 3));
-  if (vertices.uv) geometry.setAttribute('uv', new THREE.BufferAttribute(vertices.uv, 2));
+  if (vertices.uv) {
+    // Native Trinity coordinates use the opposite V origin from the GL
+    // sampling convention. Flip the coordinates once for every material map,
+    // including BC7/ASTC blocks which cannot be flipped on texture upload.
+    const uv = vertices.uv.slice();
+    for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
     material.vertexColors = true;
