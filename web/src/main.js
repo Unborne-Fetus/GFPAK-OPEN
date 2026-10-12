@@ -274,7 +274,7 @@ async function inspectSourceTexture(item) {
       surface.name + (surface.width ? ' · ' + surface.width + '×' + surface.height : ''),
       String(surface.index)
     )));
-    el('textureSourceName').textContent = item.path + ' · ' +
+    el('textureSourceName').textContent = info.filename + ' · ' +
       info.surfaces.length + ' texture surface(s)';
     if (!el('textureDialog').open) el('textureDialog').showModal();
     await drawCurrentTexture();
