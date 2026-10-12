@@ -41,15 +41,15 @@
           <div class="section-heading"><span class="step-number">01</span><h2>IMPORT SOURCE</h2><span class="section-line"></span></div>
           <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Choose or drop a model or GFPAK file">
             <span class="drop-icon">⬡</span>
-            <strong>Drop model files here</strong>
-            <span>3D models, source files, ZIP packages &amp; GFPAK</span>
+            <strong>Drop game files or Pokémon models here</strong>
+            <span>NSP / XCI / extracted folders / 3D models / ZIP / GFPAK</span>
             <button id="chooseFiles" class="button button-outline" type="button">BROWSE FILES <span>↗</span></button>
           </div>
           <div class="secondary-actions">
             <button id="chooseFolder" class="text-button" type="button">＋ Import a folder</button>
             <button id="demoButton" class="text-button" type="button">◇ Try demo model</button>
           </div>
-          <input id="fileInput" type="file" accept=".zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.gfbmdl,.trmdl,.trmsh,.trmbf,.trskl,.gfbanm,.tranm,.bntx,.bundle,.unity3d,.assets,.nusrcmdlb,.nutexb,.ply,.stl,.3ds,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
+          <input id="fileInput" type="file" accept=".nsp,.nsz,.xci,.xcz,.zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.gfbmdl,.trmdl,.trmsh,.trmbf,.trskl,.gfbanm,.tranm,.bntx,.bundle,.unity3d,.assets,.nusrcmdlb,.nutexb,.ply,.stl,.3ds,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
           <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
           <input id="hashInput" type="file" accept=".txt,.json" hidden />
           <div id="sourceSummary" class="source-summary" aria-live="polite">
@@ -104,6 +104,7 @@
             <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
             <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; MODEL CONVERTER</button>
             <button id="tabAssets" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="assetBrowser" hidden>▤ &nbsp; GAME FILE EXPLORER</button>
+            <button id="tabBrowserGame" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="browserGamePanel">▤ &nbsp; OPEN GAME FILES</button>
           </div>
           <div id="currentModelTag" class="current-file">NO MODEL LOADED</div>
         </div>
@@ -190,6 +191,54 @@
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
           <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
+        </section>
+
+        <section id="browserGamePanel" class="asset-browser browser-game-panel" role="tabpanel" aria-labelledby="tabBrowserGame" hidden>
+          <div class="asset-hero">
+            <div><span class="eyebrow">BROWSER-NATIVE GAME READER</span>
+              <h2>Open your game files locally</h2>
+              <p>Browse NSP/NSZ indexes, XCI partitions, readable plaintext NCA files and extracted game folders. No desktop application or file uploads.</p>
+            </div>
+            <div class="asset-actions">
+              <button type="button" id="webGameOpenPackage" class="button button-primary">＋ Open NSP / XCI / GFPAK</button>
+              <button type="button" id="webGameOpenFolder" class="button button-secondary">＋ Open extracted folder</button>
+              <input id="webGameFile" type="file" accept=".nsp,.nsz,.xci,.xcz,.gfpak,.zip" hidden />
+              <input id="webGameFolder" type="file" webkitdirectory directory multiple hidden />
+            </div>
+          </div>
+          <div class="asset-summary">
+            <div><span>MODELS / PACKS</span><strong id="webGameModels">0</strong></div>
+            <div><span>ANIMATIONS</span><strong id="webGameAnimations">0</strong></div>
+            <div><span>TEXTURES</span><strong id="webGameTextures">0</strong></div>
+            <div><span>FILES INDEXED</span><strong id="webGameFiles">0</strong></div>
+          </div>
+          <div class="asset-toolbar">
+            <div id="webGameTitle" class="asset-breadcrumb">Choose a package or already-extracted folder.</div>
+            <button type="button" id="webGameSaveIndex" class="button button-secondary" disabled>↓ Export full index JSON</button>
+          </div>
+          <div class="asset-filterbar">
+            <input id="webGameSearch" class="field" type="search" placeholder="Search all files, folders or Pokémon IDs…" aria-label="Search game files"/>
+            <select id="webGameCategory" class="field" aria-label="Filter game asset class">
+              <option value="all">All files</option><option value="model">Models</option>
+              <option value="archive">Model archives</option><option value="animation">Animations</option>
+              <option value="texture">Textures</option><option value="container">NCA / NCZ containers</option>
+              <option value="companion">Skeletons / other companions</option><option value="other">Other files</option>
+            </select>
+          </div>
+          <p id="webGameNotice" class="asset-notice" role="status">The scanner indexes all readable files. Use Preview 3D for supported models, or open a GFPAK to inspect its resources.</p>
+          <div class="asset-table-wrap" role="region" aria-label="Browser game files">
+            <table class="browser-game-table"><thead><tr><th>File / path</th><th>Class</th><th>Size</th><th>State</th></tr></thead>
+              <tbody id="webGameRows"><tr><td colspan="4">No game loaded</td></tr></tbody></table>
+          </div>
+          <div class="asset-toolbar">
+            <button type="button" id="webGameMore" class="button button-secondary" hidden>Show next 250 matches</button>
+            <span id="webGamePage" class="helper-copy"></span>
+          </div>
+          <div class="asset-toolbar browser-game-actions">
+            <button type="button" id="webGamePreview" class="button button-primary" disabled>◇ Preview selected in 3D</button>
+            <button type="button" id="webGameExport" class="button button-secondary" disabled>↓ Save selected original file</button>
+          </div>
+          <p class="asset-guidance">Encrypted NCAs are identified, not decoded in this browser release. Their model and texture counts are unknown until contents can be read. Exported or already-decrypted game folders can be loaded directly. Stored/LZ4 GFPAK resources, compatible native models, textures and animation playback use the same built-in web decoders as the desktop viewer. Original files remain on this device.</p>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
@@ -430,5 +479,6 @@
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/desktop-integration.js"></script>
   <script type="module" src="/src/asset-browser.js"></script>
+  <script type="module" src="/src/browser-game-explorer.js"></script>
 </body>
 </html>
