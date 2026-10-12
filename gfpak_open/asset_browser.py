@@ -1201,6 +1201,138 @@ class AssetBrowser:
             "source": "RomFS", "source_node": node_id
         }
 
+    def scan_gfpak_assets(self, node_id: str, max_results: int = 1200) -> dict:
+        """Categorize every indexed GFPAK member, not merely the first page.
+
+        Names are accepted only from hash validation, model-family inference or
+        decoded references. Unknown hashes remain visible as unidentified.
+        Resource bodies are not unpacked during this catalog pass.
+        """
+        node = self.node(node_id)
+        if node["kind"] != "gfpak":
+            raise ValueError("Select a GFPAK archive for its resource catalog")
+        archive = self._archive(Path(node["path"]))
+        names = self._known_names(Path(node["path"]))
+        counts = Counter()
+        assets = []
+        for resource in archive.resources:
+            known = names.get(resource.index, "")
+            category = classify(known) if known else "unknown"
+            counts[category] += 1
+            if len(assets) >= max_results or category not in (
+                    "model", "mesh", "model archive", "texture", "animation"):
+                continue
+            display = f"{resource.index:04d} · {known.rsplit('/', 1)[-1]}"
+            item = self._node("gfpak_resource", archive.source, index=resource.index,
+                              name=display, size=resource.size)
+            item["category"] = category
+            item["compression"] = resource.compression
+            row = self._public(item)
+            row["relative"] = known
+            assets.append(row)
+        return {
+            "counts": dict(counts), "assets": assets,
+            "scanned": len(archive.resources),
+            "truncated": len(assets) >= max_results,
+            "source": "GFPAK",
+            "note": (f"{counts.get('unknown', 0)} resource hashes remain unidentified. "
+                     "Their types cannot be verified from the archive index alone.")
+        }
+
+    def scan_game_assets(self, node_id: str, limit: int = 40000,
+                         max_results: int = 1200, max_ncas: int = 64) -> dict:
+        """Inventory readable NCA sections across a selected NSP/XCI source.
+
+        This is a bounded metadata-only scan. Inaccessible encrypted content
+        and nested GFPAK payload types are reported as unresolved, never zero.
+        """
+        root = self.node(node_id)
+        if root["kind"] not in {"nsp", "xci", "xci_partition", "nspfile"}:
+            raise ValueError("Choose a game package or an NCA")
+        if root["kind"] == "nspfile":
+            packages = [(self._nca_sources.get(node_id) or self.nsp_reader(Path(root["path"])),
+                         [root["index"]], root["name"])]
+        elif root["kind"] == "nsp":
+            reader = self.nsp_reader(Path(root["path"]))
+            packages = [(reader,
+                         [row.index for row in reader.entries
+                          if row.name.lower().endswith((".nca", ".ncz"))],
+                         root["name"])]
+        elif root["kind"] == "xci_partition":
+            image = self._xci_image(Path(root["path"]))
+            reader = self._xci_partitions.get(node_id) or image.open_partition(root["inner"])
+            self._xci_partitions[node_id] = reader
+            packages = [(reader,
+                         [row.index for row in reader.entries
+                          if row.name.lower().endswith((".nca", ".ncz"))],
+                         root["inner"])]
+        else:
+            image = self._xci_image(Path(root["path"]))
+            packages = []
+            for partition in image.partitions:
+                reader = image.open_partition(partition.name)
+                packages.append((reader,
+                                 [row.index for row in reader.entries
+                                  if row.name.lower().endswith((".nca", ".ncz"))],
+                                 partition.name))
+        counts, assets, warnings = Counter(), [], []
+        inspected = 0
+        scanned_ncas = 0
+        total_ncas = sum(len(indices) for _, indices, _ in packages)
+        max_ncas = max(1, min(int(max_ncas), 128))
+        for reader, indices, partition in packages:
+            for index in indices:
+                if scanned_ncas >= max_ncas or inspected >= limit or len(assets) >= max_results:
+                    break
+                entry = reader.get(index)
+                scanned_ncas += 1
+                if entry.name.lower().endswith(".ncz"):
+                    warnings.append(entry.name + ": compressed NCZ requires opening its restored NCA first")
+                    continue
+                inner = f"catalog:{partition}:{index}"
+                item = self._node("nspfile", reader.path, inner=inner,
+                                  index=index, name=entry.name, size=entry.size)
+                self._nca_sources[item["id"]] = reader
+                try:
+                    sections = self._nca_children(item)["entries"]
+                except (OSError, RuntimeError, ValueError) as exc:
+                    warnings.append(entry.name + ": " + str(exc)[:100])
+                    continue
+                for section in sections:
+                    if section["kind"] != "nca_section":
+                        continue
+                    if inspected >= limit or len(assets) >= max_results:
+                        break
+                    try:
+                        result = self.scan_nca_assets(
+                            section["id"], limit=limit-inspected,
+                            max_results=max_results-len(assets))
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        warnings.append(entry.name + "/" + section["name"] +
+                                        ": " + str(exc)[:110])
+                        continue
+                    inspected += result["scanned"]
+                    counts.update(result["counts"])
+                    assets.extend(result["assets"])
+                    if result["truncated"]:
+                        warnings.append("Scan limit reached inside " + entry.name)
+                        break
+            if scanned_ncas >= max_ncas or inspected >= limit or len(assets) >= max_results:
+                break
+        if scanned_ncas < total_ncas:
+            warnings.append(f"Inspected {scanned_ncas} of {total_ncas} NCAs; use individual sections to refine.")
+        return {
+            "counts": dict(counts), "assets": assets, "scanned": inspected,
+            "source": "Game package", "scanned_ncas": scanned_ncas,
+            "total_ncas": total_ncas,
+            "truncated": inspected >= limit or len(assets) >= max_results or
+                         scanned_ncas < total_ncas,
+            "warnings": warnings[:16],
+            "note": ("Some NCA sections may require keys, base updates or unsupported decoding. "
+                     "GFPAK archives are listed; their internal hashed files are not "
+                     "assumed to be textures or animations.")
+        }
+
     def scan(self, limit: int = 40000, max_results: int = 1200) -> dict:
         """Bounded recursive metadata scan of a user-selected extracted directory."""
         if not self.root_path:
