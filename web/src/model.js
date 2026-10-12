@@ -161,13 +161,14 @@ function makeResolver(fileItems) {
   };
 }
 
-export async function loadModel(project, selected, report = () => {}) {
+export async function loadModel(project, selected, report = () => {}, options = {}) {
   const entry = project.items.find(item => item.path === selected);
   if (!entry) throw new Error('Selected model no longer exists');
   const suffix = extension(entry.path);
   if (!SUPPORTED.includes(suffix)) throw new Error('Unsupported format ' + suffix);
-  if (suffix === '.gfbmdl') return loadGfbmdl(project, selected, report);
-  if (suffix === '.trmdl' || suffix === '.trmsh') return loadTrinityModel(project, selected, report);
+  if (suffix === '.gfbmdl') return loadGfbmdl(project, selected, report, options);
+  if (suffix === '.trmdl' || suffix === '.trmsh')
+    return loadTrinityModel(project, selected, report, options);
 
   // GLBs normally embed their image data; standalone mesh formats do not
   // need to fetch unrelated images. For OBJ only resolve external materials
