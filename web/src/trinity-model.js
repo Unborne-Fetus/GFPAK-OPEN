@@ -632,7 +632,24 @@ async function recoverTrinitySkeleton(project, selected, reference, report, part
   return null;
 }
 
-async function recoverTrinityMaterials(project, selected, references, parts, report) {
+/** Legends: Arceus often stores rare/shiny COLOR ASSIGNMENT in the
+ * TRMTR material definition, not in an alternate albedo texture.
+ * Apply the standard definition first; override matching materials only
+ * when the user explicitly selects a real *_rare.trmtr definition.
+ */
+export function trinityMaterialVariant(item) {
+  const names=[item?.path,...(item?.nativeAliases||[])];
+  return names.some(value=>/(?:^|[_.\\/-])(rare|shiny)(?:$|[_.\\/-])/i.test(String(value||'')))
+    ? 'shiny' : 'regular';
+}
+
+export function chooseTrinityMaterialSources(parsed,variant='regular') {
+  const standard=parsed.filter(row=>trinityMaterialVariant(row.item)!=='shiny');
+  const shiny=parsed.filter(row=>trinityMaterialVariant(row.item)==='shiny');
+  return variant==='shiny' ? [...standard,...shiny] : standard;
+}
+
+async function recoverTrinityMaterials(project, selected, references, parts, report, options={}) {
   const sourceNames=new Set(parts.map(part=>normalizeMaterialName(part.material)).filter(Boolean));
   const entries=project.items.filter(item=>ext(item.path)==='.trmtr');
   const byPath=new Set();
@@ -661,11 +678,16 @@ async function recoverTrinityMaterials(project, selected, references, parts, rep
       }
     }catch(error){report('Material definition could not be decoded: '+error.message);}
   }
-  for(const item of parsed)report('Matched '+item.data.materials.length+
-    ' material definition(s) from '+item.item.path+
+  const variant=options.textureVariant==='shiny'?'shiny':'regular';
+  const selected=chooseTrinityMaterialSources(parsed,variant);
+  for(const item of selected)report('Matched '+item.data.materials.length+
+    ' '+trinityMaterialVariant(item.item)+' material definition(s) from '+item.item.path+
     (item.explicit?' by model reference':' by mesh material names')+'.');
-  if(!parsed.length)report('No matching TRMTR definition: using neutral materials until a compatible source is found.');
-  return parsed.map(item=>item.data);
+  if(parsed.some(item=>trinityMaterialVariant(item.item)==='shiny'))
+    report('TRMTR color assignment: '+variant+' selected; '+selected.length+
+      ' of '+parsed.length+' definitions used. Shiny definitions do not override the regular skin.');
+  if(!selected.length)report('No matching '+variant+' TRMTR material definitions found; using neutral materials.');
+  return selected.map(item=>item.data);
 }
 
 /**
@@ -698,8 +720,14 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   if (!parts.length) throw new TrinityError('No renderable Trinity geometry was decoded');
 
   const skeleton=await recoverTrinitySkeleton(project,selected,meta.skeleton,report,parts);
-  const materialDefs=await recoverTrinityMaterials(project,selected,meta.materials,parts,report);
+  const materialDefs=await recoverTrinityMaterials(project,selected,meta.materials,parts,report,options);
   const lookup=createMaterials(materialDefs);
+  // A PLA shiny TRMTR recolors the same shared base textures. Do not require
+  // separate shiny BNTX imagery when only the material palette changes.
+  const hasShinyImages=project.items.some(item=>item.linkedKind==='texture' &&
+    ['shiny','mixed'].includes(textureVariantForItem(item)));
+  const textureOptions=options.textureVariant==='shiny' && !hasShinyImages
+    ? {...options,textureVariant:'regular'} : options;
   const created = [];
   let sourceImages = [];
   const scene = new THREE.Group();
@@ -739,10 +767,10 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
         const [images, clips] = await Promise.all([
           (async () => {
             const images = await applyDecodedTextures(
-              project, lookup, selected, report, created, options);
+              project, lookup, selected, report, created, textureOptions);
             if (!disposed) bakeNativeDisplacement(scene, lookup, report);
             const fallbackImages = await applyMatchedLinkedTextures(
-              project, scene, report, created, options);
+              project, scene, report, created, textureOptions);
             return images.concat(fallbackImages);
           })(),
           loadNativeClips(project, selected, rig, report, scene),
