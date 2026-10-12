@@ -220,6 +220,36 @@ function completeFastPreview(result) {
         modelStats(result.root, result.animations).meshes +
         ' mesh(es) with decoded companion assets ready for GLB export';
       el('exportButton').disabled = false;
+      if (result.sourceFormat === 'TRMDL') {
+        const items=state.project?.items||[];
+        const hasRig=items.some(item=>/\.trskl$/i.test(item.path));
+        const hasClips=items.some(item=>/\.(tranm|gfbanm)$/i.test(item.path));
+        const hasMaps=items.some(item=>item.linkedKind==='texture');
+        let textured=0;
+        result.root.traverse(node=>{
+          if(!node.isMesh)return;
+          for(const mat of Array.isArray(node.material)?node.material:[node.material]){
+            if(mat?.map||mat?.normalMap||mat?.emissiveMap||
+              mat?.nativeDisplacementMap||mat?.layerMaskMap)textured++;
+          }
+        });
+        const problems=[];
+        if(hasRig&&!modelStats(result.root,result.animations).bones)
+          problems.push('TRSKL file found but no bones were bound');
+        if(hasClips&&!result.animations.length)
+          problems.push('animation data found but no compatible bone tracks were bound');
+        if(hasMaps&&!textured)
+          problems.push('texture resources found but none could be applied to model materials');
+        if(problems.length){
+          el('inspectorState').textContent='UNMATCHED ASSETS';
+          log('Unmatched model assets: '+problems.join('; ')+
+            '. Check earlier scan/decoder messages for the specific resource.', 'info');
+        } else {
+          log('Verified model companions: '+textured+' textured surface(s), '+
+            modelStats(result.root,result.animations).bones+' bones, '+
+            result.animations.length+' animation clip(s).','success');
+        }
+      }
       log('Imported model textures and ' + result.animations.length +
         ' compatible animation clip(s). Select a clip to play it.', 'success');
     }).catch(error => {
