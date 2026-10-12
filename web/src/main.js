@@ -3,6 +3,7 @@ import './style.css';
 import {exportPokemonZip} from './pokemon-export.js';
 import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
 import {textureVariantForItem} from './texture-loader.js';
+import {trinityMaterialVariant} from './trinity-model.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -205,7 +206,7 @@ function setModel(result, format, packageName) {
 function projectHasVariantTextures() {
   return (state.project?.items || []).some(item =>
     item.linkedKind === 'texture' ||
-    /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path || '') ||
+    /\.(bntx|dds|png|jpe?g|webp|trmtr)$/i.test(item.path || '') ||
     (item.textureVariant === 'shiny' || item.textureVariant === 'mixed' ||
       /(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/i
         .test(String(item.path || '') + ' ' + String(item.textureNames || ''))));
@@ -217,13 +218,14 @@ function refreshTextureVariantControls() {
   const visible = ['TRMDL', 'GFBMDL'].includes(state.loaded?.sourceFormat) &&
     projectHasVariantTextures();
   const shinyAvailable=items.some(item=>
-    (item.linkedKind==='texture'||/\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
-    ['shiny','mixed'].includes(textureVariantForItem(item)));
+    ((item.linkedKind==='texture'||/\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
+      ['shiny','mixed'].includes(textureVariantForItem(item))) ||
+    (/\.trmtr$/i.test(item.path||'') && trinityMaterialVariant(item)==='shiny'));
   // Do not offer a fake shiny switch for an archive which has no recognized
   // shiny texture surface. The regular option stays the default.
-  const regular=new Option('Regular textures','regular');
-  const shiny=new Option(shinyAvailable?'Shiny textures':
-    'Shiny textures (not found)','shiny');
+  const regular=new Option('Regular textures / material colors','regular');
+  const shiny=new Option(shinyAvailable?'Shiny textures / material colors':
+    'Shiny variant (not identified)','shiny');
   shiny.disabled=!shinyAvailable;
   select.replaceChildren(regular,shiny);
   if(state.textureVariant==='shiny'&&!shinyAvailable)state.textureVariant='regular';
