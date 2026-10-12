@@ -76,7 +76,7 @@ test('Preview in 3D automatically imports linked Pokémon textures and playable 
   await expect(page.locator('#statClips')).toHaveText('1');
   await expect(page.locator('#clipSelect')).toBeEnabled();
   await expect(page.locator('#logBody')).toContainText(
-    'Automatically applied the sole matched texture');
+    'Automatically applied linked texture');
   await expect(page.locator('#exportButton')).toBeEnabled();
   expect(await page.evaluate(()=>window.previewFallbacks)).toBe(0);
 });
