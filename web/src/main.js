@@ -201,7 +201,8 @@ function refreshAnimationControls(result) {
   el('toggleAnimation').disabled = !result.animations.length;
   el('toggleAnimation').textContent = result.animations.length ?
     'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
-  el('statClips').textContent = Number(result.animations.length).toLocaleString();
+  el('statClips').textContent = result.postLoad && !result.companionsReady &&
+    !result.animations.length ? '…' : Number(result.animations.length).toLocaleString();
 }
 
 function completeFastPreview(result) {
