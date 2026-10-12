@@ -1,6 +1,6 @@
 import {
   loadDecodedTexture, matchingLinkedDiffuseTexture, matchingLinkedDiffuseSurface,
-  textureVariantForItem
+  textureVariantForItem, textureFamilyName
 } from './texture-loader.js';
 import { applyLayerColors } from './trinity-layer-colors.js';
 import { associatedNativeAnimations } from './animation-association.js';
@@ -99,32 +99,39 @@ function normalizeMaterialName(value) {return String(value||'').toLowerCase().re
 
 function findOptionalTexture(project, name, parentPath, variant='regular') {
   if (!name) return null;
-  const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
+  const candidate = basename(name).replace(/\\.(bntx|bntx\\.gz|dds|ktx2)$/i, '');
   if (!candidate) return null;
+  const eligible = item => {
+    const type=textureVariantForItem(item);
+    return type==='mixed' || type===variant || (variant==='regular' && type!=='shiny');
+  };
   const related = project.items.filter(item => item.linkedKind === 'texture' &&
-    TEXTURE_EXT.has(ext(item.path)) &&
-    (textureVariantForItem(item) === 'mixed' || textureVariantForItem(item) === variant ||
-      (variant === 'regular' && textureVariantForItem(item) !== 'shiny')));
+    TEXTURE_EXT.has(ext(item.path)) && eligible(item));
+  const family = textureFamilyName(candidate);
   const exact = item => stem(item.path) === candidate ||
-    basename(item.path).startsWith(candidate + '.');
+    basename(item.path).startsWith(candidate + '.') ||
+    (family && textureFamilyName(item.path) === family);
   const matchesSurface = item => (item.textureNames||[]).some(value =>
-    stem(value)===candidate || basename(value)===candidate ||
-    normalizeMaterialName(value)===normalizeMaterialName(candidate));
+    (variant==='shiny' ? textureVariantForItem({path:value})==='shiny' :
+      textureVariantForItem({path:value})!=='shiny') &&
+    (stem(value)===candidate || basename(value)===candidate ||
+    normalizeMaterialName(value)===normalizeMaterialName(candidate) ||
+    (family && textureFamilyName(value)===family)));
   const matched = related.filter(item=>exact(item)||matchesSurface(item));
   if (matched.length === 1) return matched[0];
   if (matched.length > 1) return null;
+  // The previous fallback ignored the selected skin and silently loaded a
+  // shiny image even with "Regular textures" selected.
   const nearby = project.items.filter(item => TEXTURE_EXT.has(ext(item.path)) &&
-    exact(item));
+    eligible(item) && exact(item));
   const nearest = nearby.filter(item => dirname(item.path) === dirname(parentPath));
   if (nearest.length === 1) return nearest[0];
   if (nearby.length === 1) return nearby[0];
   if (nearby.length) return null;
-  // Explicitly linked texture can be stored under a different filename or in
-  // another GFPAK. If there is only one, let its real image/BNTX decoder
-  // validate the requested internal surface before applying it.
   if (related.length === 1) return related[0];
   const packed = project.items.filter(item =>
-    ext(item.path) === '.bntx' && dirname(item.path) === dirname(parentPath));
+    ext(item.path) === '.bntx' && eligible(item) &&
+    dirname(item.path) === dirname(parentPath));
   return packed.length === 1 ? packed[0] : null;
 }
 
