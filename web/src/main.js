@@ -234,6 +234,14 @@ function completeFastPreview(result) {
           }
         });
         const problems=[];
+        const isPokemon=/pm\d{4}/i.test(
+          String(result.selected)+' '+String(state.project?.label||''));
+        if(isPokemon&&!hasRig)
+          problems.push('no TRSKL skeleton identified in the readable Pokémon archives');
+        if(isPokemon&&!hasClips)
+          problems.push('no compatible native animation resource identified');
+        if(isPokemon&&!hasMaps)
+          problems.push('no decodable image/BNTX texture resource identified');
         if(hasRig&&!modelStats(result.root,result.animations).bones)
           problems.push('TRSKL file found but no bones were bound');
         if(hasClips&&!result.animations.length)
@@ -242,6 +250,7 @@ function completeFastPreview(result) {
           problems.push('texture resources found but none could be applied to model materials');
         if(problems.length){
           el('inspectorState').textContent='UNMATCHED ASSETS';
+          el('objectSubtitle').textContent=problems.join('; ');
           log('Unmatched model assets: '+problems.join('; ')+
             '. Check earlier scan/decoder messages for the specific resource.', 'info');
         } else {
