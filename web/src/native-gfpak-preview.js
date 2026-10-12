@@ -7,6 +7,7 @@
 import {parseGfpakFile, extractResourceAsync, resolvedName, fnv1a64} from './gfpak.js';
 import {parseTrmdl,parseTrmsh,parseTrmbf,parseTrskl,parseTrmtr} from './trinity.js';
 import {parseNativeAnimation} from './trinity-animation.js';
+import {parseBntx} from './bntx.js';
 
 const PROBE_LIMIT=20*1024*1024;
 const MAX_PROBES=1800;
@@ -229,17 +230,21 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     required.add(row);
   // Unambiguous fallback works even when a PLA GFPAK has no dictionary:
   // recovered companion names are the references found in the actual model.
-  const items=[...required].map(row=>{
+  const items=[];
+  for(const row of required){
     const path=row.known||row.inferred||pathFor(row,stem);
-    return {
-      path,
-      size:row.resource.size,
+    let textureNames=[];
+    if(row.kind==='bntx')try{
+      textureNames=parseBntx(await read(row)).textures.map(t=>t.name).filter(Boolean);
+    }catch(_){}
+    items.push({
+      path,size:row.resource.size,textureNames,
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
       linkedKind:['bntx','dds','png','jpg','jpeg','webp'].includes(row.kind)?'texture':
         ['tranm','gfbanm'].includes(row.kind)?'animation':undefined
-    };
-  });
+    });
+  }
   const original=items.find(item=>
     item.path===(root.known||root.inferred||pathFor(root,stem)));
   report('Found '+models.length+' model descriptor(s) and '+items.length+
@@ -272,8 +277,10 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
     if(!['bntx','dds','png','jpg','webp','tranm','trskl','trmtr'].includes(type))continue;
     const name='companions/'+filename.replace(/[^a-z0-9_-]/gi,'_')+
       '/resource_'+resource.index+'.'+type;
+    let textureNames=[];
+    if(type==='bntx')try{textureNames=parseBntx(bytes).textures.map(t=>t.name).filter(Boolean);}catch(_){}
     list.push({
-      path:name,size:resource.size,getBytes:async()=>bytes,
+      path:name,size:resource.size,textureNames,getBytes:async()=>bytes,
       getText:async()=>new TextDecoder().decode(bytes),
       linkedKind:['bntx','dds','png','jpg','webp'].includes(type)?'texture':
         type==='tranm'?'animation':undefined,
