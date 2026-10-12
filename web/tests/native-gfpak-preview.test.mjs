@@ -120,7 +120,8 @@ test('TRMSH and TRMBF in a separate same-Pokémon GFPAK can complete a model',as
 
 test('model skeleton takes priority over unrelated additional rig in another archive',async()=>{
   const animated=makeAnimatedTrinityTriangle();
-  const first=gfpak(animated);
+  const first=gfpak({...makeTrinityTriangle(),
+    'hidden/hashed-rig.bin':animated['models/test.trskl']});
   const {project,selected}=await prepareGfpakModelPreview(first,'pm0025_00_00.gfpak');
   const otherSkeleton={
     path:'companions/pm0025_00_00_other/resource_001.trskl',
