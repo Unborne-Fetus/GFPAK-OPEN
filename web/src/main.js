@@ -1,6 +1,7 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
 import {exportPokemonZip} from './pokemon-export.js';
+import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -514,57 +515,60 @@ function updateArchiveModelButton() {
   const candidates = usableArchiveModels();
   const selected = state.resource;
   const preview = el('previewArchiveModel');
-  preview.disabled = !candidates.length;
+  const recoverable=state.archive?.resources.some(row=>row.compression===0||row.compression===2);
+  preview.disabled = !candidates.length && !recoverable;
   preview.textContent = selected && candidates.includes(selected)
     ? '◈ PREVIEW SELECTED 3D MESH'
-    : '◈ PREVIEW NATIVE 3D MESH (' + candidates.length + ')';
+    : candidates.length
+      ? '◈ PREVIEW NATIVE 3D MESH ('+candidates.length+')'
+      : '◈ AUTO-DETECT 3D MODEL';
 }
 
 async function previewGfbmdlInArchive() {
   if (!state.archive || state.busy) return;
-  const models = usableArchiveModels();
-  const selectedResource = models.includes(state.resource) ? state.resource : models[0];
-  if (!selectedResource) {
-    log('Load a matching hash dictionary identifying .gfbmdl or .trmdl resources inside the GFPAK.', 'error');
-    return;
-  }
-  const name = resolvedName(selectedResource, state.dictionary);
-  const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
-    '.tranm', '.gfbanm', '.tracm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
-  // Deferred extraction avoids decompressing unrelated resources. Every
-  // associated file is resolved by its original path/hash dictionary entry.
-  const resources = state.archive.resources
-    .map(resource => ({resource, name: resolvedName(resource, state.dictionary)}))
-    .filter(item => item.name && allowed.has(extension(item.name)));
-  const project = {
-    label: state.archive.filename,
-    items: resources.map(({resource, name: path}) => ({
-      path,
-      size: resource.size,
-      getBytes: async () => {
-        const raw = await extractResourceAsync(state.archive, resource);
-        return raw instanceof Blob
-          ? raw.arrayBuffer()
-          : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
-      }
-    }))
-  };
-  busy(true, 'Decoding archive model', 'Resolving companion model resources locally…');
+  const archive=state.archive, dictionary=state.dictionary;
+  const models=usableArchiveModels();
+  const selectedResource=models.includes(state.resource)?state.resource:models[0];
+  busy(true, 'Decoding archive model', 'Finding Trinity meshes, buffers and companion files…');
   try {
-    const result = await loadModel(project, name, message => log(message));
-    const sourceArchive = state.archive, sourceDictionary = state.dictionary;
-    state.exportProject = {items:sourceArchive.resources.map(resource => ({
-      path:resolvedName(resource,sourceDictionary) || resource.index+'_'+resource.pathHash+'.bin',
-      getBytes:async()=>extractResourceAsync(sourceArchive,resource)
-    }))}; state.desktopSource=false;
-    setModel(result, extension(name), state.archive.filename);
+    let project,name;
+    if(selectedResource){
+      name=resolvedName(selectedResource,dictionary);
+      const allowed=new Set(['.gfbmdl','.trmdl','.trmsh','.trmbf','.trskl','.trmtr',
+        '.tranm','.gfbanm','.tracm','.png','.jpg','.jpeg','.webp','.bntx','.dds']);
+      const resources=archive.resources
+        .map(resource=>({resource,name:resolvedName(resource,dictionary)}))
+        .filter(item=>item.name&&allowed.has(extension(item.name)));
+      project={label:archive.filename,items:resources.map(({resource,name:path})=>({
+        path,size:resource.size,
+        getBytes:async()=>{
+          const raw=await extractResourceAsync(archive,resource);
+          return raw instanceof Blob?raw.arrayBuffer():
+            raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength);
+        }
+      }))};
+    }else{
+      const prepared=await prepareGfpakModelPreview(
+        archive.file||new Blob([archive.buffer]),archive.filename,
+        info=>log(info),dictionary);
+      project=prepared.project;name=prepared.selected;
+    }
+    const result=await loadModel(project,name,message=>log(message),{fastPreview:true});
+    // Preserve original decoded archive members, including unknown files.
+    // The project used for preview may contain only the model companions.
+    state.exportProject={items:archive.resources.map(resource=>({
+      path:resolvedName(resource,dictionary)||resource.index+'_'+resource.pathHash+'.bin',
+      getBytes:async()=>extractResourceAsync(archive,resource)
+    }))};
+    state.desktopSource=false;
+    state.project=project;
+    setModel(result,extension(name),archive.filename);
     showTab('viewer');
-    log(name + ' decoded into real meshes inside this browser.', 'success');
-  } catch (error) {
+    completeFastPreview(result);
+    log(name+' decoded into real 3D meshes inside the browser.', 'success');
+  }catch(error){
     errorMessage(error);
-  } finally {
-    busy(false);
-  }
+  }finally{busy(false);}
 }
 
 function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle' : 'Type ' + c; }
