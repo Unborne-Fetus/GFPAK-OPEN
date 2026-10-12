@@ -163,7 +163,7 @@
           <div class="archive-header">
             <span class="eyebrow">GAME FREAK / ARCHIVE ANALYZER</span>
             <h2>GFLXPACK resource explorer</h2>
-            <p>Inspect Switch model archives and preview native GFBMDL geometry when resources are stored or LZ4-compressed. Other formats may need separate conversion.</p>
+            <p>Inspect Switch model archives and preview native GFBMDL and Trinity geometry from stored, LZ4, or Oodle-compressed resources. Compatible Oodle streams decode locally using WebAssembly.</p>
           </div>
           <div class="archive-metrics">
             <div><span>RESOURCES</span><strong id="archiveResources">—</strong></div>
@@ -190,7 +190,7 @@
             <span id="archiveRowCount">0 resources shown</span>
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
-          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
+          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including compatible stored/LZ4/Oodle GFPAK entries. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle Kraken, Mermaid, Selkie and Leviathan use a locally bundled open-source WASM decoder (GPL-3.0-or-later); unsupported versions or very large resources may still fail. See the third-party license notices in the repository.</div>
         </section>
 
         <section id="browserGamePanel" class="asset-browser browser-game-panel nx-fileviewer" role="tabpanel" aria-labelledby="tabBrowserGame" hidden>
