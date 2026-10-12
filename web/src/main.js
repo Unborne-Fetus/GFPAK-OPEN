@@ -704,7 +704,57 @@ function attachEvents() {
   el('clearLog').addEventListener('click', () => el('logBody').replaceChildren());
 }
 
+async function openFastDesktopPreview(detail) {
+  const finished = typeof detail?.finish === 'function' ? detail.finish : () => {};
+  if (state.busy || !state.stage) {
+    finished(false, '3D viewer is currently busy or unavailable');
+    return;
+  }
+  busy(true, 'Fast native 3D preview', 'Loading only the model components needed for rendering…');
+  try {
+    const manifest = detail.manifest;
+    if (!manifest?.selected || !manifest.items?.length)
+      throw new Error('Native preview manifest is missing files');
+    const cached = new Map();
+    const project = {
+      label: manifest.label || 'Game File Explorer',
+      items: manifest.items.map(item => {
+        const getBytes = async () => {
+          if (!cached.has(item.url)) {
+            cached.set(item.url, (async () => {
+              const response = await fetch(item.url, {cache:'no-store'});
+              if (!response.ok)
+                throw new Error('Model resource ' + item.path + ' could not be read (' +
+                  response.status + ')');
+              return response.arrayBuffer();
+            })());
+          }
+          return cached.get(item.url);
+        };
+        return {
+          path:item.path, size:item.size, getBytes,
+          getText:async () => new TextDecoder().decode(await getBytes())
+        };
+      })
+    };
+    const result = await loadModel(project, manifest.selected, message => log(message));
+    setModel(result, extension(manifest.selected), project.label);
+    showTab('viewer');
+    log('Fast native preview loaded without launching Blender.', 'success');
+    finished(true);
+  } catch (error) {
+    log('Fast preview: ' + (error.message || String(error)) + '. Trying compatible fallback.', 'info');
+    finished(false, error.message || String(error));
+  } finally {
+    busy(false);
+  }
+}
+
 function start() {
+  window.addEventListener('gfpak-fast-native-preview', event =>
+    openFastDesktopPreview(event.detail).catch(error =>
+      event.detail?.finish?.(false, error.message || String(error))
+    ));
   window.addEventListener('gfpak-native-model', event => {
     if (event.detail instanceof File) chooseProject([event.detail]);
   });
