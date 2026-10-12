@@ -193,56 +193,122 @@
           <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
-        <section id="browserGamePanel" class="asset-browser browser-game-panel" role="tabpanel" aria-labelledby="tabBrowserGame" hidden>
+        <section id="browserGamePanel" class="asset-browser browser-game-panel nx-fileviewer" role="tabpanel" aria-labelledby="tabBrowserGame" hidden>
+          <div class="nx-title-strip">
+            <div class="nx-app-title"><span class="nx-logo">▤</span><strong>File Viewer</strong><span class="nx-subtitle">GFPAK-OPEN / Browser Game Explorer</span></div>
+            <div class="nx-top-menu" aria-label="File viewer menus">
+              <details class="nx-menu"><summary>File</summary><div class="nx-menu-items">
+                <button type="button" id="webMenuOpenPackage">Open game package…</button>
+                <button type="button" id="webMenuOpenFolder">Open extracted folder…</button>
+                <button type="button" id="webMenuLoadKeys">Load local prod.keys…</button>
+              </div></details>
+              <details class="nx-menu"><summary>View</summary><div class="nx-menu-items">
+                <button type="button" id="webMenuFocusTree">Focus content tree</button>
+                <button type="button" id="webMenuClearSearch">Clear search and filters</button>
+              </div></details>
+              <details class="nx-menu"><summary>Tools</summary><div class="nx-menu-items">
+                <button type="button" id="webMenuRescan">Rescan readable assets</button>
+                <button type="button" id="webMenuExportIndex">Export indexed files JSON</button>
+              </div></details>
+              <details class="nx-menu"><summary>Help</summary><div class="nx-menu-items">
+                <button type="button" id="webMenuAbout">About this file viewer</button>
+              </div></details>
+            </div>
+          </div>
           <div class="asset-hero">
-            <div><span class="eyebrow">BROWSER-NATIVE GAME READER</span>
-              <h2>Open your game files locally</h2>
-              <p>Browse NSP/NSZ indexes, XCI partitions, readable plaintext NCA files and extracted game folders. No desktop application or file uploads.</p>
+            <div>
+              <span class="eyebrow">BUILT-IN GAME-ASSET EXPLORER · WEB EDITION</span>
+              <h2>Browse packages and extracted game files</h2>
+              <p>Expandable folder tree, local NCA decryption, and connected models, animations and textures. No external software or uploads.</p>
             </div>
             <div class="asset-actions">
-              <button type="button" id="webGameOpenPackage" class="button button-primary">＋ Open NSP / XCI / GFPAK</button>
-              <button type="button" id="webGameOpenFolder" class="button button-secondary">＋ Open extracted folder</button>
+              <button type="button" id="webGameOpenFolder" class="button button-primary">＋ Open game folder</button>
+              <button type="button" id="webGameOpenPackage" class="button button-secondary">Open GFPAK / NSP / XCI / NSZ</button>
+              <button type="button" id="webGameOpenKeys" class="button button-secondary">🔑 Load prod.keys</button>
+              <button type="button" id="webGameClearKeys" class="button button-secondary" disabled>Forget keys</button>
               <input id="webGameFile" type="file" accept=".nsp,.nsz,.xci,.xcz,.gfpak,.zip" hidden />
               <input id="webGameFolder" type="file" webkitdirectory directory multiple hidden />
-              <button type="button" id="webGameOpenKeys" class="button button-secondary">🔑 Load local prod.keys</button>
-              <button type="button" id="webGameClearKeys" class="button button-secondary" disabled>Forget keys</button>
               <input id="webGameKeysFile" type="file" accept=".keys,.txt,text/plain" hidden />
             </div>
           </div>
-          <div class="asset-summary">
-            <div><span>MODELS / PACKS</span><strong id="webGameModels">0</strong></div>
-            <div><span>ANIMATIONS</span><strong id="webGameAnimations">0</strong></div>
-            <div><span>TEXTURES</span><strong id="webGameTextures">0</strong></div>
-            <div><span>FILES INDEXED</span><strong id="webGameFiles">0</strong></div>
-          </div>
           <div class="asset-toolbar">
-            <div id="webGameTitle" class="asset-breadcrumb">Choose a package or already-extracted folder.</div>
-            <button type="button" id="webGameSaveIndex" class="button button-secondary" disabled>↓ Export full index JSON</button>
+            <button type="button" id="webGameBack" class="button button-secondary" disabled>← Back</button>
+            <div id="webGameTitle" class="asset-breadcrumb" aria-live="polite">No game source selected</div>
+            <button type="button" id="webGameRescan" class="button button-secondary" disabled>⌕ Rescan</button>
+            <button type="button" id="webGameSaveIndex" class="button button-secondary" disabled>↓ Save index</button>
+          </div>
+          <div class="asset-class-browser" aria-label="Found game assets">
+            <span class="asset-class-title">FOUND GAME ASSETS</span>
+            <div class="asset-class-actions" role="group" aria-label="Show asset class">
+              <button type="button" class="asset-class-button active" data-web-asset-class="all" aria-pressed="true">▤ All files</button>
+              <button type="button" class="asset-class-button" data-web-asset-class="model" aria-pressed="false">◇ Models <strong id="webGameModels">0</strong></button>
+              <button type="button" class="asset-class-button" data-web-asset-class="texture" aria-pressed="false">▧ Textures <strong id="webGameTextures">0</strong></button>
+              <button type="button" class="asset-class-button" data-web-asset-class="animation" aria-pressed="false">▶ Animations <strong id="webGameAnimations">0</strong></button>
+            </div>
+            <p class="asset-class-hint">Select folders to browse normally, or choose a class to search that type across the entire indexed game. Counts cover readable files only.</p>
           </div>
           <div class="asset-filterbar">
-            <input id="webGameSearch" class="field" type="search" placeholder="Search all files, folders or Pokémon IDs…" aria-label="Search game files"/>
-            <select id="webGameCategory" class="field" aria-label="Filter game asset class">
-              <option value="all">All files</option><option value="model">Models</option>
-              <option value="archive">Model archives</option><option value="animation">Animations</option>
-              <option value="texture">Textures</option><option value="container">NCA / NCZ containers</option>
-              <option value="companion">Skeletons / other companions</option><option value="other">Other files</option>
+            <input id="webGameSearch" class="field" type="search" placeholder="Filter names, folders and Pokémon asset IDs…" aria-label="Filter indexed game files" />
+            <select id="webGameCategory" class="field" aria-label="Filter by file type">
+              <option value="all">All files</option>
+              <option value="model">Models</option>
+              <option value="archive">GFPAK / model archives</option>
+              <option value="animation">Animations</option>
+              <option value="texture">Textures</option>
+              <option value="container">NCA / NCZ containers</option>
+              <option value="companion">Skeletons / mesh buffers</option>
+              <option value="other">Other files</option>
             </select>
           </div>
-          <p id="webGameKeysStatus" class="asset-notice" role="status">No keys loaded. Choose your own local prod.keys to attempt NCA decryption. Keys remain in memory and are never uploaded or stored.</p>
-          <p id="webGameNotice" class="asset-notice" role="status">The scanner indexes all readable files. Use Preview 3D for supported models, or open a GFPAK to inspect its resources.</p>
-          <div class="asset-table-wrap" role="region" aria-label="Browser game files">
-            <table class="browser-game-table"><thead><tr><th>File / path</th><th>Class</th><th>Size</th><th>State</th></tr></thead>
-              <tbody id="webGameRows"><tr><td colspan="4">No game loaded</td></tr></tbody></table>
+          <div class="asset-content">
+            <aside class="nx-tree-panel">
+              <div class="nx-pane-heading"><span class="nx-pane-icon">▤</span> Content tree <span class="nx-tree-shortcut">Folders</span></div>
+              <div class="nx-tree-scroller">
+                <div id="webGameTree" role="tree" aria-label="Game source and folders">
+                  <div class="nx-tree-empty">Open a game package or extracted folder to browse.</div>
+                </div>
+              </div>
+              <div id="webGameTreeStatus" class="nx-tree-status">No package loaded</div>
+            </aside>
+            <div class="web-game-center">
+              <div class="asset-table-wrap" role="region" aria-label="Files in selected folder">
+                <table class="asset-table browser-game-table">
+                  <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>State</th></tr></thead>
+                  <tbody id="webGameRows"><tr><td colspan="4" class="table-empty">Open a package or folder to browse assets.</td></tr></tbody>
+                </table>
+              </div>
+              <div class="web-game-footer">
+                <span id="webGamePage" class="helper-copy">No files</span>
+                <button type="button" id="webGameMore" class="button button-secondary" hidden>＋ Load next 250 files</button>
+              </div>
+            </div>
+            <aside class="asset-inspector">
+              <span class="eyebrow">SELECTED RESOURCE</span>
+              <h3 id="webGameSelected">Nothing selected</h3>
+              <dl id="webGameMetadata" class="nx-file-metadata"></dl>
+              <p id="webGameSignature" class="nx-signature">Select a file for its format, size, source, and preview options.</p>
+              <div id="webGameFamily" class="nx-asset-family" hidden>
+                <div class="nx-family-title">Related Pokémon files</div>
+                <div id="webGameFamilyFiles" class="nx-family-files"></div>
+              </div>
+              <div class="nx-selection-actions browser-game-actions">
+                <button type="button" id="webGamePreview" class="button button-primary" disabled>◈ Preview in 3D</button>
+                <button type="button" id="webGameExport" class="button button-secondary" disabled>↓ Save selected file…</button>
+              </div>
+              <p class="helper-copy">Models use the same 3D viewer as the app. Compatible textures and animations are automatically matched for preview.</p>
+              <div class="asset-scan-summary">
+                <strong>Package inventory</strong>
+                <dl class="nx-file-metadata">
+                  <dt>Indexed files</dt><dd id="webGameFiles">0</dd>
+                  <dt>Source format</dt><dd id="webGameFormat">No game loaded</dd>
+                  <dt>Folder files</dt><dd id="webGameFolderCount">0</dd>
+                </dl>
+              </div>
+            </aside>
           </div>
-          <div class="asset-toolbar">
-            <button type="button" id="webGameMore" class="button button-secondary" hidden>Show next 250 matches</button>
-            <span id="webGamePage" class="helper-copy"></span>
-          </div>
-          <div class="asset-toolbar browser-game-actions">
-            <button type="button" id="webGamePreview" class="button button-primary" disabled>◇ Preview selected in 3D</button>
-            <button type="button" id="webGameExport" class="button button-secondary" disabled>↓ Save selected original file</button>
-          </div>
-          <p class="asset-guidance">NCA3 AES-XTS headers, AES-CTR filesystem sections and supported RomFS/PartitionFS can be decrypted locally using compatible user-supplied keys. Rights-managed content may require a matching title key in addition to prod.keys; sparse, compressed, and some update patch layouts remain unsupported. Locked content is not counted as an empty game. Exported or already-decrypted game folders can be loaded directly. Stored/LZ4 GFPAK resources, compatible native models, textures and animation playback use the same built-in web decoders as the desktop viewer. Original files remain on this device.</p>
+          <p id="webGameKeysStatus" class="asset-notice" role="status">No keys loaded. Choose your own local prod.keys to decrypt compatible NCAs. Keys stay in browser memory and are never uploaded or stored.</p>
+          <p id="webGameNotice" class="asset-notice" role="status">Browse the folder tree; double-click a model to preview it, or select a file to export.</p>
+          <p class="asset-guidance">Supports file-backed NSP/XCI indexes, local NCA3 AES-XTS / AES-CTR decryption, readable RomFS and PartitionFS, and original asset export. Rights-managed files may require matching title keys. Complex sparse/compressed/patch storage and some original shaders/animations remain unsupported. Locked content is not counted as empty game data.</p>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
