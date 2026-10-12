@@ -57,7 +57,7 @@ test('hash-only GFBMDL GFPAK recognizes and previews an actual model without a d
   const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
   assert.match(selected,/\\.gfbmdl$/);
   assert.equal(project.items.length,1);
-  assert.deepEqual(new Uint8Array(await project.items[0].getBytes()),makeGfbmdlTriangle());
+  assert.deepEqual(new Uint8Array(await project.items[0].getBytes()),new Uint8Array(makeGfbmdlTriangle()));
 });
 
 test('GFPAK decompression failures are reported instead of mistaken for missing hashes',async()=>{
