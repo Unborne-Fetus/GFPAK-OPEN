@@ -78,3 +78,22 @@ test('Preview a readable game-package Trinity model in-browser and export GLB',a
   await expect(page.locator('#statMeshes')).toHaveText('1');
   await expect(page.locator('#exportButton')).toBeEnabled();
 });
+
+test('Local prod.keys picker accepts keys in memory and forgets them without uploading',async({page})=>{
+  await page.goto('/');
+  await page.locator('#tabBrowserGame').click();
+  await page.locator('#webGameFile').setInputFiles({
+    name:'sample.nsp',mimeType:'application/octet-stream',
+    buffer:packageBytes('metadata.xml',Buffer.from('safe test data'))
+  });
+  await expect(page.locator('#webGameFiles')).toHaveText('1');
+  await page.locator('#webGameKeysFile').setInputFiles({
+    name:'prod.keys',mimeType:'text/plain',
+    buffer:Buffer.from('nca_header_key = '+'10'.repeat(32)+'\\n')
+  });
+  await expect(page.locator('#webGameKeysStatus')).toContainText('Local keys loaded (1 entries)');
+  await expect(page.locator('#webGameFiles')).toHaveText('1');
+  await page.locator('#webGameClearKeys').click();
+  await expect(page.locator('#webGameKeysStatus')).toContainText('Keys forgotten');
+  await expect(page.locator('#webGameFiles')).toHaveText('0');
+});
