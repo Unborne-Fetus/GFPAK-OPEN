@@ -936,11 +936,16 @@ function renderListing() {
     ? (scanListing.note || 'Showing verified files discovered by the asset scanner.')
     : node.listing.note;
   id('assetClassHint').textContent = catalogBusy
-    ? 'Discovering game assets in the background… Counts will appear when the scan completes.'
+    ? 'Scanning the complete readable game in the background…'
     : assetCatalog
-      ? (assetCatalog.truncated ? 'Partial catalog: scan limit reached. ' : 'Catalog ready. ') +
-        'Found assets are organized across the full scanned source; some files in locked NCAs or hashed GFPAKs may remain unidentified.'
-      : 'These are game-wide totals, not counts from the current folder. Choose Locate assets to discover them.';
+      ? 'Full scan finished. ' +
+        (assetCatalog.unresolved ?
+          'Encrypted/unsupported sections or unknown hashes remain unidentified.' :
+          'All readable entries were examined.') +
+        (assetCatalog.matched_models ?
+          ' ' + assetCatalog.matched_models.toLocaleString() +
+          ' models have automatically matched companions.' : '')
+      : 'These are full-game counts, not counts from the visible folder page.';
   showNotice(notice || (node.listing.truncated ? 'This directory has more files than the visible display limit.' : ''));
   select(null);
   if (node.root.kind === 'nsp') {
@@ -1235,6 +1240,12 @@ async function scanFolder(requested = null, automatic = false) {
         const status = await api.browse_scan_status();
         if (revision !== catalogRevision) return;
         if (status.running) {
+          const scanned = Number(status.scanned || 0).toLocaleString();
+          id('assetScanSummary').textContent =
+            'Full scan in progress · ' + scanned + ' entries visited · ' +
+            (status.stage || 'Reading game files…');
+          id('assetClassHint').textContent =
+            'Scanning every readable game file and compatible archive; no automatic cutoff.';
           window.setTimeout(poll, 450);
           return;
         }
@@ -1252,7 +1263,10 @@ async function scanFolder(requested = null, automatic = false) {
         }
         catalogsBySource.set(target.id, status.result);
         assetCatalog = status.result;
-        scanListing = assetClass !== 'all' ? assetCatalog : null;
+        scanListing = assetClass !== 'all' ? (
+          status.result.assets ? status.result :
+            {...status.result, assets:[], next_offset:null, total:0}
+        ) : null;
         const counts = assetCatalog.counts || {};
         const located = ['model','model archive','asset package','mesh','texture','animation']
           .reduce((n, key) => n + (counts[key] || 0), 0);
@@ -1264,6 +1278,8 @@ async function scanFolder(requested = null, automatic = false) {
           (warnings.length ? '. ' + warnings.length + ' inaccessible/unsupported areas.' : '') +
           (assetCatalog.note ? ' ' + assetCatalog.note : '');
         renderListing();
+        if (assetClass !== 'all' && api?.browse_scan_page)
+          void loadCatalogPage(true);
         if (!automatic && assetClass === 'all' && located > 0)
           selectAssetClass('models');
         if (pendingCatalogRequest) {
