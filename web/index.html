@@ -69,6 +69,11 @@
             <select id="modelSelect" class="field" size="5" aria-label="Choose model from imported package"></select>
             <button id="loadSelected" type="button" class="button button-secondary">LOAD SELECTED MODEL <span>→</span></button>
           </div>
+          <div id="textureChoice" class="model-choice" hidden>
+            <label for="textureSelect">NATIVE TEXTURES <span id="textureCount"></span></label>
+            <select id="textureSelect" class="field" size="4" aria-label="Choose a standalone texture"></select>
+            <button id="inspectSelectedTexture" type="button" class="button button-secondary">INSPECT TEXTURE SURFACES <span>→</span></button>
+          </div>
         </section>
 
         <section class="side-section export-section">
@@ -168,6 +173,7 @@
             <input id="archiveSearch" type="search" class="field" placeholder="Search hash, index, filename..." aria-label="Search archive" />
             <button id="chooseHashes" class="button button-secondary" type="button">＋ LOAD HASH LIST</button>
             <button id="previewArchiveModel" class="button button-primary" type="button" disabled>◈ PREVIEW 3D MESH</button>
+            <button id="previewArchiveTexture" class="button button-secondary" type="button" disabled>▧ INSPECT BNTX TEXTURES</button>
             <button id="downloadIndex" class="button button-secondary" type="button" disabled>↓ JSON INDEX</button>
             <button id="downloadResource" class="button button-primary" type="button" disabled>↓ RESOURCE</button>
           </div>
@@ -402,6 +408,20 @@
       </main>
     </div>
   </div>
+  <dialog id="textureDialog" class="texture-dialog" aria-labelledby="textureDialogTitle">
+    <div class="texture-dialog-header">
+      <div><span class="eyebrow">READ-ONLY TEXTURE INSPECTOR</span><h2 id="textureDialogTitle">Nintendo texture surfaces</h2></div>
+      <button id="textureClose" type="button" class="button button-secondary">CLOSE ×</button>
+    </div>
+    <p id="textureSourceName" class="helper-copy"></p>
+    <label class="input-label" for="textureSurface">TEXTURE / SURFACE</label>
+    <select id="textureSurface" class="field" aria-label="Select an internal BNTX texture"></select>
+    <p id="textureMetadata" class="helper-copy" aria-live="polite"></p>
+    <div id="textureCanvasHost" class="texture-canvas-host"></div>
+    <p id="texturePreviewStatus" class="helper-copy" role="status" aria-live="polite"></p>
+    <button id="textureSavePng" type="button" class="button button-primary" disabled>↓ SAVE PREVIEW AS PNG</button>
+    <p class="helper-copy">Original game files stay on this device. PNG export reflects the decoded texture, not the game's custom shaders. BC7/ASTC previews need compatible GPU support.</p>
+  </dialog>
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/desktop-integration.js"></script>
   <script type="module" src="/src/asset-browser.js"></script>
