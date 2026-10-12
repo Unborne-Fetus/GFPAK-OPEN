@@ -64,3 +64,35 @@ test('ASTC 6x6 Nintendo BNTX surfaces use hardware ASTC format',async()=>{
  assert.equal(texture.format,THREE.RGBA_ASTC_6x6_Format);
  texture.dispose();
 });
+
+test('BNTX BC2 explicit alpha keeps per-pixel transparency',()=>{
+ const {bytes}=sampleBntx({format:0x1b01,tileMode:1,width:4,height:4});
+ bytes.set([0x0f,0,0,0,0,0,0,0,0,0xf8,0x1f,0,0,0,0,0],0x200);
+ const image=decodeBntxTexture(parseBntx(bytes));
+ assert.deepEqual(Array.from(image.data.slice(0,8)),[255,0,0,255,255,0,0,0]);
+});
+test('BNTX BC4 and BC5 normal channels decode without external tools',()=>{
+ const b4=sampleBntx({format:0x1d01,tileMode:1,width:4,height:4});
+ b4.bytes.set([0x7f,0,0,0,0,0,0,0],0x200);
+ assert.deepEqual(Array.from(decodeBntxTexture(parseBntx(b4.bytes)).data.slice(0,4)),[127,127,127,255]);
+ const b5=sampleBntx({format:0x1e01,tileMode:1,width:4,height:4});
+ b5.bytes.set([255,0,0,0,0,0,0,0, 0,255,0,0,0,0,0,0],0x200);
+ const decoded=decodeBntxTexture(parseBntx(b5.bytes));
+ assert.equal(decoded.data[0],255);
+ assert.equal(decoded.data[1],0);
+ assert.equal(decoded.data[3],255);
+});
+test('BNTX R8, RG8, RGB565 and BGRA8 retain channel values',()=>{
+ const formats=[
+   {format:0x0201,pixel:[99],expected:[99,99,99,255]},
+   {format:0x0901,pixel:[21,113],expected:[21,113,0,255]},
+   {format:0x0701,pixel:[0,0xf8],expected:[255,0,0,255]},
+   {format:0x0c01,pixel:[4,17,250,255],expected:[250,17,4,255]}
+ ];
+ for(const row of formats){
+   const {bytes}=sampleBntx({format:row.format,width:1,height:1});
+   bytes.set(row.pixel,0x200);
+   const decoded=decodeBntxTexture(parseBntx(bytes));
+   assert.deepEqual(Array.from(decoded.data.slice(0,4)),row.expected);
+ }
+});
