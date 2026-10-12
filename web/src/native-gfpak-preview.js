@@ -43,22 +43,23 @@ function identifyTrinity(buffer){
   }
   return '';
 }
-function referenceHashes(reference,containerName){
+function referenceHashes(reference,containerName,kind=''){
   const filename=normalize(reference);
   const folder=normalize(containerName).split('/').slice(0,-1).join('/');
-  const candidates=unique([
-    filename,
-    filename.split('/').at(-1),
-    folder?folder+'/'+filename:'',
-    folder?folder+'/'+filename.split('/').at(-1):'',
-    filename.startsWith('bin/')?filename:'bin/'+filename
-  ]);
+  const expanded=kind && !filename.endsWith('.'+kind)?[filename+'.'+kind,filename]:[filename];
+  const candidates=unique(expanded.flatMap(value=>[
+    value,
+    value.split('/').at(-1),
+    folder?folder+'/'+value:'',
+    folder?folder+'/'+value.split('/').at(-1):'',
+    value.startsWith('bin/')?value:'bin/'+value
+  ]));
   const hashes=new Set();
   for(const name of candidates) for(const candidate of [name,name.toLowerCase()])hashes.add(fnv1a64(candidate));
   return hashes;
 }
-function matchByHash(rows,reference,containerName){
-  const hashes=referenceHashes(reference,containerName);
+function matchByHash(rows,reference,containerName,kind){
+  const hashes=referenceHashes(reference,containerName,kind);
   return rows.filter(row=>hashes.has(row.resource.pathHash) || hashes.has(row.resource.fileHash));
 }
 function pathFor(row,stem='pokemon'){
@@ -68,11 +69,12 @@ function pathFor(row,stem='pokemon'){
 }
 function assignRef(row,kind,reference,base) {
   const name=normalize(reference);
-  if(name && ext(name)==='.'+kind){
-    if(!row.known)row.inferred='recovered/'+base+'/'+name.split('/').at(-1);
+  if(name && !row.known){
+    const basename=name.split('/').at(-1);
+    row.inferred='recovered/'+base+'/'+(basename.endsWith('.'+kind)?basename:basename+'.'+kind);
   }
 }
-async function chooseResource(rows,kind,reference,archiveName,report,read){
+async function chooseResource(rows,kind,reference,archiveName,report,read,context=null){
   let filtered=rows.filter(row=>row.kind===kind);
   // A filename hash doesn't necessarily reveal the file extension. A native
   // descriptor has the real reference, so retry unknown members by parsing
@@ -87,7 +89,7 @@ async function chooseResource(rows,kind,reference,archiveName,report,read){
   }
   const direct=filtered.filter(row=>normalize(row.known)===normalize(reference) ||
     normalize(row.known).endsWith('/'+normalize(reference)));
-  const hashed=matchByHash(filtered,reference,archiveName);
+  const hashed=matchByHash(filtered,reference,archiveName,kind);
   const resolved=unique([...direct,...hashed]);
   if(resolved.length===1)return resolved[0];
   if(resolved.length>1)throw Error('Multiple '+kind+' resources match '+reference);
@@ -96,8 +98,29 @@ async function chooseResource(rows,kind,reference,archiveName,report,read){
   if(byName.length===1)return byName[0];
   if(filtered.length===1)return filtered[0];
   if(!filtered.length)throw Error('Missing '+kind+' file '+reference+' inside this GFPAK');
-  throw Error('Unable to distinguish '+filtered.length+' '+kind+' resources for '+reference+
-    ' without a matching filename-hash dictionary.');
+  // Trinity's real PLA descriptors commonly refer to "head", "body", etc.
+  // without extensions, while GFPAK filenames are hashes. When the hashes
+  // cannot resolve, preserve a consistent one-to-one association in the
+  // model's declared order instead of hard-failing every Pokémon.
+  const assignments=context?.assignments;
+  if(assignments){
+    const refKey=kind+':'+normalize(reference);
+    if(assignments.has(refKey))return assignments.get(refKey);
+    const unused=filtered.filter(row=>!context.used.has(row));
+    const pool=unused.length?unused:filtered;
+    const index=context.referenceOrder?.indexOf(normalize(reference))??-1;
+    const candidate=pool.slice().sort((a,b)=>a.resource.index-b.resource.index)[
+      index>=0 && pool.length===context.referenceOrder.length ? index : 0
+    ];
+    if(candidate){
+      assignments.set(refKey,candidate);context.used.add(candidate);
+      report('Matched ambiguous '+kind+' reference "'+reference+'" to archive resource #'+
+        candidate.resource.index+' using stable resource order ('+filtered.length+
+        ' candidates; hash identity unavailable).');
+      return candidate;
+    }
+  }
+  throw Error('Cannot resolve '+kind+' '+reference+' among '+filtered.length+' resources.');
 }
 /** Prepare a genuine directly-renderable Trinity project from any readable GFPAK. */
 export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dictionary=null) {
@@ -145,14 +168,16 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   }
   let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
   const required=new Set([root]);
+  const context={assignments:new Map(),used:new Set(),referenceOrder:[]};
   if(root.kind==='trmdl'){
     const meta=parseTrmdl(await read(root));
+    context.referenceOrder=meta.meshFiles.map(normalize);
     for(const name of meta.meshFiles){
-      const shape=await chooseResource(rows,'trmsh',name,filename,report,read);
+      const shape=await chooseResource(rows,'trmsh',name,filename,report,read,context);
       const meshes=parseTrmsh(await read(shape));
       assignRef(shape,'trmsh',name,stem);
       required.add(shape);
-      const buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read);
+      const buffer=await chooseResource(rows,'trmbf',meshes.bufferFile,filename,report,read,context);
       assignRef(buffer,'trmbf',meshes.bufferFile,stem);
       required.add(buffer);
     }
@@ -161,13 +186,13 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ['trmtr',meta.materials||[]]
     ])for(const name of names){
       try{
-        const match=await chooseResource(rows,kind,name,filename,report,read);
+        const match=await chooseResource(rows,kind,name,filename,report,read,context);
         assignRef(match,kind,name,stem);required.add(match);
       }catch(e){report(e.message);}
     }
   }else if(root.kind==='trmsh'){
     const mesh=parseTrmsh(await read(root));
-    const buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read);
+    const buffer=await chooseResource(rows,'trmbf',mesh.bufferFile,filename,report,read,context);
     assignRef(buffer,'trmbf',mesh.bufferFile,stem);required.add(buffer);
   }
   for(const row of rows)if(['trskl','trmtr','bntx','dds','png','jpg','jpeg','webp','tranm','gfbanm','tracm'].includes(row.kind))
