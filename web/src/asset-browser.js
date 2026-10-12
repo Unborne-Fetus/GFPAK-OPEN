@@ -7,6 +7,9 @@ let pathStack = [];
 let current = [];
 let selected = null;
 let scanListing = null;
+let assetCatalog = null;
+let catalogBusy = false;
+let catalogRevision = 0;
 let assetClass = 'all';
 const classKinds = {
   models: new Set(['model', 'model archive', 'mesh']),
@@ -24,17 +27,16 @@ function selectAssetClass(group) {
     button.setAttribute('aria-pressed', String(active));
   }
   if (group !== 'all') id('assetCategory').value = 'all';
-  if (pathStack.at(-1)?.root.kind === 'nsp') {
-    // NSP outer index has server-side filtering and no decoded model catalog.
-    showNotice('Expand a readable NCA section, then use Locate assets for game resources.');
-  }
-  renderRows(current);
+  scanListing = group !== 'all' ? assetCatalog : null;
+  if (pathStack.length) renderListing();
 }
 function setScanAvailability() {
   const root = pathStack.at(-1)?.root;
-  const searchable = ['nca_section', 'nca_dir'].includes(root?.kind) ||
-    !!(pathStack[0]?.root.kind === 'directory');
-  id('assetScan').disabled = !searchable;
+  const source = pathStack[0]?.root;
+  const searchable = ['nca_section', 'nca_dir', 'nspfile', 'xci_partition']
+    .includes(root?.kind) ||
+    ['directory', 'gfpak', 'nsp', 'xci'].includes(source?.kind);
+  id('assetScan').disabled = !searchable || catalogBusy;
 }
 
 let activeNSP = null;
@@ -84,17 +86,31 @@ function formatSize(n) {
   return value + ' B';
 }
 
-function summary(counts = {}) {
-  id('assetCountModel').textContent = (counts.model || 0) + (counts['model archive'] || 0);
-  id('assetCountAnimation').textContent = counts.animation || 0;
-  id('assetCountTexture').textContent = counts.texture || 0;
-  id('assetClassModels').textContent = (counts.model || 0) +
-    (counts['model archive'] || 0) + (counts.mesh || 0);
-  id('assetClassTextures').textContent = counts.texture || 0;
-  id('assetClassAnimations').textContent = counts.animation || 0;
-  id('assetCountOther').textContent = Object.entries(counts).reduce(
-    (n, [key, count]) => n + (!['model', 'model archive', 'animation', 'texture', 'folder'].includes(key) ? count : 0), 0
-  );
+function summary(counts = null) {
+  // A directory listing is not a game inventory. Until a real scan finishes,
+  // show an unknown count rather than the misleading "0" in each category.
+  const unknown = catalogBusy ? '…' : '—';
+  if (!counts) {
+    for (const name of ['assetCountModel', 'assetCountTexture',
+      'assetCountAnimation', 'assetCountOther', 'assetClassModels',
+      'assetClassTextures', 'assetClassAnimations']) {
+      id(name).textContent = unknown;
+    }
+    return;
+  }
+  const models = (counts.model || 0) + (counts['model archive'] || 0) +
+    (counts.mesh || 0);
+  const value = (name, count) => { id(name).textContent = count.toLocaleString(); };
+  value('assetCountModel', models);
+  value('assetCountAnimation', counts.animation || 0);
+  value('assetCountTexture', counts.texture || 0);
+  value('assetClassModels', models);
+  value('assetClassTextures', counts.texture || 0);
+  value('assetClassAnimations', counts.animation || 0);
+  value('assetCountOther', Object.entries(counts).reduce(
+    (n, [key, count]) => n + (!['model', 'mesh', 'model archive', 'animation',
+      'texture', 'folder'].includes(key) ? count : 0), 0
+  ));
 }
 
 async function loadNSPDashboard(root) {
@@ -668,7 +684,7 @@ function renderRows(rows) {
   current = rows;
   const needle = id('assetSearch').value.trim().toLowerCase();
   const filter = id('assetCategory').value;
-  const visible = pathStack.at(-1)?.root.kind === 'nsp'
+  const visible = pathStack.at(-1)?.root.kind === 'nsp' && assetClass === 'all'
     ? rows
     : rows.filter(row => {
         return (!needle || (row.name + ' ' + (row.relative || '')).toLowerCase().includes(needle)) &&
@@ -682,7 +698,12 @@ function renderRows(rows) {
     const cell = document.createElement('td');
     cell.colSpan = 4;
     cell.className = 'table-empty';
-    cell.textContent = 'No assets match this filter or directory.';
+    cell.textContent = assetClass !== 'all' && !assetCatalog
+      ? (catalogBusy ? 'Locating game assets…' :
+          'Game inventory not ready. Select Locate assets to search beyond this folder.')
+      : assetClass !== 'all' && assetCatalog?.truncated
+        ? 'No matching asset in the partial scan. More files may exist; narrow to a readable section.'
+        : 'No assets match this filter or directory.';
     row.append(cell);
     body.append(row);
     // A match may exist on a later NCA page. Keep Load more visible.
@@ -797,17 +818,19 @@ function renderListing() {
   id('assetBreadcrumb').textContent = scanListing ? breadcrumbs + '  /  Asset catalog' : breadcrumbs;
   setScanAvailability();
   id('assetBack').disabled = pathStack.length <= 1 && !scanListing;
-  if (scanListing) {
-    summary(scanListing.counts);
-    renderRows(scanListing.assets);
-  } else {
-    summary(node.listing.counts);
-    renderRows(node.listing.entries);
-  }
-  const notice = scanListing ? 'Showing files discovered by the read-only asset scanner.' : node.listing.note;
-  id('assetClassHint').textContent = scanListing
-    ? 'Select a class to see its discovered files. Models can preview in 3D; textures and animations display file details and their available companions.'
-    : 'Choose Locate assets to search this game folder or readable RomFS for models, textures and animations.';
+  summary(assetCatalog?.counts ?? null);
+  if (scanListing) renderRows(scanListing.assets);
+  else if (assetClass !== 'all') renderRows([]);
+  else renderRows(node.listing.entries);
+  const notice = scanListing
+    ? (scanListing.note || 'Showing verified files discovered by the asset scanner.')
+    : node.listing.note;
+  id('assetClassHint').textContent = catalogBusy
+    ? 'Discovering game assets in the background… Counts will appear when the scan completes.'
+    : assetCatalog
+      ? (assetCatalog.truncated ? 'Partial catalog: scan limit reached. ' : 'Catalog ready. ') +
+        'Found assets are organized across the full scanned source; some files in locked NCAs or hashed GFPAKs may remain unidentified.'
+      : 'These are game-wide totals, not counts from the current folder. Choose Locate assets to discover them.';
   showNotice(notice || (node.listing.truncated ? 'This directory has more files than the visible display limit.' : ''));
   select(null);
   if (node.root.kind === 'nsp') {
@@ -874,7 +897,10 @@ async function openSource(mode) {
     const result = await api.browse_choose(mode);
     if (!result) return;
     updateGameCompatibility(result);
+    ++catalogRevision;
+    assetCatalog = null;
     scanListing = null;
+    catalogBusy = false;
     activeNSP = null;
     pathStack = [{root: result.root, listing: result.children}];
     nxResetTree(result.root, result.children);
@@ -886,8 +912,10 @@ async function openSource(mode) {
     id('assetCategory').value = 'all';
     selectAssetClass('all');
     setScanAvailability();
-    id('assetScanSummary').textContent = 'Browse directories or scan extracted files for model, texture and animation references.';
+    id('assetScanSummary').textContent = 'Game inventory has not been scanned.';
     renderListing();
+    if (['directory', 'gfpak', 'nsp', 'xci'].includes(result.root.kind))
+      void scanFolder(result.root.id, true);
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -1052,47 +1080,81 @@ async function preview(row = selected) {
   }
 }
 
-async function scanFolder() {
+async function scanFolder(requested = null, automatic = false) {
+  const origin = pathStack[0]?.root;
+  const target = requested ? origin :
+    pathStack.at(-1)?.root || origin;
+  if (!target || catalogBusy) return;
+  const useId = ['nca_section', 'nca_dir', 'gfpak', 'nsp', 'xci',
+    'nspfile', 'xci_partition'].includes(target.kind);
+  if (!useId && origin?.kind !== 'directory') {
+    showNotice('Open a game package, GFPAK, folder, or readable RomFS.', true);
+    return;
+  }
+  const revision = ++catalogRevision;
+  catalogBusy = true;
+  summary(null);
+  setScanAvailability();
+  id('assetScanSummary').textContent = 'Finding models, textures and animations throughout ' +
+    (useId ? target.name : origin.name) + '…';
   try {
-    const target = pathStack.at(-1)?.root;
-    const nca = ['nca_section', 'nca_dir'].includes(target?.kind);
-    if (!nca && pathStack[0]?.root.kind !== 'directory') {
-      showNotice('Open an extracted folder or a readable NCA RomFS section before locating assets.', true);
+    const started = await api.browse_start_scan(useId ? target.id : null);
+    if (!started) {
+      catalogBusy = false;
+      setScanAvailability();
+      id('assetScanSummary').textContent = 'A scan is already in progress. Please retry shortly.';
       return;
     }
-    if (!await api.browse_start_scan(nca ? target.id : null)) return;
-    id('assetScan').disabled = true;
-    id('assetScanSummary').textContent = nca
-      ? 'Locating models, textures and animations in RomFS metadata…'
-      : 'Locating models, textures and animations in extracted folders…';
     const poll = async () => {
+      if (revision !== catalogRevision) return;
       try {
-        const state = await api.browse_scan_status();
-        if (state.running) {
-          window.setTimeout(poll, 650);
+        const status = await api.browse_scan_status();
+        if (revision !== catalogRevision) return;
+        if (status.running) {
+          window.setTimeout(poll, 450);
           return;
         }
+        catalogBusy = false;
         setScanAvailability();
-        if (state.error) {
-          showNotice(state.error, true);
+        if (status.error) {
+          id('assetScanSummary').textContent = 'Discovery failed: ' + status.error;
+          showNotice(status.error, true);
+          summary(null);
           return;
         }
-        if (state.result) {
-          scanListing = state.result;
-          const count = Object.values(scanListing.counts).reduce((a, b) => a + b, 0);
-          id('assetScanSummary').textContent = count + ' recognized assets across ' +
-            scanListing.scanned + ' scanned entries' +
-            (scanListing.truncated ? ' (partial catalog — safety limit reached)' : '') +
-            '. Choose Models, Textures or Animations above to browse the results.';
-          id('assetCategory').value = 'all';
-          selectAssetClass('models');
-          renderListing();
+        if (!status.result) {
+          summary(null);
+          return;
         }
-      } catch (error) { showNotice(error.message || String(error), true); }
+        assetCatalog = status.result;
+        scanListing = assetClass !== 'all' ? assetCatalog : null;
+        const counts = assetCatalog.counts || {};
+        const located = ['model','model archive','mesh','texture','animation']
+          .reduce((n, key) => n + (counts[key] || 0), 0);
+        const warnings = assetCatalog.warnings || [];
+        id('assetScanSummary').textContent =
+          located.toLocaleString() + ' recognizable assets across ' +
+          (assetCatalog.scanned || 0).toLocaleString() + ' scanned entries' +
+          (assetCatalog.truncated ? ' (partial scan)' : '') +
+          (warnings.length ? '. ' + warnings.length + ' inaccessible/unsupported areas.' : '') +
+          (assetCatalog.note ? ' ' + assetCatalog.note : '');
+        renderListing();
+        if (!automatic && assetClass === 'all' && located > 0)
+          selectAssetClass('models');
+      } catch (error) {
+        if (revision !== catalogRevision) return;
+        catalogBusy = false;
+        setScanAvailability();
+        id('assetScanSummary').textContent = String(error.message || error);
+        showNotice(error.message || String(error), true);
+      }
     };
-    poll();
+    void poll();
   } catch (error) {
+    if (revision !== catalogRevision) return;
+    catalogBusy = false;
     setScanAvailability();
+    id('assetScanSummary').textContent = String(error.message || error);
     showNotice(error.message || String(error), true);
   }
 }
@@ -1128,7 +1190,7 @@ function initialize() {
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   id('assetBack').addEventListener('click', () => {
-    if (scanListing) scanListing = null;
+    if (scanListing) selectAssetClass('all');
     else if (pathStack.length > 1) pathStack.pop();
     renderListing();
   });
@@ -1152,7 +1214,7 @@ function initialize() {
     canInspectTexture(selected) ? inspectTexture() : preview());
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
   id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
-  id('assetScan').addEventListener('click', scanFolder);
+  id('assetScan').addEventListener('click', () => scanFolder());
   for (const button of document.querySelectorAll('[data-asset-class]')) {
     button.addEventListener('click', () => selectAssetClass(button.dataset.assetClass));
   }
