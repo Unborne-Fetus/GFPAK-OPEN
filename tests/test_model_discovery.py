@@ -41,6 +41,22 @@ class ModelDiscoveryTests(unittest.TestCase):
         self.assertEqual(result[157], "pm0025_00_00.trskl")
         self.assertEqual({i for i in result}, {i for i, _, _ in originals})
 
+    def test_verified_trinity_family_identifies_companion_texture_and_animation(self):
+        names = (".trmdl", ".trmsh", ".trmbf", ".bntx", ".tranm")
+        resources = [
+            Item(n, fnv1a64("bin/pm0025_same" + ext),
+                 fnv1a64("bin/pm0025_same" + ext))
+            for n, ext in enumerate(names)
+        ]
+        result = infer_model_resources(resources, "pm0025_00_00")
+        self.assertEqual(result[3], "pm0025_00_00.bntx")
+        self.assertEqual(result[4], "pm0025_00_00.tranm")
+        # Unpaired unrelated hash cannot be called an animation.
+        unrelated = Item(20, fnv1a64("other_idle.tranm"),
+                         fnv1a64("other_idle.tranm"))
+        self.assertNotIn(20, infer_model_resources(resources + [unrelated],
+                                                  "pm0025_00_00"))
+
     def test_no_model_from_random_or_single_hash(self):
         resources = [Item(1, fnv1a64("other.trmdl"), fnv1a64("other.trmdl"))]
         self.assertEqual(infer_model_resources(resources, "sample"), {})
