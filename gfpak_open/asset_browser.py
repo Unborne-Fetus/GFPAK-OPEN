@@ -61,8 +61,12 @@ def classify(filename: str) -> str:
     if ext in MATERIAL:
         return "material"
     if ext in ARCHIVE:
-        if ext == ".gfpak" and re.match(r"^pm\d{4}", p.name, re.I):
-            return "model archive"
+        if ext == ".gfpak":
+            # A GFPAK may contain models, animation and/or textures even
+            # when its name is not a Pokémon ID. Keep it discoverable as a
+            # candidate, without claiming its unknown members are models.
+            return ("model archive" if re.match(r"^pm\d{4}", p.name, re.I)
+                    else "asset package")
         return "archive"
     if ext == ".nca":
         return "encrypted container"
@@ -1367,8 +1371,8 @@ class AssetBrowser:
                         pending.append(entry["path"])
                     else:
                         category = classify(entry["name"])
-                        if category in ("model", "model archive", "mesh",
-                                        "texture", "animation"):
+                        if category in ("model", "model archive", "asset package",
+                                        "mesh", "texture", "animation"):
                             counts[category] += 1
                             if len(found) < max_results:
                                 inner = f"{node_id}:{index}:{section}:{entry['path']}"
@@ -1394,7 +1398,8 @@ class AssetBrowser:
         return {
             "counts": dict(counts), "assets": found, "scanned": scanned,
             "truncated": truncated or sum(counts.values()) > max_results,
-            "unresolved": counts.get("model archive", 0) > 0 or counts.get("archive", 0) > 0,
+            "unresolved": counts.get("model archive", 0) > 0 or
+                          counts.get("asset package", 0) > 0 or counts.get("archive", 0) > 0,
             "source": "RomFS", "source_node": node_id
         }
 
@@ -1565,7 +1570,7 @@ class AssetBrowser:
             "truncated": inspected >= limit or len(assets) >= max_results or
                          scanned_ncas < total_ncas,
             "unresolved": bool(warnings) or counts.get("model archive", 0) > 0 or
-                          counts.get("archive", 0) > 0,
+                          counts.get("asset package", 0) > 0 or counts.get("archive", 0) > 0,
             "warnings": warnings[:16],
             "note": ("Some NCA sections may require keys, base updates or unsupported decoding. "
                      "GFPAK archives are listed; their internal hashed files are not "
