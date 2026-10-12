@@ -66,6 +66,35 @@ class _Server(http.server.SimpleHTTPRequestHandler):
     api = None
 
     def do_GET(self):
+        # Local-only, token-addressed preview of whitelisted assets. The URL
+        # contains no source path or arbitrary relative traversal component.
+        native = re.fullmatch(r"/__quick_asset/([0-9a-f]{32})/([0-9]{1,4})", self.path)
+        if native:
+            try:
+                asset = self.api.quick_preview_stream(
+                    native.group(1), int(native.group(2))) if self.api else None
+            except (OSError, ValueError, IndexError):
+                asset = None
+            if asset is None:
+                self.send_error(404, "Preview resource is unavailable")
+                return
+            size, chunks = asset
+            if size < 0 or size > 450 * 1024 * 1024:
+                self.send_error(413, "Native model resource exceeds safe preview size")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                for chunk in chunks:
+                    self.wfile.write(chunk)
+            except (OSError, ValueError, ConnectionError):
+                # Closing the viewer while a large texture loads is normal.
+                pass
+            return
         match = re.fullmatch(r"/__native_output/([0-9a-f]{32})", self.path)
         if match:
             path = self.api.output_file(match.group(1)) if self.api else None
