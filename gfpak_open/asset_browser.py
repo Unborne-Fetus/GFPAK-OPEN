@@ -821,6 +821,48 @@ class AssetBrowser:
                 )
         return result
 
+    def fast_texture_item(self, id_: str) -> dict:
+        """Safely prepare a single texture for the integrated viewer.
+
+        The selected asset stays in its original source archive; the local
+        HTTP stream accesses its bytes only when the user requests a preview.
+        """
+        selected = self.node(id_)
+        kind = selected["kind"]
+        if selected["category"] != "texture":
+            raise ValueError("Select a recognized texture first")
+        if kind == "file":
+            source = Path(selected["path"])
+            name = source.name
+            size = source.stat().st_size
+            descriptor = ("file", source)
+        elif kind == "zipfile":
+            source = Path(selected["path"])
+            name = selected["inner"]
+            _, members = self._zip_data(source)
+            size = members[name].file_size
+            descriptor = ("zip", source, name)
+        elif kind == "nca_file":
+            reader, index, section, name = self._nca_virtual_file(selected)
+            size = self._nca_sections.file_info(reader, index, section, name).size
+            descriptor = ("nca", reader, index, section, name)
+        elif kind == "gfpak_resource":
+            source = Path(selected["path"])
+            archive = self._archive(source)
+            resource = archive.resources[selected["index"]]
+            name = self._known_names(source).get(selected["index"], "")
+            size = resource.size
+            descriptor = ("gfpak", source, selected["index"])
+        else:
+            raise ValueError("Texture is not available as a readable file")
+        if Path(name).suffix.lower() not in {
+            ".bntx", ".dds", ".png", ".jpg", ".jpeg", ".webp"
+        }:
+            raise ValueError("Only compatible BNTX, DDS and image previews are supported")
+        if size <= 0 or size > 256 * 1024 * 1024:
+            raise ValueError("Texture exceeds the 256 MiB safe preview limit")
+        return {"path": name, "size": size, "source": descriptor}
+
     def _fast_gfpak_preview_items(self, selected: dict) -> dict:
         """Expose resolved GFPAK resources as lazy native assets, without Blender.
 
