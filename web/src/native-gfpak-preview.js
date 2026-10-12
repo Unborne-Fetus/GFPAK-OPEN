@@ -11,7 +11,8 @@ import {parseBntx} from './bntx.js';
 import {decodeGfbmdl} from './gfbmdl.js';
 
 const PROBE_LIMIT=64*1024*1024;
-const MAX_PROBES=1800;
+// A split Pokémon can span a dozen GFPAKs; stopping at 1800 probes can miss meshes.
+const MAX_PROBES=8192;
 const ALLOWED=new Set(['.trmdl','.trmsh','.trmbf','.trskl','.trmtr','.bntx','.dds','.png','.jpg','.jpeg','.webp','.tranm','.gfbanm','.gfbmdl','.tracm']);
 const decoder=new TextDecoder();
 const ext=name=>'.'+name.split('/').at(-1).split('.').at(-1).toLowerCase();
