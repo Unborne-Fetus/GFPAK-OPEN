@@ -8,12 +8,17 @@ from __future__ import annotations
 
 import bisect
 import struct
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable
 
 NODE = 0x4000
 MAX_ENTRIES = 250_000
 MAX_BLOCK = 64 * 1024 * 1024
+# Keep frequently accessed RomFS metadata in memory without retaining
+# enormous game assets. A cache belongs to one immutable source NCA.
+MAX_CACHE_BLOCK = 8 * 1024 * 1024
+MAX_CACHE_TOTAL = 24 * 1024 * 1024
 
 
 class BucketTreeError(ValueError):
@@ -42,6 +47,8 @@ class BucketTree:
     def __init__(self, read_table: Callable[[int, int], bytes], table_size: int,
                  entry_count: int, *, compressed: bool = False):
         self.compressed = compressed
+        self._lz4_cache: OrderedDict[tuple[int, int, int], bytes] = OrderedDict()
+        self._cache_bytes = 0
         width = 24 if compressed else 20
         if not 1 <= entry_count <= MAX_ENTRIES:
             raise BucketTreeError("Unsupported BucketTree entry count")
@@ -145,15 +152,26 @@ class BucketTree:
                     import lz4.block
                 except ImportError as exc:
                     raise BucketTreeError("LZ4 NCA blocks need the optional lz4 Python package") from exc
-                packed = read_data(entry.physical, entry.size)
-                if len(packed) != entry.size:
-                    raise BucketTreeError("Truncated compressed BucketTree block")
-                try:
-                    decoded = lz4.block.decompress(packed, uncompressed_size=expanded)
-                except Exception as exc:
-                    raise BucketTreeError("Invalid LZ4-compressed BucketTree block") from exc
-                if len(decoded) != expanded:
-                    raise BucketTreeError("Compressed BucketTree block size mismatch")
+                cache_key = (entry.physical, entry.size, expanded)
+                decoded = self._lz4_cache.get(cache_key)
+                if decoded is None:
+                    packed = read_data(entry.physical, entry.size)
+                    if len(packed) != entry.size:
+                        raise BucketTreeError("Truncated compressed BucketTree block")
+                    try:
+                        decoded = lz4.block.decompress(packed, uncompressed_size=expanded)
+                    except Exception as exc:
+                        raise BucketTreeError("Invalid LZ4-compressed BucketTree block") from exc
+                    if len(decoded) != expanded:
+                        raise BucketTreeError("Compressed BucketTree block size mismatch")
+                    if expanded <= MAX_CACHE_BLOCK:
+                        while self._lz4_cache and self._cache_bytes + expanded > MAX_CACHE_TOTAL:
+                            _, removed = self._lz4_cache.popitem(last=False)
+                            self._cache_bytes -= len(removed)
+                        self._lz4_cache[cache_key] = decoded
+                        self._cache_bytes += expanded
+                else:
+                    self._lz4_cache.move_to_end(cache_key)
                 out.extend(decoded[at-entry.virtual:at-entry.virtual+count])
             else:
                 raise BucketTreeError("Unsupported BucketTree compression type")
