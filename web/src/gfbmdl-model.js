@@ -94,7 +94,8 @@ function threeMesh(geometrySource, materialArray, rig = null) {
     const uv = new Float32Array(geometrySource.vertexCount * 2);
     for (let i = 0; i < uv.length; i += 2) {
       uv[i] = attributes.uv[i];
-      uv[i + 1] = attributes.uv[i + 1];
+      // Match native texture V origin, including compressed BNTX surfaces.
+      uv[i + 1] = 1 - attributes.uv[i + 1];
     }
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   }
