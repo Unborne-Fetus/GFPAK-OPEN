@@ -52,3 +52,40 @@ test('standalone BNTX surfaces open and export a real PNG',async({page})=>{
   await page.locator('#textureClose').click();
   await expect(page.locator('#textureDialog')).toBeHidden();
 });
+
+function anonymousTextureArchive(payload) {
+  const b=Buffer.alloc(112+payload.length);
+  b.write('GFLXPACK',0,'ascii');
+  b.writeUInt32LE(0x1000,8);
+  b.writeUInt32LE(1,16);b.writeUInt32LE(1,20);
+  b.writeBigUInt64LE(88n,24);
+  b.writeBigUInt64LE(48n,32);
+  b.writeBigUInt64LE(56n,40);
+  b.writeBigUInt64LE(0x12345678n,48);
+  b.writeBigUInt64LE(0x99n,56);
+  b.writeUInt32LE(1,64);
+  b.writeBigUInt64LE(0xabn,72);
+  b.writeUInt32LE(0,80);
+  b.writeUInt16LE(0,88);b.writeUInt16LE(0,90);
+  b.writeUInt32LE(payload.length,92);
+  b.writeUInt32LE(payload.length,96);
+  b.writeUInt32LE(112,104);
+  payload.copy(b,112);
+  return b;
+}
+
+test('identifies a selected GFPAK texture from magic without a filename dictionary',async({page})=>{
+  await page.goto('/');
+  await page.locator('#fileInput').setInputFiles({
+    name:'no-dictionary.gfpak',mimeType:'application/octet-stream',
+    buffer:anonymousTextureArchive(nativeBntx())
+  });
+  await expect(page.locator('#archiveResources')).toHaveText('1');
+  await page.locator('#archiveTableBody tr').first().click();
+  await expect(page.locator('#previewArchiveTexture')).toBeEnabled();
+  await expect(page.locator('#previewArchiveTexture')).toContainText('PROBE SELECTED');
+  await page.locator('#previewArchiveTexture').click();
+  await expect(page.locator('#textureDialog')).toBeVisible();
+  await expect(page.locator('#textureSourceName')).toContainText('resource_0000.bntx');
+  await expect(page.locator('#textureSavePng')).toBeEnabled();
+});
