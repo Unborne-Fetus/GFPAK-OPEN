@@ -40,11 +40,26 @@ export function decodeDDSTexture(bytes, srgb = true) {
   return texture;
 }
 
-export async function loadDecodedTexture(item, srgb = true) {
+function normalizeTextureName(name) {
+  return String(name || '').replaceAll('\\', '/').split('/').pop()
+    .replace(/\.(?:bntx|dds|png|ktx2)$/i, '').toLowerCase();
+}
+
+/** Resolve real texture names from multi-surface Nintendo BNTX containers. */
+export async function loadDecodedTexture(item, srgb = true, preferredNames = []) {
   const format = suffix(item.path);
   const data = await item.getBytes();
   if (format === '.bntx') {
-    const decoded = decodeBntxTexture(parseBntx(data), 0);
+    const archive = parseBntx(data);
+    const names = (Array.isArray(preferredNames) ? preferredNames : [preferredNames])
+      .map(normalizeTextureName).filter(Boolean);
+    const matched = archive.textures.filter(tex => names.includes(normalizeTextureName(tex.name)));
+    if (matched.length > 1) throw new Error('Several BNTX textures match the requested name');
+    if (!matched.length && archive.textures.length !== 1) {
+      throw new Error('BNTX contains ' + archive.textures.length +
+        ' textures; select a matching internal texture name rather than guessing the first');
+    }
+    const decoded = decodeBntxTexture(archive, matched[0]?.index ?? 0);
     let texture;
     if (decoded.compressed) {
       const gpuFormat = decoded.compressed === 'bc7'
