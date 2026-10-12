@@ -102,11 +102,11 @@ async function chooseResource(rows,kind,reference,archiveName,report,read){
 /** Prepare a genuine directly-renderable Trinity project from any readable GFPAK. */
 export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dictionary=null) {
   const archive=await parseGfpakFile(blob,filename);
-  const uncompressed=archive.resources.filter(row=>[0,2].includes(row.compression));
-  if(!uncompressed.length){
-    throw Error('All '+archive.count+' resources use unsupported compression; PLA GFPAK Oodle resources need a browser Oodle decoder.');
+  const readable=archive.resources.filter(row=>[0,2,3].includes(row.compression));
+  if(!readable.length){
+    throw Error('No supported GFPAK compression codecs found (expected stored, LZ4 or Oodle).');
   }
-  const rows=uncompressed.map(resource=>({
+  const rows=readable.map(resource=>({
     resource,known:resolvedName(resource,dictionary)||'',
     kind:'',buffer:null,parsed:null,inferred:''
   }));
@@ -133,7 +133,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   const models=rows.filter(row=>['trmdl','trmsh','gfbmdl'].includes(row.kind));
   if(!models.length){
     throw Error('No supported TRMDL/TRMSH/GFBMDL model could be decoded in this GFPAK. '+
-      (archive.resources.length-rows.length)+' compressed resources are unsupported; '+
+      (archive.resources.length-rows.length)+' resources use unrecognized compression; 
       'native model resources may need a hash dictionary.');
   }
   let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
