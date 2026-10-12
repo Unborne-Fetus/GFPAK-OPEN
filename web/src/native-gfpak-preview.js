@@ -197,7 +197,7 @@ async function chooseResource(rows,kind,reference,archiveName,report,read,contex
     if(candidate){
       assignments.set(refKey,candidate);context.used.add(candidate);
       markResourceMatch(candidate,kind,reference,'UNVERIFIED-RESOURCE-ORDER');
-      report('WARNING: Unverified '+kind+' reference "'+reference+
+      report('WARNING: Unverified ambiguous '+kind+' reference "'+reference+
         '" was assigned to resource #'+candidate.resource.index+
         ' only by its archive order ('+filtered.length+
         ' candidates). Geometry may render with incorrect model parts.');
