@@ -70,6 +70,9 @@ test('Preview a readable game-package Trinity model in-browser and export GLB',a
     name:'readable.nsp',mimeType:'application/octet-stream',buffer:packed
   });
   await expect(page.locator('#webGameFiles')).toHaveText(String(entries.length));
+  // The desktop-style viewer now requires entering the game's model folder.
+  await page.locator('#webGameRows tr').filter({hasText:'models'}).first().dblclick();
+  await expect(page.locator('#webGameTitle')).toContainText('models');
   const selected=page.locator('#webGameRows tr').filter({hasText:'test.trmdl'}).first();
   await selected.click();
   await expect(page.locator('#webGamePreview')).toBeEnabled();
@@ -96,4 +99,49 @@ test('Local prod.keys picker accepts keys in memory and forgets them without upl
   await page.locator('#webGameClearKeys').click();
   await expect(page.locator('#webGameKeysStatus')).toContainText('Keys forgotten');
   await expect(page.locator('#webGameFiles')).toHaveText('0');
+});
+
+test('Desktop-like folder tree navigates large game indexes and retains global asset filters',async({page})=>{
+  await page.goto('/');
+  await page.locator('#tabBrowserGame').click();
+  const entries=[
+    ['content.nca/section-1/bin/archive/pokemon/pm0094_00_00.trmdl',Buffer.from([1,2,3])],
+    ['content.nca/section-1/bin/archive/pokemon/pm0094_idle.tranm',Buffer.from([4,5,6])],
+    ['content.nca/section-1/bin/archive/pokemon/pm0094_body.bntx',Buffer.from([7,8])],
+    ['readme.txt',Buffer.from('game files')]];
+  const filenames=Buffer.concat(entries.map(([name])=>Buffer.from(name+String.fromCharCode(0))));
+  const headers=Buffer.alloc(entries.length*24);
+  let offset=0,start=0;
+  for(const [index,[name,data]] of entries.entries()){
+    headers.writeBigUInt64LE(BigInt(start),index*24);
+    headers.writeBigUInt64LE(BigInt(data.length),index*24+8);
+    headers.writeUInt32LE(offset,index*24+16);
+    offset+=Buffer.byteLength(name)+1;
+    start+=data.length;
+  }
+  const head=Buffer.alloc(16);
+  head.write('PFS0');head.writeUInt32LE(entries.length,4);
+  head.writeUInt32LE(filenames.length,8);
+  await page.locator('#webGameFile').setInputFiles({
+    name:'nested.nsp',mimeType:'application/octet-stream',
+    buffer:Buffer.concat([head,headers,filenames,...entries.map(([,data])=>data)])
+  });
+  await expect(page.locator('#webGameTree')).toContainText('content.nca');
+  await expect(page.locator('#webGameRows')).toContainText('content.nca');
+  await expect(page.locator('#webGameRows')).not.toContainText('pm0094_idle.tranm');
+  await page.locator('#webGameTree .nx-tree-name',{hasText:'content.nca'}).click();
+  await expect(page.locator('#webGameTitle')).toContainText('content.nca');
+  await expect(page.locator('#webGameRows')).toContainText('section-1');
+  await page.locator('#webGameSearch').fill('pm0094');
+  await expect(page.locator('#webGameRows')).toContainText('pm0094_body.bntx');
+  await expect(page.locator('#webGameRows')).toContainText('pm0094_idle.tranm');
+  await page.locator('[data-web-asset-class="animation"]').click();
+  await expect(page.locator('#webGameRows tr')).toHaveCount(1);
+  await expect(page.locator('#webGameRows')).toContainText('pm0094_idle.tranm');
+  await page.locator('#webGameSearch').fill('');
+  await page.locator('[data-web-asset-class="all"]').click();
+  await expect(page.locator('#webGameRows')).toContainText('section-1');
+  await page.locator('#webGameBack').click();
+  await expect(page.locator('#webGameRows')).toContainText('content.nca');
+  await expect(page.locator('#webGameTreeStatus')).toContainText('indexed folders');
 });
