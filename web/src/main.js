@@ -2,6 +2,7 @@
 import './style.css';
 import {exportPokemonZip} from './pokemon-export.js';
 import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
+import {textureVariantForItem} from './texture-loader.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -212,8 +213,20 @@ function projectHasVariantTextures() {
 
 function refreshTextureVariantControls() {
   const select = el('textureVariantSelect');
+  const items=state.project?.items||[];
   const visible = ['TRMDL', 'GFBMDL'].includes(state.loaded?.sourceFormat) &&
     projectHasVariantTextures();
+  const shinyAvailable=items.some(item=>
+    (item.linkedKind==='texture'||/\\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
+    ['shiny','mixed'].includes(textureVariantForItem(item)));
+  // Do not offer a fake shiny switch for an archive which has no recognized
+  // shiny texture surface. The regular option stays the default.
+  const regular=new Option('Regular textures','regular');
+  const shiny=new Option(shinyAvailable?'Shiny textures':
+    'Shiny textures (not found)','shiny');
+  shiny.disabled=!shinyAvailable;
+  select.replaceChildren(regular,shiny);
+  if(state.textureVariant==='shiny'&&!shinyAvailable)state.textureVariant='regular';
   el('textureVariantLabel').hidden = !visible;
   select.hidden = !visible;
   select.disabled = !visible || state.busy;
