@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {makeTrinityTriangle} from '../tests/trinity-fixture.mjs';
 function packageBytes(name,data){
   const entry=Buffer.from(data);
   const nameBytes=Buffer.from(name+'\0');
@@ -44,4 +45,36 @@ test('Encrypted NCA remains explicitly locked and cannot appear as a found Poké
   await expect(page.locator('#webGameRows')).toContainText('Locked');
   await expect(page.locator('#webGameModels')).toHaveText('0');
   await expect(page.locator('#webGameNotice')).toContainText('encrypted');
+});
+
+test('Preview a readable game-package Trinity model in-browser and export GLB',async({page})=>{
+  await page.goto('/');
+  await page.locator('#tabBrowserGame').click();
+  const entries=Object.entries(makeTrinityTriangle());
+  const names=Buffer.concat(entries.map(([name])=>Buffer.from(name+'\\0')));
+  const records=Buffer.alloc(entries.length*24);
+  let offset=0,start=0;
+  for(const [i,[name,body]] of entries.entries()){
+    records.writeBigUInt64LE(BigInt(start),i*24);
+    records.writeBigUInt64LE(BigInt(body.byteLength),i*24+8);
+    records.writeUInt32LE(offset,i*24+16);
+    offset+=Buffer.byteLength(name)+1;
+    start+=body.byteLength;
+  }
+  const header=Buffer.alloc(16);
+  header.write('PFS0');
+  header.writeUInt32LE(entries.length,4);
+  header.writeUInt32LE(names.length,8);
+  const packed=Buffer.concat([header,records,names,...entries.map(([,body])=>Buffer.from(body))]);
+  await page.locator('#webGameFile').setInputFiles({
+    name:'readable.nsp',mimeType:'application/octet-stream',buffer:packed
+  });
+  await expect(page.locator('#webGameFiles')).toHaveText(String(entries.length));
+  const selected=page.locator('#webGameRows tr').filter({hasText:'test.trmdl'}).first();
+  await selected.click();
+  await expect(page.locator('#webGamePreview')).toBeEnabled();
+  await page.locator('#webGamePreview').click();
+  await expect(page.locator('#viewerPanel')).toBeVisible();
+  await expect(page.locator('#statMeshes')).toHaveText('1');
+  await expect(page.locator('#exportButton')).toBeEnabled();
 });
