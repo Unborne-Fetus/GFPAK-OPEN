@@ -108,6 +108,7 @@ class AssetBrowser:
         self.root_path: Path | None = None
         self._linked_extracted: dict | None = None
         self._linked_nca: dict[str, dict] = {}
+        self._linked_base_nca: dict[str, Path] = {}
         self._nca_sections = LocalNCASections(nca_workspace or Path(tempfile.mkdtemp(prefix='GFPAK-nca-')))
         self._section_nodes: dict[str, tuple[int, int]] = {}
         self._nca_virtual_nodes: dict[str, tuple[int, int, str]] = {}
@@ -168,6 +169,7 @@ class AssetBrowser:
         self._nca_virtual_nodes.clear()
         self._linked_extracted = None
         self._linked_nca.clear()
+        self._linked_base_nca.clear()
         self.root_path = candidate
         root = self._fs_node(candidate)
         self.root_id = root["id"]
@@ -296,6 +298,24 @@ class AssetBrowser:
         linked["category"] = "folder"
         self._linked_nca[node_id] = linked
         return self._public(linked)
+
+    def attach_base_nca(self, node_id: str, path: str | Path) -> dict:
+        """Link a local standalone base NCA to a selected update NCA.
+
+        The link is kept in memory only. No file is patched or overwritten.
+        """
+        node = self.node(node_id)
+        if node["kind"] != "nspfile" or not node["name"].lower().endswith((".nca", ".ncz")):
+            raise ValueError("Select the update NCA entry first")
+        candidate = Path(path).expanduser().resolve(strict=True)
+        if not candidate.is_file() or candidate.suffix.lower() != ".nca":
+            raise ValueError("Choose an existing original .nca file")
+        updated_reader, updated_index = self.nsp_entry(node_id)
+        base_reader = _StandaloneNCA(candidate)
+        count = self._nca_sections.attach_base(updated_reader, updated_index, base_reader, 0)
+        self._linked_base_nca[node_id] = candidate
+        return {"basename": candidate.name, "matching_sections": count,
+                "note": "Linked locally for compatible plaintext BKTR sections only."}
 
     def _xci_image(self, path: Path) -> XCIImage:
         if path not in self._xci_images:
@@ -523,7 +543,9 @@ class AssetBrowser:
                 entries.append(child)
             message = ("Identified " + str(len(entries) - int(bool(linked))) +
                        " NCA sections with the built-in reader." +
-                       (" Linked files remain available separately." if linked else ""))
+                       (" Linked files remain available separately." if linked else "") +
+                       (" Base NCA: " + self._linked_base_nca[node["id"]].name
+                        if node["id"] in self._linked_base_nca else ""))
         except (OSError, RuntimeError, ValueError) as error:
             message = str(error)
         if not entries:
