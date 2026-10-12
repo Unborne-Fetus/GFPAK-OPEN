@@ -478,7 +478,7 @@ class PartitionFS:
         if count > MAX_FILES or names_length > MAX_META:
             raise NativeNCAError("PFS0 file table is too large.")
         table_length = count * 24 + names_length
-        if table_length > section.logical_size - offset - 16:
+        if table_length > getattr(section, "logical_size", section.size) - offset - 16:
             raise NativeNCAError("PFS0 file table exceeds section bounds.")
         index = section.read(offset + 16, table_length)
         string_table = index[count * 24:]
@@ -492,7 +492,7 @@ class PartitionFS:
             if end < 0:
                 raise NativeNCAError("Unterminated PFS0 filename.")
             name = _filename(string_table[at:end])
-            if begin > section.logical_size - data_start or length > section.logical_size - data_start - begin:
+            if begin > getattr(section, "logical_size", section.size) - data_start or length > getattr(section, "logical_size", section.size) - data_start - begin:
                 raise NativeNCAError("PFS0 entry exceeds NCA section bounds.")
             if name in self.files:
                 raise NativeNCAError("Duplicate PFS0 entry name.")
@@ -546,7 +546,7 @@ class _RomFSMetadataTable:
     CACHE_PAGES = 32
 
     def __init__(self, section: NativeSection, offset: int, size: int):
-        if size < 0 or offset < 0 or offset > section.logical_size or size > section.logical_size - offset:
+        if size < 0 or offset < 0 or offset > getattr(section, "logical_size", section.size) or size > getattr(section, "logical_size", section.size) - offset:
             raise NativeNCAError("RomFS metadata table exceeds its NCA section.")
         self.section = section
         self.offset = offset
@@ -607,9 +607,9 @@ class RomFS:
             struct.unpack("<10Q", header))
         if header_size != 0x50:
             raise NativeNCAError("RomFS header does not have the expected 0x50-byte structure.")
-        if offset < 0 or offset > section.logical_size:
+        if offset < 0 or offset > getattr(section, "logical_size", section.size):
             raise NativeNCAError("RomFS image begins outside the NCA section.")
-        remaining = section.logical_size - offset
+        remaining = getattr(section, "logical_size", section.size) - offset
         for begin, length in ((dir_hash_off, dir_hash_size),
                               (dir_table_off, dir_table_size),
                               (file_hash_off, file_hash_size),
@@ -654,9 +654,9 @@ class RomFS:
         if name_length > 4096 or 32 + name_length > self.file_table_size - at:
             raise NativeNCAError("Invalid RomFS filename length.")
         name = _filename(self._file_table.read(at + 32, name_length))
-        if (self.file_data_off > self.section.logical_size or
-                begin > self.section.logical_size - self.file_data_off or
-                size > self.section.logical_size - self.file_data_off - begin):
+        if (self.file_data_off > self.getattr(section, "logical_size", section.size) or
+                begin > self.getattr(section, "logical_size", section.size) - self.file_data_off or
+                size > self.getattr(section, "logical_size", section.size) - self.file_data_off - begin):
             raise NativeNCAError("RomFS file extends beyond NCA section.")
         return name, sibling, self.file_data_off + begin, size
 
