@@ -356,8 +356,8 @@ class NativeNCAIntegrationTests(unittest.TestCase):
                 updated.sections[0].filesystem()
             self.assertEqual(updated.attach_base(original), 1)
             section = updated.sections[0]
-            self.assertEqual(section.read(logical_end - 2, 2), b"OK")
             filesystem = section.filesystem()
+            self.assertEqual(section.read(logical_end - 2, 2), b"OK")
             self.assertEqual(filesystem.children_page()["entries"][0]["name"], "bin")
             file_info = filesystem.file("bin/archive/pokemon/pm0025_00_00.gfpak")
             self.assertEqual(section.read(file_info.offset + file_info.size - 2, 2), b"OK")
