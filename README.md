@@ -217,12 +217,19 @@ Open the hosted site or run `npm run dev`, then choose **OPEN GAME FILES**. Drag
 The web reader streams **index metadata** from local files (rather than loading gigabyte-sized games into RAM) and currently supports:
 
 - NSP/NSZ **outer PFS0** file indexes and XCI **HFS0 game-card partition** indexes
-- Native, **unencrypted** NCA3 PartitionFS sections (read-only, when no sparse, patch or compressed storage remapping is needed)
+- NCA3 encrypted headers (AES-XTS), AES-CTR filesystem sections, and plaintext NCA sections, with **PartitionFS and RomFS** file browsing when compatible user-supplied keys are loaded
 - Full extracted-folder indexing, model/texture/animation filters, filename search, save selected original, and export full index JSON
 - Browser GFPAK inspection of package resources, plus native 3D preview and GLB / Pokémon ZIP export for compatible decoded models and companions
 - A shared preview pipeline: select a readable GFBMDL/TRMDL/GLB model and press **Preview selected in 3D**; the 3D viewer can export GLB or a Pokémon ZIP when appropriate.
 
-**Not yet supported inside the browser:** local-key decryption of encrypted NCA sections (the standalone Windows NCA reader remains available for this), NCZ payload decoding, complete patch/DLC filesystem overlays, all Oodle-compressed GFPAK resources, and native game revisions whose shaders/animation formats are not yet decoded. A package can be indexed even when its Pokémon assets are encrypted: **zero readable models must not be interpreted as zero models in the game**. For those cases, import an already extracted game folder; the browser does not send original game data or keys to a server.
+### Decrypting game contents in the browser
+
+1. Open **OPEN GAME FILES** in the web studio.
+2. Press **Load local prod.keys** and select your own locally available compatible key file. Nothing is uploaded and the key-file text is not stored in browser storage.
+3. Choose your NSP or XCI. The browser decrypts compatible NCA3 headers (AES-XTS) and filesystem sections (AES-CTR or AES-XTS) using WebCrypto. If the game was already open, selecting a key file automatically rescans it.
+4. Filter the discovered files to models/textures/animations, then preview or export any readable Pokémon resource. Press **Forget keys** to clear loaded key values and references to the decrypted asset catalog.
+
+**Important limits:** `prod.keys` does **not** necessarily contain title content keys for rights-managed NCAs; a separately available compatible title key may be required. Some newer titles also use key revisions that must match the provided keys. The web reader does not yet decode **NCZ payload compression**, **sparse/compressed/patch NCA storage**, complex DLC/update overlays, or every original Pokémon model/shader/animation format. An encrypted or unsupported section stays visibly locked/unavailable; it is **not** counted as having zero assets. Downloaded decrypted files are explicit user-selected exports only, not automatic whole-game extraction. The app does not distribute or look up keys. Use only game data and keys you are authorized to access.
 
 ## Exporting Pokémon to Pokédex 3D Max
 
