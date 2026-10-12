@@ -684,9 +684,11 @@ function select(row) {
   id('assetPreview').disabled = !canPreview(row) && !canInspectTexture(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' :
     canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
-  id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
-  id('assetSavePacked').hidden = row?.kind !== 'gfpak_resource';
-  id('assetSavePacked').disabled = row?.kind !== 'gfpak_resource';
+  id('assetSaveFile').disabled = !row || !['file', 'zipfile',
+    'gfpak_resource', 'nca_gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
+  const isPackedResource = ['gfpak_resource', 'nca_gfpak_resource'].includes(row?.kind);
+  id('assetSavePacked').hidden = !isPackedResource;
+  id('assetSavePacked').disabled = !isPackedResource;
   id('assetAttachNCA').disabled = !(row?.kind === 'nspfile' && /\.nca$/i.test(row.name));
   id('assetAttachBaseNCA').disabled = !(row?.kind === 'nspfile' && /\.(nca|ncz)$/i.test(row.name));
   showNSPSelection(row).catch(error => showNotice(error.message || String(error), true));
