@@ -113,10 +113,13 @@ function pathFor(row,stem='pokemon'){
 }
 function assignRef(row,kind,reference,base) {
   const name=normalize(reference);
-  if(name && !row.known){
-    const basename=name.split('/').at(-1);
-    row.inferred='recovered/'+base+'/'+(basename.endsWith('.'+kind)?basename:basename+'.'+kind);
-  }
+  if(!name)return;
+  const basename=name.split('/').at(-1);
+  const alias=basename.endsWith('.'+kind)?basename:basename+'.'+kind;
+  // Preserve descriptor-to-resource identity even when a hash dictionary
+  // supplies a *different* canonical filename for this companion.
+  row.nativeAliases=unique([...(row.nativeAliases||[]),alias,name]);
+  if(!row.known)row.inferred='recovered/'+base+'/'+alias;
 }
 async function chooseResource(rows,kind,reference,archiveName,report,read,context=null){
   let filtered=rows.filter(row=>row.kind===kind);
@@ -203,7 +206,9 @@ function textureVariantName(name){
   return 'regular';
 }
 function textureVariant(path,names=[]){
-  const values=[path,...names];
+  // A hashed container filename carries no color information. Prefer the
+  // actual BNTX surface names, or an explicitly marked archive filename.
+  const values=names.length?names:[path];
   const hasShiny=values.some(value=>textureVariantName(value)==='shiny');
   const hasRegular=values.some(value=>textureVariantName(value)!=='shiny');
   return hasShiny&&hasRegular?'mixed':hasShiny?'shiny':'regular';
@@ -371,6 +376,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ['tranm','gfbanm'].includes(row.kind)?'animation':undefined;
     items.push({
       path,size:row.resource.size,textureNames,
+      nativeAliases:row.nativeAliases||[],
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
       linkedKind,
