@@ -54,7 +54,7 @@ test('GFLXPACK with stored GFBMDL geometry previews without Blender, exports GLB
   expect(json.meshes.length).toBe(1);
 });
 
-test('Oodle-compressed GFBMDL inside GFPak reports missing decoder, not false success', async ({ page }) => {
+test('Corrupted Oodle-compressed GFBMDL reports a decoder error, not false success', async ({ page }) => {
   await page.goto('/');
   await page.locator('#fileInput').setInputFiles({
     name: 'sample.gfpak', mimeType: 'application/octet-stream',
@@ -64,6 +64,6 @@ test('Oodle-compressed GFBMDL inside GFPak reports missing decoder, not false su
     name: 'test-hashes.json', mimeType: 'application/json', buffer: dictionary,
   });
   await page.locator('#previewArchiveModel').click();
-  await expect(page.locator('#logBody')).toContainText('Oodle compression is not available in the browser');
+  await expect(page.locator('#logBody')).toContainText('Oodle resource could not be decoded');
   await expect(page.locator('#exportButton')).toBeDisabled();
 });
