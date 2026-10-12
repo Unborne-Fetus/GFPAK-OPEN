@@ -120,7 +120,9 @@ export async function drawTextureSurface(info, index, canvas) {
     material = new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide});
     const scene = new THREE.Scene();
     scene.add(new THREE.Mesh(geometry,material));
-    renderer.render(scene,new THREE.OrthographicCamera(-1,1,1,-1,0.1,10));
+    const camera = new THREE.OrthographicCamera(-1,1,1,-1,0.1,10);
+    camera.position.z = 1;
+    renderer.render(scene,camera);
     return {width:decoded.width,height:decoded.height,
       dispose() {texture.dispose();material.dispose();geometry.dispose();renderer.dispose();}};
   } catch (error) {
