@@ -102,7 +102,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
     if (chosen.length > 1) throw new Error('Several BNTX textures match the requested material');
     if (!chosen.length && searchTextures.length !== 1) {
       throw new Error('BNTX contains ' + archive.textures.length +
-        ' textures; no uniquely matching '+variant+' surface for this material');
+        ' textures; select a matching internal texture name (no uniquely matching '+variant+' surface for this material)');
     }
     const surfaceIndex = chosen[0]?.index ?? searchTextures[0].index;
     const decoded = decodeBntxTexture(archive, surfaceIndex);
