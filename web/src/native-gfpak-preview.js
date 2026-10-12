@@ -108,7 +108,7 @@ function matchByHash(rows,reference,containerName,kind){
 }
 function pathFor(row,stem='pokemon'){
   if(row.known)return row.known;
-  const base=stem.replace(/\.gfpak$/i,'').split('/').at(-1).replace(/[^a-z0-9_-]/gi,'_')||'pokemon';
+  const base=(row.sourceArchive||stem).replace(/\.gfpak$/i,'').split('/').at(-1).replace(/[^a-z0-9_-]/gi,'_')||'pokemon';
   return 'recovered/'+base+'/resource_'+String(row.resource.index).padStart(4,'0')+'.'+row.kind;
 }
 function assignRef(row,kind,reference,base) {
@@ -262,20 +262,29 @@ async function recoverUnreferencedCompanions(rows,required,materialNames,read,re
   }
 }
 /** Prepare a genuine directly-renderable Trinity project from any readable GFPAK. */
-export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dictionary=null) {
+export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dictionary=null,supplements=[]) {
   const archive=await parseGfpakFile(blob,filename);
-  const readable=archive.resources.filter(row=>[0,2,3].includes(row.compression));
-  if(!readable.length){
+  // A model's TRMSH/TRMBF can be packed separately. Only explicitly supplied
+  // same-Pokémon GFPAKs may contribute dependencies; no cross-species search.
+  const archives=[archive];
+  for(const entry of supplements){
+    if(!entry?.blob || !entry.filename)continue;
+    archives.push(await parseGfpakFile(entry.blob,entry.filename));
+  }
+  const rows=archives.flatMap(source=>source.resources
+    .filter(resource=>[0,2,3].includes(resource.compression))
+    .map(resource=>({
+      resource,archive:source,sourceArchive:source.filename,
+      known:resolvedName(resource,dictionary)||'',
+      kind:'',buffer:null,parsed:null,inferred:''
+    })));
+  if(!rows.length){
     throw Error('No supported GFPAK compression codecs found (expected stored, LZ4 or Oodle).');
   }
-  const rows=readable.map(resource=>({
-    resource,known:resolvedName(resource,dictionary)||'',
-    kind:'',buffer:null,parsed:null,inferred:''
-  }));
   const stem=filename.replace(/\.gfpak$/i,'').split('/').at(-1);
   const read=async row=>{
     if(!row.buffer){
-      const raw=await extractResourceAsync(archive,row.resource);
+      const raw=await extractResourceAsync(row.archive,row.resource);
       row.buffer=await peekData(raw);
     }
     return row.buffer;
@@ -309,7 +318,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
   }
   const models=rows.filter(row=>['trmdl','trmsh','gfbmdl'].includes(row.kind));
   if(!models.length){
-    const unknownCodecs=archive.resources.length-rows.length;
+    const unknownCodecs=archives.reduce((sum,source)=>sum+source.resources.length,0)-rows.length;
     const summary=probed+' unnamed resources probed, '+decoded+' successfully extracted, '+
       unreadable+' failed extraction, '+skippedLarge+' above the '+
       (PROBE_LIMIT/1048576)+' MiB probe limit, '+skippedLimit+
@@ -326,7 +335,10 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ' A filename-hash dictionary can identify resources, but cannot repair '+
       'failed decompression or unsupported model layouts.');
   }
-  let root=models.find(row=>row.kind==='trmdl')||models.find(row=>row.kind==='gfbmdl')||models[0];
+  const primary=models.filter(row=>row.archive===archive);
+  const preferred=primary.length?primary:models;
+  let root=preferred.find(row=>row.kind==='trmdl')||
+    preferred.find(row=>row.kind==='gfbmdl')||preferred[0];
   const required=new Set([root]);
   const context={assignments:new Map(),used:new Set(),referenceOrder:[]};
   const meshMaterialNames=new Set();
@@ -376,7 +388,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
       ['tranm','gfbanm'].includes(row.kind)?'animation':undefined;
     items.push({
       path,size:row.resource.size,textureNames,
-      sourceArchive:filename, nativeAliases:row.nativeAliases||[],
+      sourceArchive:row.sourceArchive, nativeAliases:row.nativeAliases||[],
       getBytes:()=>read(row),
       getText:async()=>decoder.decode(await read(row)),
       linkedKind,
