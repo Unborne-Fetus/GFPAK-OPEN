@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
+import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 import {Builder} from 'flatbuffers';
 import {prepareGfpakModelPreview} from '../src/native-gfpak-preview.js';
 import {loadTrinityModel} from '../src/trinity-model.js';
@@ -108,4 +109,28 @@ test('Extensionless head/body/tail resolve across three indistinguishable hashed
   loaded.root.traverse(node=>{if(node.isMesh)count++;});
   assert.equal(count,3);
   loaded.disposeAssets();
+});
+
+test('hashed native PLA GFPAK discovers actual skeletal animation and skeleton files for playback',async()=>{
+  const assets=makeAnimatedTrinityTriangle();
+  const archive=gfpak(assets);
+  const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
+  assert.equal(project.items.filter(item=>item.linkedKind==='animation').length,1);
+  assert.equal(project.items.filter(item=>item.path.endsWith('.trskl')).length,1);
+  const model=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.equal(model.animations.length,0);
+  await model.postLoad();
+  assert.equal(model.animations.length,1);
+  assert.ok(model.animations[0].tracks.length>0);
+  model.disposeAssets();
+});
+test('hashed PLA GFPAK recognizes BNTX header as texture companion and preserves original bytes',async()=>{
+  const original=makeTrinityTriangle();
+  const bntx=new Uint8Array(64);bntx.set([66,78,84,88]);
+  const archive=gfpak({...original,'hashed/unnamed-resource.bin':bntx});
+  const {project}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
+  const texture=project.items.find(item=>item.linkedKind==='texture');
+  assert.ok(texture);
+  assert.match(texture.path,/\.bntx$/);
+  assert.deepEqual(new Uint8Array(await texture.getBytes()),bntx);
 });
