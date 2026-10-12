@@ -61,6 +61,26 @@ def create_pfs0(path):
 
 
 class AssetBrowserTests(unittest.TestCase):
+    def test_pokemon_zip_keeps_original_companions_and_unknown_resources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'pm0025_00_00.gfpak'
+            create_resolved_gfpak(source)
+            browser = AssetBrowser()
+            node = browser.open(source)
+            target = Path(tmp) / 'pokemon.zip'
+            browser.export_pokemon(node['id'], target)
+            with zipfile.ZipFile(target) as archive:
+                self.assertEqual(len(archive.namelist()), 5)
+                self.assertEqual(archive.read('body.bntx'), b'fake BNTX')
+                self.assertEqual(archive.read('pikachu_idle.tranm'), b'fake animation')
+            unknown = Path(tmp) / 'unknown.gfpak'
+            create_gfpak(unknown)
+            node = browser.open(unknown)
+            browser.export_pokemon(node['id'], target)
+            with zipfile.ZipFile(target) as archive:
+                self.assertEqual(len(archive.namelist()), 1)
+                self.assertTrue(archive.namelist()[0].endswith('.bin'))
+
     def test_detect_models_animations_and_textures(self):
         cases = {
             "pm0025_00_00.gfpak": "model archive",

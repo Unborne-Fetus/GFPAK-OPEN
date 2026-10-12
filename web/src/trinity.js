@@ -138,6 +138,15 @@ export function parseTrmtr(bytes) {
     return {
       materials: list(reader, root, 1, 3000).map(table => ({
         name: reader.string(table, 0),
+        alphaType: reader.string(table, 15),
+        faceCulling: (() => {
+          const at = reader.field(table,14);
+          return at ? reader.integer(reader.table(reader.pointer(at)),1,-1) : -1;
+        })(),
+        shaders: list(reader, table, 1, 64).map(t => ({
+          name: reader.string(t,0),
+          flags: Object.fromEntries(list(reader,t,1,128).map(v => [reader.string(v,0),reader.string(v,1)]))
+        })),
         textures: list(reader, table, 2, 128).map(t => ({
           name: reader.string(t, 0),
           file: reader.string(t, 1),

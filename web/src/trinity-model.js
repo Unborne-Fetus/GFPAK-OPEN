@@ -15,6 +15,7 @@ import {
   TrinityError, parseTrmdl, parseTrmsh, parseTrmbf,
   parseTrmtr, parseTrskl, decodeTrinityMeshes
 } from './trinity.js';
+import { parseMeshVisibility } from './trinity-visibility.js';
 import { parseNativeAnimation } from './trinity-animation.js';
 
 const MAX_BYTES = 450 * 1024 * 1024;
@@ -109,13 +110,19 @@ export function createMaterials(materials) {
   for (const definition of materials) {
     for (const info of definition.materials) {
       const eyeHighlight = info.textures?.some(t => /^HighlightMaskMap$/i.test(t.name));
-      const Material = eyeHighlight ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+      const shader = info.shaders?.[0];
+      const unlit = /^(NonDirectional|Unlit)$/i.test(shader?.name || '');
+      const Material = unlit ? THREE.MeshBasicMaterial : eyeHighlight ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
       const mat = new Material({
         name: info.name || 'Trinity material',
-        color: 0xd9e0e7, side: THREE.DoubleSide,
+        color: 0xd9e0e7, side: info.faceCulling === 1 ? THREE.BackSide : info.faceCulling === 2 ? THREE.DoubleSide : THREE.FrontSide,
         roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
         metalness: 0.0, ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
       });
+      mat.userData.nativeVertexColor = shader?.flags?.EnableVertexBaseColor === 'True' || shader?.flags?.EnableVertexColor === 'True';
+      mat.transparent = !!info.alphaType && !/opaque/i.test(info.alphaType);
+      mat.depthWrite = !mat.transparent;
+      if (shader?.flags?.EnableAlphaTest === 'True') mat.alphaTest = info.scalars?.DiscardValue || 0.5;
       lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
         colors: info.colors, scalars: info.scalars });
     }
@@ -304,7 +311,7 @@ export function makeMesh(part, material, skeletonInfo) {
   }
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
-    material.vertexColors = true;
+    material.vertexColors = material.userData.nativeVertexColor === true;
   }
   geometry.setIndex(new THREE.BufferAttribute(part.indices, 1));
   if (!vertices.normal) geometry.computeVertexNormals();
@@ -417,7 +424,7 @@ export function animationTracks(source, bones) {
   return clip;
 }
 
-async function loadNativeClips(project, selected, skeleton, report) {
+async function loadNativeClips(project, selected, skeleton, report, scene) {
   if (!skeleton?.bones?.length) return [];
   const compatible = associatedNativeAnimations(project.items, selected, report);
   const clips = [];
@@ -430,7 +437,27 @@ async function loadNativeClips(project, selected, skeleton, report) {
     try {
       const native = parseNativeAnimation(await bytesFor(item), basename(item.path));
       const clip = animationTracks(native, skeleton.bones);
-      if (clip) clips.push(clip);
+      if (clip) {
+        const companion = findResource(project, item.path.replace(/\.(tranm|gfbanm)$/i,'.tracm'), '', '.tracm', false);
+        if (companion) {
+          try {
+            for (const channel of parseMeshVisibility(await bytesFor(companion))) {
+              scene.traverse(mesh => {
+                if (!mesh.isMesh || mesh.name.split(':')[0] !== channel.name) return;
+                clip.tracks.push(new THREE.BooleanKeyframeTrack(mesh.uuid+'.visible',
+                  channel.frames.map(frame=>frame/native.frameRate),channel.values));
+                // Preserve authored idle visibility even before playback starts.
+                if (/defaultwait|battlewait|idle/i.test(item.path) && channel.frames[0] === 0 &&
+                    !mesh.userData.nativeIdleVisibility) {
+                  mesh.visible = channel.values[0];
+                  mesh.userData.nativeIdleVisibility = true;
+                }
+              });
+            }
+          } catch (error) { report('Mesh visibility skipped: '+error.message); }
+        }
+        clips.push(clip);
+      }
     } catch (error) {
       report('Native animation ' + basename(item.path) + ' skipped: ' + error.message);
     }
@@ -526,7 +553,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
               project, scene, report, created);
             return images.concat(fallbackImages);
           })(),
-          loadNativeClips(project, selected, rig, report),
+          loadNativeClips(project, selected, rig, report, scene),
         ]);
         sourceImages = images;
         if (!disposed) animations.push(...clips);

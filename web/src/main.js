@@ -1,5 +1,6 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
+import {exportPokemonZip} from './pokemon-export.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -19,6 +20,8 @@ const el = id => document.getElementById(id);
 const state = {
   stage: null,
   project: null,
+  exportProject: null,
+  desktopSource: false,
   archive: null,
   dictionary: new Map(),
   loaded: null,
@@ -98,6 +101,7 @@ function busy(value, title = 'Processing assets', message = '') {
   el('busyTitle').textContent = title;
   el('busyMessage').textContent = message;
   el('exportButton').disabled = value || !state.loaded;
+  el('exportPokemonButton').disabled = value || !state.loaded || (!state.exportProject && !state.desktopSource);
   el('loadSelected').disabled = value || !state.project?.models.length;
   el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
     isInspectableTexture(item.path));
@@ -137,6 +141,7 @@ function resetInspector() {
   el('toggleAnimation').disabled = true;
   el('toggleAnimation').textContent = '▶ PLAY ANIMATION';
   el('exportButton').disabled = true;
+  el('exportPokemonButton').disabled = true;
   el('emptyState').hidden = false;
 }
 
@@ -167,6 +172,7 @@ function setModel(result, format, packageName) {
   // Exporting before asynchronous texture/animation import completes would
   // silently create a GLB without those linked assets.
   el('exportButton').disabled = !!result.postLoad;
+  el('exportPokemonButton').disabled = !state.exportProject && !state.desktopSource;
   const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
@@ -225,6 +231,7 @@ async function openModel() {
   busy(true, 'Loading model', 'Reading mesh and texture resources…');
   try {
     const result = await loadModel(state.project, selected, message => log(message));
+    state.exportProject = state.project; state.desktopSource=false;
     setModel(result, extension(selected), state.project.label);
     showTab('viewer');
   } catch (err) {
@@ -483,7 +490,7 @@ async function inspectArchiveTexture() {
     'resource_' + String(resource.index).padStart(4,'0') + '.bin';
   await inspectSourceTexture({
     path:name,size:resource.size,
-    getBytes:async()=>extractResourceAsync(state.archive,resource)
+    getBytes:async()=>extractResourceAsync(sourceArchive,resource)
   });
 }
 
@@ -507,7 +514,7 @@ async function previewGfbmdlInArchive() {
   }
   const name = resolvedName(selectedResource, state.dictionary);
   const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
-    '.tranm', '.gfbanm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
+    '.tranm', '.gfbanm', '.tracm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
   // Deferred extraction avoids decompressing unrelated resources. Every
   // associated file is resolved by its original path/hash dictionary entry.
   const resources = state.archive.resources
@@ -529,6 +536,11 @@ async function previewGfbmdlInArchive() {
   busy(true, 'Decoding archive model', 'Resolving companion model resources locally…');
   try {
     const result = await loadModel(project, name, message => log(message));
+    const sourceArchive = state.archive, sourceDictionary = state.dictionary;
+    state.exportProject = {items:sourceArchive.resources.map(resource => ({
+      path:resolvedName(resource,sourceDictionary) || resource.index+'_'+resource.pathHash+'.bin',
+      getBytes:async()=>extractResourceAsync(sourceArchive,resource)
+    }))}; state.desktopSource=false;
     setModel(result, extension(name), state.archive.filename);
     showTab('viewer');
     log(name + ' decoded into real meshes inside this browser.', 'success');
@@ -641,6 +653,7 @@ async function exportModel() {
 function addDemo() {
   if (state.busy) return;
   state.project = null;
+  state.exportProject = null; state.desktopSource=false;
   state.archive = null;
   el('modelChoice').hidden = true;
   el('textureChoice').hidden = true;
@@ -713,6 +726,21 @@ function attachEvents() {
     },'image/png');
   });
   el('exportButton').addEventListener('click', exportModel);
+  el('exportPokemonButton').addEventListener('click', async () => {
+    if (!state.loaded || state.busy) return;
+    if (state.desktopSource) {
+      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon'));
+      return;
+    }
+    busy(true,'Exporting Pokémon','Packing original model and companion files…');
+    try {
+      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected);
+      const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
+      downloadBlob(name,blob,'application/zip');
+      log('Exported original Pokémon assets to '+name+'.','success');
+    } catch(error) {errorMessage(error);}
+    finally {busy(false);}
+  });
   el('tabViewer').addEventListener('click', () => showTab('viewer'));
   el('tabArchive').addEventListener('click', () => showTab('archive'));
   el('gridToggle').addEventListener('change', event => state.stage?.setGrid(event.target.checked));
@@ -793,6 +821,7 @@ async function openFastDesktopPreview(detail) {
     }
     const result = await loadModel(project, manifest.selected,
       message => log(message), {fastPreview:true});
+    state.exportProject = project; state.desktopSource=true;
     setModel(result, extension(manifest.selected), project.label);
     // The desktop explorer is a separate tab; make the loaded 3D viewport
     // actually visible instead of leaving it obscured behind File Explorer.

@@ -199,7 +199,7 @@ def unpack_named(archive: GFPak, destination: Path, names: dict[int, str],
 # Do not treat random strings or unmatched hashes as verified resources.
 REFERENCE_RE = re.compile(
     rb"[A-Za-z0-9_][A-Za-z0-9_./-]{2,190}"
-    rb"\.(?:trmdl|trmsh|trmbf|trmtr|trskl|trmmt|tranm|gfbanm|gfbmdl|tracn|tracp|tracr|tracs|trtex|bntx|png|dds|tga|jpeg|jpg|webp)",
+    rb"\.(?:trmdl|trmsh|trmbf|trmtr|trskl|trmmt|tranm|gfbanm|gfbmdl|tracn|tracp|tracr|tracs|tracm|traef|tracl|tralk|trslp|trtex|bntx|png|dds|tga|jpeg|jpg|webp)",
     re.IGNORECASE,
 )
 
