@@ -88,8 +88,12 @@ def plain_nca(sources: list[tuple[str, bytes]], encrypted=False, headerkey=None,
             header[fs+2] = 3
             header[fs+3] = 3
             header[fs+8:fs+12] = b"IVFC"
-            struct.pack_into("<I", header, fs+0x14, 1)
-            struct.pack_into("<Q", header, fs+0x18, 0)
+            # Nintendo's MaxLayers includes the external master-hash layer.
+            # Seven levels therefore have six region descriptors. The sixth
+            # descriptor (index 5) is the real RomFS data layer.
+            struct.pack_into("<I", header, fs+0x14, 7)
+            struct.pack_into("<QQII", header, fs+0x18+5*0x18,
+                             0, len(payload), 12, 0)
         if encrypted:
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
             counter = bytes.fromhex("0011223344556677")
