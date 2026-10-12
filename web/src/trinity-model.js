@@ -145,7 +145,7 @@ export function createMaterials(materials) {
 }
 
 export async function applyDecodedTextures(project, lookup, modelPath, report, created, options = {}) {
-  const variant = options.textureVariant || 'regular';
+  const requestedVariant = options.textureVariant || 'regular';
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
     { names: /^displacementmap$/i, property: 'nativeDisplacementMap', srgb: false },
@@ -167,6 +167,8 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
         !/(normal|mask|rough|metal|occlusion|ao|emissive|emission)/i.test(textures[0].name) &&
         !/(?:_|-)(nrm|lym|msk|ao)(?:\.|$)/i.test(textures[0].file) ? textures[0] : null);
       if (!selected) continue;
+      const variant = (channel.property === 'map' || channel.property === 'emissiveMap')
+        ? requestedVariant : 'regular';
       const textureItem = findOptionalTexture(project, selected.file, modelPath, variant);
       if (!textureItem) {
         report('No decoded image for ' + selected.file + ' (' + materialName + ')');

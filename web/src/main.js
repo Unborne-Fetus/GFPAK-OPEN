@@ -201,9 +201,10 @@ function setModel(result, format, packageName) {
       ' and ' + info.clips + ' animation clip(s).'), 'success');
 }
 
-function projectHasShinyTextures() {
+function projectHasVariantTextures() {
   return (state.project?.items || []).some(item =>
-    item.linkedKind === 'texture' &&
+    item.linkedKind === 'texture' ||
+    /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path || '') ||
     (item.textureVariant === 'shiny' || item.textureVariant === 'mixed' ||
       /(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/i
         .test(String(item.path || '') + ' ' + String(item.textureNames || ''))));
@@ -211,7 +212,8 @@ function projectHasShinyTextures() {
 
 function refreshTextureVariantControls() {
   const select = el('textureVariantSelect');
-  const visible = state.loaded?.sourceFormat === 'TRMDL' && projectHasShinyTextures();
+  const visible = ['TRMDL', 'GFBMDL'].includes(state.loaded?.sourceFormat) &&
+    projectHasVariantTextures();
   el('textureVariantLabel').hidden = !visible;
   select.hidden = !visible;
   select.disabled = !visible || state.busy;

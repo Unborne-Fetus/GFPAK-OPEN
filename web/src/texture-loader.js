@@ -60,6 +60,8 @@ function matchesVariantName(name, variant = 'regular') {
 }
 
 export function textureVariantForItem(item) {
+  if (['regular', 'shiny', 'mixed'].includes(item?.textureVariant))
+    return item.textureVariant;
   const names = [item?.path, ...(item?.textureNames || [])];
   const hasShiny = names.some(name => textureVariantFromName(name) === 'shiny');
   const hasRegular = names.some(name => matchesVariantName(name, 'regular'));
