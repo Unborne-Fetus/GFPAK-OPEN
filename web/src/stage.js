@@ -13,7 +13,9 @@ export class ModelStage {
     this.renderer.setSize(Math.max(container.clientWidth, 300), Math.max(container.clientHeight, 300));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.35;
+    // Preserve Pokémon's authored base colors. The previous high-exposure
+    // warm/yellow key and green fill made regular palettes look like shinies.
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.append(this.renderer.domElement);
@@ -31,8 +33,8 @@ export class ModelStage {
     this.userAdjustedCamera = false;
     this.controls.addEventListener('start', () => { this.userAdjustedCamera = true; });
 
-    this.scene.add(new THREE.HemisphereLight(0xc2e8ff, 0x2d4959, 2.2));
-    const key = new THREE.DirectionalLight(0xfff6e7, 3.5);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x667180, 1.8));
+    const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(6, 12, 7);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -40,7 +42,7 @@ export class ModelStage {
     key.shadow.camera.right = key.shadow.camera.top = 20;
     key.shadow.bias = -0.0003;
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x58ecca, 1.5);
+    const fill = new THREE.DirectionalLight(0xe3eaf4, 0.85);
     fill.position.set(-6, 6, -5);
     this.scene.add(fill);
 
