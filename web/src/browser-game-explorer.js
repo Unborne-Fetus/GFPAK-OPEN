@@ -394,15 +394,36 @@ async function preview(){
     if(/\.gfpak$/i.test(target.name)){
       message('Locating native model, mesh buffers, skeleton and materials inside '+target.name+'…');
       const archiveBlob=await target.getBlob();
-      const {project,selected:modelPath}=await prepareGfpakModelPreview(
-        archiveBlob,target.name,progress=>message(progress));
-      // PLA can store animation/skin assets in another GFPAK next to the model.
-      // Only match archives explicitly carrying the same species/form token.
-      // Ignore huge/unrelated archives and keep everything locally file-backed.
+      // Only consider matching species/form packages, never unrelated Pokémon.
       const siblings=selectPokemonCompanionArchives(source.entries,target);
+      const combined=new Set();
+      let prepared;
+      try{
+        prepared=await prepareGfpakModelPreview(
+          archiveBlob,target.name,progress=>message(progress));
+      }catch(error){
+        if(!siblings.length||!/Missing (?:trmsh|trmbf) file|Cannot resolve (?:trmsh|trmbf)/i
+          .test(String(error?.message||error)))throw error;
+        // Mesh geometry may be stored in separate same-Pokémon GFPAKs.
+        // Retry only when required geometry is genuinely missing.
+        message('Model geometry is split across archives. Matching same-Pokémon mesh packages…');
+        const supplements=[];
+        for(const row of siblings.slice(0,12)){
+          try{
+            supplements.push({blob:await row.getBlob(),filename:row.name});
+          }catch(e){message('Could not read companion archive '+row.name+': '+e.message);}
+        }
+        prepared=await prepareGfpakModelPreview(
+          archiveBlob,target.name,progress=>message(progress),null,supplements);
+        supplements.forEach(entry=>combined.add(entry.filename));
+      }
+      const {project,selected:modelPath}=prepared;
+      // Add additional same-Pokémon texture/animation packs after geometry.
+      // Source archives already merged above have also been fully probed.
       if(siblings.length){
         message('Found '+siblings.length+' same-Pokémon archive(s) to examine for skeletons, textures and animation clips.');
         for(const row of siblings){
+          if(combined.has(row.name))continue;
           try{
             message('Searching matching Pokémon companion archive '+row.name+'…');
             const extra=await prepareGfpakCompanions(await row.getBlob(),row.name,
