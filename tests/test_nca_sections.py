@@ -320,6 +320,8 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             package(filename, [("compressed.nca", bytes(raw))])
             section = NativeNCA(NSPAnalyzer(filename), 0).sections[0]
             self.assertTrue(section.compatibility()["compressed_storage"])
+            # A file read before opening the tree still uses virtual mapping.
+            self.assertEqual(section.read(0, 4), romfs[:4])
             files = section.filesystem()
             entries = files.children_page()["entries"]
             self.assertEqual(entries[0]["name"], "bin")
@@ -429,6 +431,7 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             package(filename, [("sparse.nca", bytes(raw))])
             section = NativeNCA(NSPAnalyzer(filename), 0).sections[0]
             self.assertTrue(section.compatibility()["sparse"])
+            self.assertEqual(section.read(len(romfs), 64), bytes(64))
             self.assertEqual(section.filesystem().children_page()["entries"][0]["name"], "bin")
             self.assertEqual(section.read(len(romfs)-8, 16), romfs[-8:] + bytes(8))
             self.assertEqual(section.read(len(romfs), 64), bytes(64))
