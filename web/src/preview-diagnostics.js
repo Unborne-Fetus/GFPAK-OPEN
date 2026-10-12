@@ -81,6 +81,9 @@ export function previewDiagnostics(project,loaded,{textureVariant='regular',acti
     warnings.push('No playable animations are currently attached.');
   if(!resources.some(row=>row.textureSurfaces.length))
     warnings.push('No BNTX internal texture names were recovered; cannot validate regular versus shiny.');
+  if((project?.scanSummary?.classification?.UNIDENTIFIED||0)>0)
+    warnings.push(project.scanSummary.classification.UNIDENTIFIED+
+      ' GFPAK resources could not be classified and might include missing textures, rigs or animation data.');
   return {
     schemaVersion:1,
     selectedModel:loaded?.selected||null,
@@ -89,6 +92,7 @@ export function previewDiagnostics(project,loaded,{textureVariant='regular',acti
     sourceFormat:loaded?.sourceFormat||null,
     sourceStats:loaded?.sourceStats||null,
     companionLoading:!!loaded?.postLoad && !loaded?.companionsReady,
+    scanSummary:project?.scanSummary||null,
     resources,
     rendered:{meshes,materials,animationNames:(loaded?.animations||[]).map(c=>c.name)},
     warnings,
