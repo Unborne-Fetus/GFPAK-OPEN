@@ -1,5 +1,5 @@
 import { loadDecodedTexture } from './texture-loader.js';
-import { selectNativeAnimations } from './animation-association.js';
+import { associatedNativeAnimations } from './animation-association.js';
 /**
  * Turn decoded legacy Game Freak GFBMDL mesh data into an actual Three.js scene.
  * Uses independent FlatBuffers geometry reader; no Blender/Python/remote service.
@@ -166,7 +166,7 @@ function buildLegacyRig(root, entries) {
 
 async function readLegacyAnimations(project, selected, rig, report) {
   if (!rig?.bones?.length) return [];
-  const sources = selectNativeAnimations(project.items, selected, 64)
+  const sources = associatedNativeAnimations(project.items, selected, report)
     .filter(item => getExtension(item.path) === '.gfbanm');
   if (sources.length < project.items.filter(item => getExtension(item.path) === '.gfbanm').length)
     report('Prioritizing ' + sources.length + ' matching GFBANM clips from this project.');
