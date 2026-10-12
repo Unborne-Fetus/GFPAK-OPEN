@@ -147,3 +147,38 @@ test('separate matching GFPAK exposes hashed PLA texture and animation companion
   assert.equal(found.filter(item=>item.linkedKind==='animation').length,1);
   assert.equal(found.filter(item=>item.linkedKind==='texture').length,1);
 });
+
+function unreferencedTrmtr() {
+  const b=new Builder(256);
+  const name=b.createString('body');
+  b.startObject(8);b.addFieldOffset(0,name,0);
+  const material=b.endObject();
+  b.startVector(4,1,4);b.addOffset(material);
+  const materials=b.endVector();
+  b.startObject(2);b.addFieldOffset(1,materials,0);
+  b.finish(b.endObject());
+  return b.asUint8Array().slice();
+}
+
+test('full hashed GFPAK rig/material/animation association works without TRMDL pointers',async()=>{
+  const animated=makeAnimatedTrinityTriangle();
+  const archive=gfpak({
+    ...makeTrinityTriangle(),
+    'unknown/original-hash-rig.bin':animated['models/test.trskl'],
+    'unknown/original-hash-material.bin':unreferencedTrmtr(),
+    'unknown/original-hash-idle.bin':animated['models/test.tranm']
+  });
+  const reports=[];
+  const {project,selected}=await prepareGfpakModelPreview(
+    archive,'pm0025_00_00.gfpak',line=>reports.push(line));
+  assert.ok(project.items.some(item=>item.path.endsWith('.trskl')),reports.join('\n'));
+  assert.ok(project.items.some(item=>item.path.endsWith('.trmtr')),reports.join('\n'));
+  assert.equal(project.items.filter(item=>item.linkedKind==='animation').length,1);
+  const model=await loadTrinityModel(project,selected,line=>reports.push(line),{fastPreview:true});
+  assert.equal(model.sourceStats.bones,1,reports.join('\n'));
+  await model.postLoad();
+  assert.equal(model.animations.length,1,reports.join('\n'));
+  assert.match(reports.join(' '),/Recovered.+TRSKL bones/);
+  assert.match(reports.join(' '),/Recovered TRMTR materials/);
+  model.disposeAssets();
+});
