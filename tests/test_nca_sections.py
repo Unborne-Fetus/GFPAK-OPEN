@@ -320,6 +320,26 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertTrue(limited["truncated"])
             self.assertLessEqual(limited["scanned"], 2)
 
+    def test_full_game_catalog_scans_more_than_old_64_nca_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "many-nca.nsp"
+            entries = [
+                (f"program{i:03d}.nca", plain_nca([
+                    ("pfs", pfs0_files([(f"pm{i:04d}_idle.tranm", b"clip")]))
+                ]))
+                for i in range(66)
+            ]
+            package(game, entries)
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(game)
+            catalog = browser.scan_game_assets(source["id"])
+            self.assertEqual(catalog["total_ncas"], 66)
+            self.assertEqual(catalog["scanned_ncas"], 66)
+            self.assertEqual(catalog["counts"]["animation"], 66)
+            self.assertFalse(catalog["truncated"])
+            self.assertEqual(len(catalog["assets"]), 66)
+
     def test_package_locked_sections_are_marked_unresolved_instead_of_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
