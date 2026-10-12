@@ -79,6 +79,12 @@ The desktop application opens **one studio window** with the web 3D viewer, GFPA
 
 The expanded functionality has automated synthetic fixture coverage and CI builds; compatibility with every revision of every real Pokémon Switch game has **not** been established. Use local copies of game content you are authorized to inspect. GFPAK-OPEN does not acquire game files or decryption keys.
 
+### Fast 3D preview and three-class asset catalog
+
+- **Faster Preview in 3D:** For compatible GLB/glTF, OBJ, FBX, DAE, native GFBMDL/TRMDL/TRMSH and recognized assets inside GFPAK, the desktop File Explorer first requests a small, read-only preview manifest and streams only the selected model and eligible companions to the integrated browser renderer. This skips launching Blender and the GLB conversion step. The original converter is invoked automatically if the built-in decoder cannot handle the model; there is no guarantee all original game formats decode natively. Compression of an individual required resource still takes work, but entire archives are not extracted.
+- **Models / Textures / Animations:** Use the large class buttons above the explorer list to filter discovered resources. The **Locate assets** control indexes an extracted game directory or the selected readable NCA/RomFS section (including nested folders) in the background, using metadata rather than extracting game payloads. The catalog is capped at 40,000 scanned entries and 1,200 visible matches so very large filesystems remain responsive. It clearly marks partial results rather than claiming an exhaustive scan.
+- **Actionable results:** Selecting a model offers the fast 3D preview; texture and animation entries remain visible with their native names, sizes, file details, and related asset families. Animation clips can play when the matching model's native animation tracks are supported; individual raw animations are not claimed to be full standalone 3D scenes.
+
 ### Built-in Game File Explorer
 
 The Windows desktop studio has an integrated read-only **Game File Explorer** tab inspired by NX File Viewer. Use **Open game folder** to browse already extracted game resources and scan for models (`.trmdl`, `.gfbmdl`, GLB, etc.), animations (`.tranm`, `.gfbanm`), textures (`.bntx`, PNG, DDS, etc.), skeletons and materials. You can navigate subfolders, search and filter, inspect GFPAK resource hashes, and launch a temporary preview of compatible model files from the same tab.
