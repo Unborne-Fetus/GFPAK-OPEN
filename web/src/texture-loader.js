@@ -100,3 +100,35 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
   texture.needsUpdate = true;
   return texture;
 }
+
+/** Pick only a demonstrably related base-color image for a native material.
+ *
+ * If shader references are missing, map a linked image to a material by
+ * an unambiguous filename match, or use the sole linked color image when the
+ * model has exactly one material. Never substitute normal/roughness maps for
+ * a diffuse skin, or choose arbitrarily between multiple texture variants.
+ */
+export function matchingLinkedDiffuseTexture(items, materialName, materialCount = 1) {
+  const linked = items.filter(item => item.linkedKind === 'texture' &&
+    /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path));
+  const diffuse = linked.filter(item => {
+    const name = item.path.replaceAll('\\', '/').split('/').at(-1)
+      .replace(/\.[^.]+$/, '').toLowerCase();
+    return !/(?:^|[_-])(normal|nrm|rough|metal|mask|alpha|orm|occlusion|ao|emissive|emission)(?:$|[_-])/i.test(name);
+  });
+  const key = String(materialName || '').toLowerCase()
+    .replace(/(?:material|_mat)$/i, '').replace(/[^a-z0-9]/g, '');
+  if (key.length >= 3) {
+    const candidates = diffuse.filter(item => {
+      const basename = item.path.replaceAll('\\', '/').split('/').at(-1)
+        .replace(/\.[^.]+$/, '').toLowerCase()
+        .replace(/^pm\d{4}(?:_\d\d){0,2}_?/, '');
+      const stem = basename.replace(/[^a-z0-9]/g, '');
+      return stem === key || stem.startsWith(key + 'diffuse') ||
+        stem.startsWith(key + 'color') || stem.startsWith(key + 'base');
+    });
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length > 1) return null;
+  }
+  return materialCount === 1 && diffuse.length === 1 ? diffuse[0] : null;
+}
