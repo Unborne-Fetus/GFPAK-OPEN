@@ -1,5 +1,5 @@
 import { loadDecodedTexture } from './texture-loader.js';
-import { selectNativeAnimations } from './animation-association.js';
+import { associatedNativeAnimations } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
  * This path requires a readable .trmdl/.trmsh with the matching .trmbf.
@@ -298,7 +298,7 @@ export function animationTracks(source, bones) {
 
 async function loadNativeClips(project, selected, skeleton, report) {
   if (!skeleton?.bones?.length) return [];
-  const compatible = selectNativeAnimations(project.items, selected, 64);
+  const compatible = associatedNativeAnimations(project.items, selected, report);
   const clips = [];
   const available = project.items.filter(item => ['.tranm', '.gfbanm'].includes(ext(item.path))).length;
   if (available > compatible.length) {
