@@ -64,9 +64,9 @@ function matchesVariantName(name, variant = 'regular') {
 // material, species and channel identity intact.
 export function textureFamilyName(name) {
   return normalizeTextureName(name)
-    .replace(/(^|[_\\-.])(shiny|rare|normal|regular)(?=$|[_\\-.])/g, '$1')
-    .replace(/(^|[_\\-.])(color|col)[_-]?0?[01](?=$|[_\\-.])/g, '$1$2')
-    .replace(/[_\\-.]+/g, '_').replace(/^_|_$/g, '');
+    .replace(/(^|[_.-])(shiny|rare|normal|regular)(?=$|[_.-])/g, '$1')
+    .replace(/(^|[_.-])(color|col)[_-]?0?[01](?=$|[_.-])/g, '$1$2')
+    .replace(/[_.-]+/g, '_').replace(/^_|_$/g, '');
 }
 
 export function textureVariantForItem(item) {
