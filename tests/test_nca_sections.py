@@ -325,6 +325,44 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(entries[0]["name"], "bin")
             self.assertEqual(section.read(0, 4), romfs[:4])
 
+    def test_plaintext_bktr_patch_reads_matching_base_nca_overlay(self):
+        """A linked original NCA plus patch ranges produces readable RomFS."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            romfs = romfs_nested()
+            logical_end = len(romfs)
+            original_file = root / "base.nsp"
+            package(original_file, [("original.nca", plain_nca([("romfs", romfs)]))])
+
+            table = bytearray(0x8000)
+            struct.pack_into("<IIQ", table, 0, 0, 1, logical_end)
+            struct.pack_into("<IIQ", table, 0x4000, 0, 2, logical_end)
+            struct.pack_into("<QQI", table, 0x4010, 0, 0, 0)
+            struct.pack_into("<QQI", table, 0x4010 + 20,
+                             logical_end - 2, logical_end, 1)
+            patch_payload = bytes(logical_end) + b"OK" + bytes(table)
+            patched = bytearray(plain_nca([("romfs", patch_payload)]))
+            fs_header = 0x400
+            struct.pack_into("<QQ", patched, fs_header + 0x100,
+                             logical_end + 2, len(table))
+            struct.pack_into("<4sIII", patched, fs_header + 0x110,
+                             b"BKTR", 1, 2, 0)
+            update_file = root / "update.nsp"
+            package(update_file, [("update.nca", bytes(patched))])
+
+            original = NativeNCA(NSPAnalyzer(original_file), 0)
+            updated = NativeNCA(NSPAnalyzer(update_file), 0)
+            with self.assertRaisesRegex(NativeNCAError, "matching base NCA"):
+                updated.sections[0].filesystem()
+            self.assertEqual(updated.attach_base(original), 1)
+            section = updated.sections[0]
+            self.assertEqual(section.read(logical_end - 2, 2), b"OK")
+            filesystem = section.filesystem()
+            self.assertEqual(filesystem.children_page()["entries"][0]["name"], "bin")
+            file_info = filesystem.file("bin/archive/pokemon/pm0025_00_00.gfpak")
+            self.assertEqual(section.read(file_info.offset + file_info.size - 2, 2), b"OK")
+            self.assertEqual(original.sections[0].read(logical_end - 2, 2), romfs[-2:])
+
     def test_plaintext_sparse_nca_maps_data_and_zero_filled_holes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
