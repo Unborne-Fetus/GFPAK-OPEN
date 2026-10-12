@@ -311,6 +311,13 @@ class AssetBrowser:
         if not candidate.is_file() or candidate.suffix.lower() != ".nca":
             raise ValueError("Choose an existing original .nca file")
         updated_reader, updated_index = self.nsp_entry(node_id)
+        if node["name"].lower().endswith(".ncz"):
+            # Expanding the NCZ first reconstructs the temporary NCA using
+            # the same bounded, disk-space-checked path as normal browsing.
+            if node_id not in self._ncz_restored:
+                self._nca_children(node)
+            updated_reader = self._ncz_restored[node_id]
+            updated_index = 0
         base_reader = _StandaloneNCA(candidate)
         count = self._nca_sections.attach_base(updated_reader, updated_index, base_reader, 0)
         self._linked_base_nca[node_id] = candidate
