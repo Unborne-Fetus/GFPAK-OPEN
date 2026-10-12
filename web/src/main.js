@@ -877,15 +877,23 @@ async function openFastDesktopPreview(detail) {
 }
 
 async function previewBrowserGameModel(detail) {
-  if (state.busy || !state.stage) return;
-  const {project,selected} = detail || {};
-  if (!selected || !project?.items?.some(item=>item.path===selected)) {
-    log('Browser game preview is missing its selected source file.', 'error');
+  const finished=typeof detail?.finish==='function'?detail.finish:()=>{};
+  if(state.busy||!state.stage){
+    finished(false,'3D renderer is unavailable or busy');
     return;
   }
-  busy(true,'Opening game model','Matching game meshes, textures and animation companions…');
+  const {project,selected}=detail||{};
+  if(!selected||!project?.items?.some(item=>item.path===selected)){
+    const reason='Browser preview is missing the selected model resource';
+    log(reason,'error');
+    finished(false,reason);
+    return;
+  }
+  busy(true,'Opening game model','Matching meshes, textures and animation companions…');
   try {
-    const result=await loadModel(project,selected,message=>log(message));
+    // A PLA game archive may have dozens of BNTX/TRANM resources. Render the
+    // geometry first, then decode companions while the viewport is responsive.
+    const result=await loadModel(project,selected,message=>log(message),{fastPreview:true});
     state.exportProject=project;
     state.project=project;
     state.desktopSource=false;
@@ -893,10 +901,13 @@ async function previewBrowserGameModel(detail) {
     suggestGame([project.label,selected]);
     setModel(result,extension(selected),project.label);
     showTab('viewer');
+    finished(true);
     completeFastPreview(result);
-    log('Opened model directly from the game-file browser without Blender.','success');
-  }catch(error){errorMessage(error);}
-  finally{busy(false);}
+    log('Opened model directly from local game files without Blender.','success');
+  }catch(error){
+    errorMessage(error);
+    finished(false,error.message||String(error));
+  }finally{busy(false);}
 }
 
 function start() {
