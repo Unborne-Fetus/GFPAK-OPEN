@@ -4,6 +4,7 @@ import {exportPokemonZip} from './pokemon-export.js';
 import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
 import {textureVariantForItem} from './texture-loader.js';
 import {trinityMaterialVariant} from './trinity-model.js';
+import {previewDiagnostics} from './preview-diagnostics.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -109,6 +110,7 @@ function busy(value, title = 'Processing assets', message = '') {
   el('busyMessage').textContent = message;
   el('exportButton').disabled = value || !state.loaded;
   el('exportPokemonButton').disabled = value || !state.loaded || (!state.exportProject && !state.desktopSource);
+  el('downloadPreviewDiagnostics').disabled = value || !state.loaded;
   el('loadSelected').disabled = value || !state.project?.models.length;
   el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
     isInspectableTexture(item.path));
@@ -157,6 +159,7 @@ function resetInspector() {
   el('textureVariantSelect').disabled = true;
   el('exportButton').disabled = true;
   el('exportPokemonButton').disabled = true;
+  el('downloadPreviewDiagnostics').disabled = true;
   el('emptyState').hidden = false;
 }
 
@@ -193,6 +196,7 @@ function setModel(result, format, packageName) {
   // silently create a GLB without those linked assets.
   el('exportButton').disabled = !!result.postLoad;
   el('exportPokemonButton').disabled = !state.exportProject && !state.desktopSource;
+  el('downloadPreviewDiagnostics').disabled = false;
   const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
@@ -857,6 +861,19 @@ function attachEvents() {
     },'image/png');
   });
   el('exportButton').addEventListener('click', exportModel);
+  el('downloadPreviewDiagnostics').addEventListener('click',()=>{
+    if(!state.loaded)return;
+    const activity=[...el('logBody').children].map(row=>row.textContent||'');
+    const report=previewDiagnostics(state.project,state.loaded,{
+      textureVariant:state.textureVariant,activity
+    });
+    const basename=String(state.loaded.selected||'pokemon').replaceAll('\\','/')
+      .split('/').at(-1).replace(/\.[^.]+$/,'').replace(/[^a-z0-9_-]/gi,'_');
+    downloadBlob((basename||'pokemon')+'-preview-diagnostics.json',
+      JSON.stringify(report,null,2),'application/json');
+    log('Saved preview diagnostics: '+report.warnings.length+' warning(s), '+
+      report.resources.length+' source resources. No game binaries were included.','success');
+  });
   el('exportPokemonButton').addEventListener('click', async () => {
     if (!state.loaded || state.busy) return;
     if (!state.exportProject) {
