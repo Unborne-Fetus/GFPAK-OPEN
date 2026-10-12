@@ -472,18 +472,30 @@ class DesktopAPI:
     def browse_start_scan(self, node_id: str | None = None):
         with self._lock:
             browser = self._browser
+            kind = None
             if node_id:
                 source = browser.node(node_id)
-                if source["kind"] not in ("nca_section", "nca_dir"):
-                    raise ValueError("Select a readable NCA section or folder before scanning")
+                kind = source["kind"]
+                if kind not in ("nca_section", "nca_dir", "gfpak",
+                                "nsp", "xci", "xci_partition", "nspfile"):
+                    raise ValueError("Select a game package, GFPAK, or readable RomFS")
+                if kind == "nspfile" and not source["name"].lower().endswith((".nca", ".ncz")):
+                    raise ValueError("Select a game NCA before locating game assets")
             elif not browser.root_path or not browser.root_path.is_dir():
-                raise ValueError("Open an extracted game folder or a readable RomFS section")
+                raise ValueError("Open an extracted folder or game package to locate assets")
             if self._scan_job["running"]:
                 return False
             self._scan_job = {"running": True, "error": "", "result": None}
         def run():
             try:
-                result = browser.scan_nca_assets(node_id) if node_id else browser.scan()
+                if kind in ("nca_section", "nca_dir"):
+                    result = browser.scan_nca_assets(node_id)
+                elif kind == "gfpak":
+                    result = browser.scan_gfpak_assets(node_id)
+                elif kind:
+                    result = browser.scan_game_assets(node_id)
+                else:
+                    result = browser.scan()
                 with self._lock:
                     if browser is self._browser:
                         self._scan_job["result"] = result
