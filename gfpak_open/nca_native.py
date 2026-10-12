@@ -146,6 +146,14 @@ class NativeSection:
         self.logical_size = size
 
     def read(self, relative: int, size: int) -> bytes:
+        # A direct section read must not silently bypass a declared compressed,
+        # sparse or update mapping merely because the folder tree has not been
+        # opened yet. filesystem() installs the map before reading file entries.
+        if self._storage_tree is None and self._fs is None and (
+            self.patch_indirect_size or self.patch_crypto_size or
+            self.sparse_table_size or self.compression_table_size
+        ):
+            self.filesystem()
         if self._storage_tree is not None:
             if relative < 0 or size < 0 or relative > self.logical_size or size > self.logical_size - relative:
                 raise NativeNCAError("Read outside mapped NCA filesystem section.")
