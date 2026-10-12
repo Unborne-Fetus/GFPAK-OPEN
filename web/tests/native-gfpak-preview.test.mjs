@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {makeTrinityTriangle} from './trinity-fixture.mjs';
 import {makeAnimatedTrinityTriangle} from './trinity-animation-fixture.mjs';
 import {Builder} from 'flatbuffers';
+import {makeGfbmdlTriangle} from './native-gfbmdl-sample.mjs';
 import {prepareGfpakModelPreview,prepareGfpakCompanions} from '../src/native-gfpak-preview.js';
 import {loadTrinityModel} from '../src/trinity-model.js';
 import {fnv1a64,parseHashDictionary} from '../src/gfpak.js';
@@ -51,6 +52,22 @@ test('PLA GFPAK with unknown resource hashes still resolves real TRMDL/TRMSH/TRM
   assert.equal(geometry,3);
   real.disposeAssets();
 });
+test('hash-only GFBMDL GFPAK recognizes and previews an actual model without a dictionary',async()=>{
+  const archive=gfpak({'hashed/unknown-resource.bin':makeGfbmdlTriangle()});
+  const {project,selected}=await prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak');
+  assert.match(selected,/\\.gfbmdl$/);
+  assert.equal(project.items.length,1);
+  assert.deepEqual(new Uint8Array(await project.items[0].getBytes()),makeGfbmdlTriangle());
+});
+
+test('GFPAK decompression failures are reported instead of mistaken for missing hashes',async()=>{
+  const archive=gfpak({'hashed/model.bin':new Uint8Array([1,2,3,4,5,6,7,8])},3);
+  const messages=[];
+  await assert.rejects(prepareGfpakModelPreview(archive,'pm0025_00_00.gfpak',
+    message=>messages.push(message)),/extraction attempts failed.*First error:.*Oodle/i);
+  assert.ok(messages.some(message=>message.includes('First resource extraction error')));
+});
+
 test('PLA GFPAK with known hash dictionary preserves real original companion filenames',async()=>{
   const blob=gfpak(makeTrinityTriangle());
   const dictionary=parseHashDictionary('models/\ntest.trmdl\ntest.trmsh\ntest.trmbf\n');
