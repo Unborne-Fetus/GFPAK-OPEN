@@ -101,7 +101,9 @@ test('asset scanner displays three clear categories without reading file payload
   await expect(page.locator('#assetRows')).not.toContainText('pm0025.trmdl');
   await page.locator('[data-asset-class="textures"]').click();
   await expect(page.locator('#assetRows')).toContainText('body.bntx');
-  expect(await page.evaluate(()=>window.scanCalls)).toEqual(['sec']);
+  // Whole-source discovery starts automatically, and the user can refine to
+  // one RomFS section without losing access to the earlier game-wide results.
+  expect(await page.evaluate(()=>window.scanCalls)).toEqual(['root','sec']);
 });
 
 test('a discovered texture opens native inspector without Blender',async({page})=>{
