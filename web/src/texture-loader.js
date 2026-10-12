@@ -59,6 +59,16 @@ function matchesVariantName(name, variant = 'regular') {
   return textureVariantFromName(name) !== 'shiny';
 }
 
+// Descriptor references often point to the original skin, while a user can
+// request its counterpart. Strip only explicit skin identifiers; leave the
+// material, species and channel identity intact.
+export function textureFamilyName(name) {
+  return normalizeTextureName(name)
+    .replace(/(^|[_\\-.])(shiny|rare|normal|regular)(?=$|[_\\-.])/g, '$1')
+    .replace(/(^|[_\\-.])(color|col)[_-]?0?[01](?=$|[_\\-.])/g, '$1$2')
+    .replace(/[_\\-.]+/g, '_').replace(/^_|_$/g, '');
+}
+
 export function textureVariantForItem(item) {
   if (['regular', 'shiny', 'mixed'].includes(item?.textureVariant))
     return item.textureVariant;
@@ -82,15 +92,19 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
     const archive = parseBntx(data);
     const names = (Array.isArray(preferredNames) ? preferredNames : [preferredNames])
       .map(normalizeTextureName).filter(Boolean);
-    const variantTextures = archive.textures.filter(tex => matchesVariantName(tex.name, variant));
-    const searchTextures = variantTextures.length ? variantTextures : archive.textures;
+    const searchTextures = archive.textures.filter(tex => matchesVariantName(tex.name, variant));
+    if (!searchTextures.length)
+      throw new Error('No '+variant+' texture surface is present in this BNTX');
     const matched = searchTextures.filter(tex => names.includes(normalizeTextureName(tex.name)));
-    if (matched.length > 1) throw new Error('Several BNTX textures match the requested name');
-    if (!matched.length && searchTextures.length !== 1) {
+    const families = new Set(names.map(textureFamilyName));
+    const familyMatches = searchTextures.filter(tex => families.has(textureFamilyName(tex.name)));
+    const chosen = matched.length ? matched : familyMatches;
+    if (chosen.length > 1) throw new Error('Several BNTX textures match the requested material');
+    if (!chosen.length && searchTextures.length !== 1) {
       throw new Error('BNTX contains ' + archive.textures.length +
-        ' textures; select a matching internal texture name rather than guessing the first');
+        ' textures; no uniquely matching '+variant+' surface for this material');
     }
-    const surfaceIndex = matched[0]?.index ?? searchTextures[0]?.index ?? 0;
+    const surfaceIndex = chosen[0]?.index ?? searchTextures[0].index;
     const decoded = decodeBntxTexture(archive, surfaceIndex);
     // BC5 normal maps store only X/Y. Reconstruct positive Z before Three.js
     // expands RGB from [0,1] to a tangent-space normal in [-1,1].
