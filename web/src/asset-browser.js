@@ -34,9 +34,10 @@ function showNotice(message, error = false) {
 function canPreview(row) {
   if (!row) return false;
   if (row.kind === 'gfpak') return true;
-  if (row.kind === 'nca_file' && /\.(gfpak|trmdl|gfbmdl|glb)$/i.test(row.name)) return true;
+  if (row.kind === 'nca_file' && /\.(gfpak|trmdl|trmsh|gfbmdl|glb)$/i.test(row.name)) return true;
+  if (row.kind === 'zipfile' && /\.(trmdl|trmsh|gfbmdl|glb|gltf|fbx|obj|dae)$/i.test(row.name)) return true;
   if (row.kind === 'gfpak_resource') return row.category === 'model';
-  return row.kind === 'file' && /\.(glb|trmdl|gfbmdl|gfpak)$/i.test(row.name);
+  return row.kind === 'file' && /\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl|gfpak)$/i.test(row.name);
 }
 
 function formatSize(n) {
@@ -920,14 +921,58 @@ async function nxAttachExtractedFolder() {
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
+let previewInFlight = false;
+async function fastPreview(manifest) {
+  // Wait for the viewer's async decoder, not just the DOM event dispatch.
+  // Do not launch Blender if genuine native meshes loaded successfully.
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (success, reason = '') => {
+      if (settled) return;
+      settled = true;
+      resolve({success: !!success, reason});
+    };
+    window.dispatchEvent(new CustomEvent('gfpak-fast-native-preview', {
+      detail: {manifest, finish}
+    }));
+    // If the viewer is not installed (e.g. older desktop builds), fall back.
+    if (!window.gfpakFastPreviewAvailable) finish(false, 'Native viewer unavailable');
+  });
+}
+
 async function preview(row = selected) {
-  if (!canPreview(row)) return;
+  if (!canPreview(row) || previewInFlight) return;
+  previewInFlight = true;
+  id('assetPreview').disabled = true;
   try {
     select(row);
-    showNotice('Preparing a temporary 3D preview — Blender runs locally.');
-    await api.preview_browser_item(row.id);
-    window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
+    const direct = /\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i.test(row.name) &&
+      ['file', 'zipfile', 'nca_file'].includes(row.kind);
+    if (direct && typeof api.browse_fast_preview === 'function') {
+      try {
+        showNotice('Fast preview: reading only the selected model and matching companions…');
+        const manifest = await api.browse_fast_preview(row.id);
+        const outcome = await fastPreview(manifest);
+        if (outcome.success) {
+          showNotice('Native 3D preview loaded without Blender or temporary conversion.');
+          return;
+        }
+        showNotice('Native decoder unavailable (' + outcome.reason +
+          '); trying Blender only for this unsupported model.');
+      } catch (error) {
+        showNotice('Fast preview unavailable (' + (error.message || error) +
+          '); trying the existing converter.');
+      }
+    }
+    showNotice('Preparing fallback 3D preview with the local converter…');
+    const started = await api.preview_browser_item(row.id);
+    if (started !== false) window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
+    else showNotice('A conversion is already running.', true);
   } catch (error) { showNotice(error.message || String(error), true); }
+  finally {
+    previewInFlight = false;
+    id('assetPreview').disabled = !canPreview(selected);
+  }
 }
 
 async function scanFolder() {
