@@ -209,6 +209,21 @@ Python unit tests:
 
 Only process models and game assets you own or are authorized to use.
 
+
+## Browser-first game explorer (no Windows app required)
+
+Open the hosted site or run `npm run dev`, then choose **OPEN GAME FILES**. Drag an NSP/NSZ/XCI/XCZ to the main drop area, or use **Open NSP / XCI / GFPAK**. You can also use **Open extracted folder** to scan all available model, animation and texture files in a directory.
+
+The web reader streams **index metadata** from local files (rather than loading gigabyte-sized games into RAM) and currently supports:
+
+- NSP/NSZ **outer PFS0** file indexes and XCI **HFS0 game-card partition** indexes
+- Native, **unencrypted** NCA3 PartitionFS sections (read-only, when no sparse, patch or compressed storage remapping is needed)
+- Full extracted-folder indexing, model/texture/animation filters, filename search, save selected original, and export full index JSON
+- Browser GFPAK inspection of package resources, plus native 3D preview and GLB / Pokémon ZIP export for compatible decoded models and companions
+- A shared preview pipeline: select a readable GFBMDL/TRMDL/GLB model and press **Preview selected in 3D**; the 3D viewer can export GLB or a Pokémon ZIP when appropriate.
+
+**Not yet supported inside the browser:** local-key decryption of encrypted NCA sections (the standalone Windows NCA reader remains available for this), NCZ payload decoding, complete patch/DLC filesystem overlays, all Oodle-compressed GFPAK resources, and native game revisions whose shaders/animation formats are not yet decoded. A package can be indexed even when its Pokémon assets are encrypted: **zero readable models must not be interpreted as zero models in the game**. For those cases, import an already extracted game folder; the browser does not send original game data or keys to a server.
+
 ## Exporting Pokémon to Pokédex 3D Max
 
 1. Open your own extracted game data and select the correct **Game Source** (important for game-internal Pokémon IDs).
