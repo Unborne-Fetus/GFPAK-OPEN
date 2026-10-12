@@ -513,7 +513,10 @@ class DesktopAPI:
         def update_progress(scanned, stage):
             with self._lock:
                 if browser is self._browser and not cancelled.is_set():
-                    self._scan_job["scanned"] = scanned
+                    # Nested archive progress callbacks restart their local
+                    # counters. Never make the visible total move backwards.
+                    self._scan_job["scanned"] = max(
+                        int(self._scan_job.get("scanned") or 0), int(scanned))
                     self._scan_job["stage"] = str(stage)[:180]
         def run():
             try:
