@@ -41,7 +41,7 @@ function select(row, element) {
   element.classList.add('browser-game-selected');
   updateButtons();
   if(row.ncaStatus==='locked')
-    message('Encrypted NCA: its internal assets cannot be counted or previewed until the filesystem is decrypted.');
+    message('NCA is locked: the supplied keys may be missing a matching content/title key, or the header cannot yet be decoded.');
   else message('Selected '+row.name+' · '+formatSize(row.size)+' · '+row.category);
 }
 function render(reset=true) {
@@ -63,6 +63,7 @@ function render(reset=true) {
     const status=row.ncaStatus==='locked' ? 'Locked' :
       row.ncaStatus==='partial-plaintext' ? 'Some sections readable' :
       row.ncaStatus==='unsupported' ? 'Unsupported section' :
+      row.kind==='decrypted-nca-file' ? 'Decrypted locally' :
       row.kind==='plaintext-nca-file' ? 'Read-only, decoded' : 'Read-only';
     for (const value of [row.name,row.category,formatSize(row.size),status]) {
       const td=document.createElement('td');
