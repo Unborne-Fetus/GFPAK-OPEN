@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inspectTexture, drawTextureSurface, isInspectableTexture, texturePngName
+import { inspectTexture, drawTextureSurface, isInspectableTexture, texturePngName,
+  detectTextureExtension
 } from '../src/texture-inspector.js';
 import {findLegacyTexture} from '../src/gfbmdl-model.js';
 
@@ -96,4 +97,17 @@ test('DDS textures expose real dimensions and retain native compressed blocks',(
   assert.equal(info.surfaces[0].width,4);
   assert.equal(info.surfaces[0].height,4);
   assert.equal(texturePngName(info,0),'body_body.dds.png');
+});
+
+test('magic detection is conservative for unnamed archive resources',()=>{
+ const png=Uint8Array.from([137,80,78,71,13,10,26,10]);
+ const dds=Uint8Array.from([68,68,83,32,0]);
+ const jpeg=Uint8Array.from([255,216,255,0]);
+ const webp=Uint8Array.from([82,73,70,70,0,0,0,0,87,69,66,80]);
+ assert.equal(detectTextureExtension(bntxFixture()),'.bntx');
+ assert.equal(detectTextureExtension(png),'.png');
+ assert.equal(detectTextureExtension(dds),'.dds');
+ assert.equal(detectTextureExtension(jpeg),'.jpg');
+ assert.equal(detectTextureExtension(webp),'.webp');
+ assert.equal(detectTextureExtension(new Uint8Array([1,2,3,4])),null);
 });
