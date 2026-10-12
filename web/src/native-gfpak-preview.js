@@ -167,7 +167,7 @@ export async function prepareGfpakModelPreview(blob,filename,report=()=>{},dicti
     if(row.resource.size>PROBE_LIMIT || probed++>=MAX_PROBES)continue;
     try{
       const bytes=await read(row);
-      const type=identifyTrinity(bytes)||identifyAuxiliary(bytes);
+      const type=identifyAuxiliary(bytes)||identifyTrinity(bytes);
       if(type) row.kind=type;
       else row.buffer=null; // Never retain thousands of unrelated decoded assets.
     }catch(_){unreadable++;row.buffer=null;}
