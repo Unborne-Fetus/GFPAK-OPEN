@@ -1,6 +1,7 @@
 import {openGamePackage, openExtractedFolder, exportIndex} from './game-file-reader.js';
 import {parseLocalKeys} from './nca-crypto.js';
 import {prepareGfpakModelPreview,prepareGfpakCompanions} from './native-gfpak-preview.js';
+import {selectPokemonCompanionArchives} from './pokemon-companion-archives.js';
 
 /** Desktop-style file viewer backed entirely by local browser File/Blob slices.
  * Index each game once, but render only expanded directories and 250 list rows
@@ -398,15 +399,10 @@ async function preview(){
       // PLA can store animation/skin assets in another GFPAK next to the model.
       // Only match archives explicitly carrying the same species/form token.
       // Ignore huge/unrelated archives and keep everything locally file-backed.
-      const id=target.name.toLowerCase().match(/pm\d{4}(?:_\d{2}){0,2}/)?.[0];
-      if(id){
-        const siblings=source.entries.filter(row=>row!==target &&
-          /\.gfpak$/i.test(row.name) && row.name.toLowerCase().includes(id) &&
-          row.size>0 && row.size<64*1024*1024).slice(0,12);
-        let budget=0;
+      const siblings=selectPokemonCompanionArchives(source.entries,target);
+      if(siblings.length){
+        message('Found '+siblings.length+' same-Pokémon archive(s) to examine for skeletons, textures and animation clips.');
         for(const row of siblings){
-          if(budget+row.size>128*1024*1024)break;
-          budget+=row.size;
           try{
             message('Searching matching Pokémon companion archive '+row.name+'…');
             const extra=await prepareGfpakCompanions(await row.getBlob(),row.name,
@@ -416,6 +412,16 @@ async function preview(){
           }catch(error){message('Skipped companion archive: '+(error.message||error));}
         }
       }
+      const classes={trskl:0,trmtr:0,texture:0,animation:0};
+      for(const item of project.items){
+        if(item.path.endsWith('.trskl'))classes.trskl++;
+        if(item.path.endsWith('.trmtr'))classes.trmtr++;
+        if(item.linkedKind==='texture')classes.texture++;
+        if(item.linkedKind==='animation')classes.animation++;
+      }
+      message('Linked assets: '+classes.trskl+' skeleton(s), '+classes.trmtr+
+        ' material definition(s), '+classes.texture+' texture(s), '+classes.animation+
+        ' animation(s) before rendering.');
       const result=await showInViewer(project,modelPath);
       if(!result.success)throw Error(result.reason||'Model could not be decoded by the web viewer');
       message('Loaded '+modelPath+' from GFPAK in 3D with real model geometry.');
