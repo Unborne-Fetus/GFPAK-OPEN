@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+import JSZip from 'jszip';
+import {makeTrinityTriangle} from '../tests/trinity-fixture.mjs';
+test('Export Pokémon button downloads original source assets in one ZIP',async({page})=>{
+  await page.goto('/');
+  const assets=makeTrinityTriangle();
+  assets['models/test.trskl']=new Uint8Array([1,2,3]);
+  assets['models/test_idle.tracm']=new Uint8Array([4,5,6]);
+  await page.locator('#fileInput').setInputFiles(Object.entries(assets).map(([name,buffer])=>({name:name.split('/').at(-1),mimeType:'application/octet-stream',buffer:Buffer.from(buffer)})));
+  await page.locator('#modelSelect').selectOption('test.trmdl');
+  await page.locator('#loadSelected').click();
+  const button=page.locator('#exportPokemonButton');
+  await expect(button).toBeEnabled();
+  const pending=page.waitForEvent('download');await button.click();
+  const download=await pending;
+  expect(download.suggestedFilename()).toBe('test.zip');
+  const stream=await download.createReadStream();const chunks=[];
+  for await(const chunk of stream) chunks.push(chunk);
+  const zip=await JSZip.loadAsync(Buffer.concat(chunks));
+  expect(Object.keys(zip.files).length).toBe(5);
+  expect(Array.from(await zip.file('test_idle.tracm').async('uint8array'))).toEqual([4,5,6]);
+});

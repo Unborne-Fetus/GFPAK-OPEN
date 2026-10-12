@@ -469,6 +469,20 @@ class DesktopAPI:
                 raise ValueError("Package changed; select the file again")
         return str(browser.export_item(node_id, Path(selected[0]), packed=packed))
 
+    def browse_export_pokemon(self, node_id: str):
+        with self._lock:
+            browser = self._browser
+            node = browser.node(node_id)
+            from .pokemon_assets import pokemon_id
+            name = pokemon_id(node['name']) or 'pokemon'
+        selected = self._dialog('save', name + '.zip', ('ZIP archive (*.zip)',))
+        if not selected:
+            return False
+        with self._lock:
+            if browser is not self._browser:
+                raise ValueError('Package changed; select the Pokémon again')
+        return str(browser.export_pokemon(node_id, Path(selected[0])))
+
     def browse_asset_family(self, node_id: str):
         with self._lock:
             return self._browser.asset_family(node_id)

@@ -31,7 +31,7 @@ from .converter import (HashDictionary, discover_dictionary, read_resource_names
 
 MODEL = {".trmdl", ".gfbmdl", ".glb", ".gltf", ".fbx", ".obj", ".dae"}
 MESH = {".trmsh", ".trmbf"}
-ANIMATION = {".tranm", ".gfbanm", ".bck", ".bca", ".tracn", ".tracp", ".tracr", ".tracs"}
+ANIMATION = {".tranm", ".gfbanm", ".bck", ".bca", ".tracn", ".tracp", ".tracr", ".tracs", ".tracm", ".traef", ".tracl", ".tralk", ".trslp"}
 TEXTURE = {".bntx", ".png", ".dds", ".tga", ".jpg", ".jpeg", ".webp", ".trtex", ".bfttf"}
 SKELETON = {".trskl"}
 METADATA = {".tik", ".cert", ".xml", ".json", ".cnmt"}
@@ -739,6 +739,70 @@ class AssetBrowser:
                 dest.unlink(missing_ok=True)
                 raise
         return dest
+
+    def export_pokemon(self, id_: str, target: str | Path) -> Path:
+        """Stream original model companions into one ZIP, including unknown members."""
+        node = self.node(id_)
+        kind = node['kind']
+        entries = []
+        if kind in {'gfpak', 'gfpak_resource'}:
+            archive = self._archive(Path(node['path']))
+            names = self._known_names(archive.source)
+            source_kind = 'gfpak'
+            source_id = archive.source
+        elif kind == 'nca_gfpak_resource' or (kind == 'nca_file' and node['name'].lower().endswith('.gfpak')):
+            source_id = id_ if kind == 'nca_file' else self._virtual_gfpak_nodes[id_][0]
+            archive, names = self._mounted_gfpak(source_id)
+            source_kind = 'nca_gfpak'
+        else:
+            archive = None
+        if archive:
+            family = pokemon_id(names.get(node.get('index', -1), node['name']))
+            families = {pokemon_id(n) for n in names.values() if Path(n).suffix.lower() in MODEL} - {''}
+            if len(families) > 1 and not family:
+                raise ValueError('Select a Pokémon model inside this multi-model archive')
+            for resource in archive.resources:
+                name = names.get(resource.index, resource.filename)
+                other = pokemon_id(name)
+                if family and other and other != family:
+                    continue
+                if len(families) > 1 and not other:
+                    continue
+                entries.append({'path': name, 'source': (source_kind, source_id, resource.index)})
+            # Include scanner-linked assets from companion archives/folders too.
+            try:
+                entries.extend(self.fast_preview_items(id_)['items'])
+            except ValueError:
+                pass
+        else:
+            entries = self.fast_preview_items(id_)['items']
+        destination = Path(target)
+        if archive and destination.resolve() == archive.source.resolve():
+            raise ValueError('Choose a ZIP destination separate from the original archive')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='.pokemon-export-', suffix='.zip', dir=destination.parent)
+        os.close(fd)
+        used = set()
+        try:
+            with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zipped:
+                for entry in entries:
+                    name = safe_path(entry['path']).as_posix()
+                    if name.lower() in used:
+                        continue
+                    used.add(name.lower())
+                    size, chunks = self.stream_fast_preview_item(entry['source'])
+                    written = 0
+                    with zipped.open(name, 'w', force_zip64=True) as output:
+                        for chunk in chunks:
+                            output.write(chunk)
+                            written += len(chunk)
+                    if written != size:
+                        raise ValueError('Asset changed during export: ' + name)
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return destination
 
     def asset_family(self, id_: str) -> dict:
         """Display catalog-wide evidence-backed model companions when available."""

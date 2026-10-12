@@ -81,6 +81,7 @@
           <div class="format-preview"><span class="format-icon">⬡</span><div><strong>glTF Binary</strong><span>.GLB • Web-ready 3D model</span></div><span class="format-check">✓</span></div>
           <label for="outputName" class="input-label">FILE NAME</label>
           <div class="filename-row"><input id="outputName" class="field" value="converted-model" spellcheck="false" aria-label="GLB export filename" /><span>.glb</span></div>
+          <button id="exportPokemonButton" class="button button-secondary" type="button" disabled>EXPORT POKÉMON ZIP ↓</button>
           <button id="exportButton" class="button button-primary" type="button" disabled>EXPORT GLB <span class="button-arrow">↗</span></button>
           <p class="helper-copy">Exports actual 3D meshes. Native GFBMDL/TRMDL preview and Trinity skinning are experimental. Compatible BNTX and DDS textures are supported; original game shaders and some native animations remain incomplete.</p>
         </section>
@@ -344,6 +345,7 @@
               <p id="assetSelectedInfo">Select an asset to inspect its type and preview compatible models.</p>
               <div class="nx-selection-actions">
                 <button type="button" id="assetPreview" class="button button-primary" disabled>◈ Preview in 3D</button>
+                <button type="button" id="assetExportPokemon" class="button button-secondary" disabled>↓ Export Pokémon ZIP…</button>
                 <button type="button" id="assetSaveFile" class="button button-secondary" disabled>↓ Save selected file…</button>
                 <button type="button" id="assetSavePacked" class="button button-secondary" disabled hidden>↓ Save packed bytes…</button>
               </div>

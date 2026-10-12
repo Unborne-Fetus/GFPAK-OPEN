@@ -6,6 +6,7 @@ let initialized = false;
 let pathStack = [];
 let current = [];
 let selected = null;
+let previewExportId = null;
 let scanListing = null;
 let assetCatalog = null;
 const catalogsBySource = new Map();
@@ -768,6 +769,7 @@ function select(row) {
   id('assetPreview').disabled = !canPreview(row) && !canInspectTexture(row);
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' :
     canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
+  id('assetExportPokemon').disabled = !canPreview(row);
   id('assetSaveFile').disabled = !row || !['file', 'zipfile',
     'gfpak_resource', 'nca_gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
   const isPackedResource = ['gfpak_resource', 'nca_gfpak_resource'].includes(row?.kind);
@@ -1208,6 +1210,7 @@ async function preview(row = selected) {
       try {
         showNotice('Fast preview: reading only the selected model and matching companions…');
         const manifest = await api.browse_fast_preview(row.id);
+        previewExportId = row.id;
         const outcome = await fastPreview(manifest);
         if (outcome.success) {
           showNotice('Native 3D preview loaded without Blender or temporary conversion.');
@@ -1394,6 +1397,25 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () =>
     canInspectTexture(selected) ? inspectTexture() : preview());
+  window.addEventListener('gfpak-export-pokemon', async () => {
+    if (!previewExportId) return;
+    try {
+      const result = await api.browse_export_pokemon(previewExportId);
+      if (result) showNotice('Pokémon ZIP saved: '+result);
+    } catch(error) {showNotice(error.message || String(error),true);}
+  });
+  id('assetExportPokemon').addEventListener('click', async () => {
+    if (!selected) return;
+    const row = selected;
+    id('assetExportPokemon').disabled = true;
+    showNotice('Exporting the Pokémon and its original companion files…');
+    try {
+      const result = await api.browse_export_pokemon(row.id);
+      if (result) showNotice('Pokémon ZIP saved: ' + result);
+      else showNotice('Export cancelled.');
+    } catch (error) { showNotice(error.message || String(error), true); }
+    finally { id('assetExportPokemon').disabled = !canPreview(selected); }
+  });
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
   id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
   id('assetScan').addEventListener('click', () => scanFolder());
