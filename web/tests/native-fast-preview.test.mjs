@@ -104,8 +104,10 @@ test('Preview in 3D imports one linked cross-folder texture into legacy GFBMDL s
     ()=>{}, {fastPreview:true});
   const mesh=result.root.children.find(child=>child.isMesh);
   assert.ok(mesh);
-  assert.equal(mesh.material.map,null);
+  const material = Array.isArray(mesh.material) ?
+    mesh.material[0] : mesh.material;
+  assert.equal(material.map,null);
   await result.postLoad();
-  assert.ok(mesh.material.map?.isCompressedTexture);
+  assert.ok(material.map?.isCompressedTexture);
   result.disposeAssets();
 });
