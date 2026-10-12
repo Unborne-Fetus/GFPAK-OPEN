@@ -204,6 +204,9 @@
               <button type="button" id="webGameOpenFolder" class="button button-secondary">＋ Open extracted folder</button>
               <input id="webGameFile" type="file" accept=".nsp,.nsz,.xci,.xcz,.gfpak,.zip" hidden />
               <input id="webGameFolder" type="file" webkitdirectory directory multiple hidden />
+              <button type="button" id="webGameOpenKeys" class="button button-secondary">🔑 Load local prod.keys</button>
+              <button type="button" id="webGameClearKeys" class="button button-secondary" disabled>Forget keys</button>
+              <input id="webGameKeysFile" type="file" accept=".keys,.txt,text/plain" hidden />
             </div>
           </div>
           <div class="asset-summary">
@@ -225,6 +228,7 @@
               <option value="companion">Skeletons / other companions</option><option value="other">Other files</option>
             </select>
           </div>
+          <p id="webGameKeysStatus" class="asset-notice" role="status">No keys loaded. Choose your own local prod.keys to attempt NCA decryption. Keys remain in memory and are never uploaded or stored.</p>
           <p id="webGameNotice" class="asset-notice" role="status">The scanner indexes all readable files. Use Preview 3D for supported models, or open a GFPAK to inspect its resources.</p>
           <div class="asset-table-wrap" role="region" aria-label="Browser game files">
             <table class="browser-game-table"><thead><tr><th>File / path</th><th>Class</th><th>Size</th><th>State</th></tr></thead>
@@ -238,7 +242,7 @@
             <button type="button" id="webGamePreview" class="button button-primary" disabled>◇ Preview selected in 3D</button>
             <button type="button" id="webGameExport" class="button button-secondary" disabled>↓ Save selected original file</button>
           </div>
-          <p class="asset-guidance">Encrypted NCAs are identified, not decoded in this browser release. Their model and texture counts are unknown until contents can be read. Exported or already-decrypted game folders can be loaded directly. Stored/LZ4 GFPAK resources, compatible native models, textures and animation playback use the same built-in web decoders as the desktop viewer. Original files remain on this device.</p>
+          <p class="asset-guidance">NCA3 AES-XTS headers, AES-CTR filesystem sections and supported RomFS/PartitionFS can be decrypted locally using compatible user-supplied keys. Rights-managed content may require a matching title key in addition to prod.keys; sparse, compressed, and some update patch layouts remain unsupported. Locked content is not counted as an empty game. Exported or already-decrypted game folders can be loaded directly. Stored/LZ4 GFPAK resources, compatible native models, textures and animation playback use the same built-in web decoders as the desktop viewer. Original files remain on this device.</p>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
