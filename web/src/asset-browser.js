@@ -61,6 +61,12 @@ function showNotice(message, error = false) {
   id('assetNotice').classList.toggle('native-error', error);
 }
 
+function canInspectTexture(row) {
+  return !!row && row.category === 'texture' &&
+    ['file', 'zipfile', 'nca_file', 'gfpak_resource'].includes(row.kind) &&
+    /\.(bntx|dds|png|jpe?g|webp)$/i.test(row.name);
+}
+
 function canPreview(row) {
   if (!row) return false;
   if (row.kind === 'gfpak') return true;
@@ -646,8 +652,9 @@ function select(row) {
       (row.kind === 'nspfile' && /\.nca$/i.test(row.name) ?
         '\nExpand this NCA to browse readable sections with the built-in reader.' : '')
     : 'Select an asset to inspect or preview it.';
-  id('assetPreview').disabled = !canPreview(row);
-  id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' : 'Preview unavailable for this resource';
+  id('assetPreview').disabled = !canPreview(row) && !canInspectTexture(row);
+  id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' :
+    canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
   id('assetSaveFile').disabled = !row || !['file', 'zipfile', 'gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
   id('assetSavePacked').hidden = row?.kind !== 'gfpak_resource';
   id('assetSavePacked').disabled = row?.kind !== 'gfpak_resource';
@@ -704,11 +711,13 @@ function renderRows(rows) {
     const button = document.createElement('button');
     button.className = 'asset-open';
     button.type = 'button';
-    button.textContent = item.expandable ? 'Open →' : canPreview(item) ? 'Preview ↗' : 'Details';
+    button.textContent = item.expandable ? 'Open →' :
+      canPreview(item) ? 'Preview ↗' : canInspectTexture(item) ? 'View texture ↗' : 'Details';
     button.addEventListener('click', event => {
       event.stopPropagation();
       if (item.expandable) openNode(item);
       else if (canPreview(item)) preview(item);
+      else if (canInspectTexture(item)) inspectTexture(item);
       else select(item);
     });
     action.append(button);
@@ -719,12 +728,14 @@ function renderRows(rows) {
       row.classList.add('selected');
     });
     row.addEventListener('dblclick', () => item.expandable ? openNode(item) :
-                         canPreview(item) ? preview(item) : select(item));
+                         canPreview(item) ? preview(item) :
+                         canInspectTexture(item) ? inspectTexture(item) : select(item));
     row.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
         if (item.expandable) openNode(item);
         else if (canPreview(item)) preview(item);
+        else if (canInspectTexture(item)) inspectTexture(item);
         else select(item);
       }
     });
@@ -962,6 +973,31 @@ async function nxAttachExtractedFolder() {
 }
 
 let previewInFlight = false;
+async function inspectTexture(row = selected) {
+  if (!canInspectTexture(row) || previewInFlight) return;
+  previewInFlight = true;
+  try {
+    select(row);
+    if (!api.browse_fast_texture || !window.gfpakFastTextureAvailable) {
+      showNotice('Texture preview is not available in this desktop viewer.', true);
+      return;
+    }
+    showNotice('Opening selected texture in the built-in preview…');
+    const manifest = await api.browse_fast_texture(row.id);
+    const result = await new Promise(resolve => {
+      window.dispatchEvent(new CustomEvent('gfpak-fast-native-texture', {
+        detail:{manifest,finish:(success,reason)=>resolve({success,reason})}
+      }));
+    });
+    showNotice(result.success ? 'Texture ready for inspection and PNG export.' :
+      'Texture preview unavailable: ' + result.reason, !result.success);
+  } catch (error) { showNotice(error.message || String(error), true); }
+  finally {
+    previewInFlight = false;
+    id('assetPreview').disabled = !canPreview(selected) && !canInspectTexture(selected);
+  }
+}
+
 async function fastPreview(manifest) {
   // Wait for the viewer's async decoder, not just the DOM event dispatch.
   // Do not launch Blender if genuine native meshes loaded successfully.
@@ -1012,7 +1048,7 @@ async function preview(row = selected) {
   } catch (error) { showNotice(error.message || String(error), true); }
   finally {
     previewInFlight = false;
-    id('assetPreview').disabled = !canPreview(selected);
+    id('assetPreview').disabled = !canPreview(selected) && !canInspectTexture(selected);
   }
 }
 
@@ -1112,7 +1148,8 @@ function initialize() {
     const page = pathStack.at(-1)?.listing.pagination;
     if (page && page.page + 1 < page.pages) loadNSPPage(page.page + 1);
   });
-  id('assetPreview').addEventListener('click', () => preview());
+  id('assetPreview').addEventListener('click', () =>
+    canInspectTexture(selected) ? inspectTexture() : preview());
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
   id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
   id('assetScan').addEventListener('click', scanFolder);
