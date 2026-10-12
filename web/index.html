@@ -82,7 +82,7 @@
           <label for="outputName" class="input-label">FILE NAME</label>
           <div class="filename-row"><input id="outputName" class="field" value="converted-model" spellcheck="false" aria-label="GLB export filename" /><span>.glb</span></div>
           <button id="exportButton" class="button button-primary" type="button" disabled>EXPORT GLB <span class="button-arrow">↗</span></button>
-          <p class="helper-copy">Exports actual 3D meshes. Native GFBMDL/TRMDL preview and Trinity skinning are experimental; original game shaders, BNTX textures and animation tracks are still incomplete.</p>
+          <p class="helper-copy">Exports actual 3D meshes. Native GFBMDL/TRMDL preview and Trinity skinning are experimental. Compatible BNTX and DDS textures are supported; original game shaders and some native animations remain incomplete.</p>
         </section>
 
         <section class="side-section small-section">
@@ -188,7 +188,7 @@
             <span id="archiveRowCount">0 resources shown</span>
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
-          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. BNTX, original shaders and native animation tracks are not yet fully decoded. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
+          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
@@ -254,7 +254,7 @@
               <summary>Package structure checks <span id="nspWarningCount">—</span></summary>
               <div id="nspWarnings"></div>
             </details>
-            <div class="nsp-boundary">NSP outer package analysis only. This tool does not decrypt NCA files, import cryptographic keys, or recreate the protected RomFS filesystem.</div>
+            <div class="nsp-boundary">Web mode inspects the outer NSP index only. The desktop Game File Explorer also has a built-in NCA/RomFS reader with optional locally supplied keys for compatible sections.</div>
           </section>
           <div class="asset-summary">
             <div><span>MODELS</span><strong id="assetCountModel">—</strong></div>
