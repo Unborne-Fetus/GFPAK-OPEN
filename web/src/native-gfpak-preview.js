@@ -17,7 +17,7 @@ const decoder=new TextDecoder();
 const ext=name=>'.'+name.split('/').at(-1).split('.').at(-1).toLowerCase();
 const normalize=name=>String(name||'').replaceAll('\\','/').replace(/^\/+/,'').toLowerCase();
 const unique=(values)=>[...new Set(values.filter(Boolean))];
-const probeOrder=['trmdl','trmsh','trmbf','trskl','trmtr'];
+
 function peekData(raw) {
   if(raw instanceof Blob)return raw.arrayBuffer();
   if(raw instanceof ArrayBuffer)return raw;
@@ -48,19 +48,32 @@ function identifyAuxiliary(buffer) {
   return '';
 }
 function identifyTrinity(buffer){
-  for(const kind of probeOrder){
-    try{
-      const data=kind==='trmdl'?parseTrmdl(buffer):
-        kind==='trmsh'?parseTrmsh(buffer):
-        kind==='trmbf'?hasGeometry(buffer):
-        kind==='trskl'?parseTrskl(buffer):parseTrmtr(buffer);
-      if(kind==='trmdl' && data.meshFiles?.length)return kind;
-      if(kind==='trmsh' && data.meshes?.length && data.bufferFile)return kind;
-      if(kind==='trmbf' && data)return kind;
-      if(kind==='trskl' && data.bones?.length)return kind;
-      if(kind==='trmtr' && data.materials?.length)return kind;
-    }catch(_){}
-  }
+  // FlatBuffers have no resource magic. TRSKL and TRMTR can both look like
+  // TRMDL if only the shared string-vector slot is tested. Verify their
+  // distinguishing structure *before* selecting a model descriptor.
+  try {
+    const rig=parseTrskl(buffer);
+    if(plausibleRig(rig))return 'trskl';
+  }catch(_){}
+  try {
+    const mats=parseTrmtr(buffer);
+    if(mats.materials?.some(m=>m.name &&
+      (m.textures?.length || m.shaders?.length ||
+       Object.keys(m.colors||{}).length || Object.keys(m.scalars||{}).length)))
+      return 'trmtr';
+  }catch(_){}
+  try {
+    const meshes=parseTrmsh(buffer);
+    if(meshes.bufferFile && meshes.meshes?.some(m=>
+      m.declarations?.length && m.parts?.length))return 'trmsh';
+  }catch(_){}
+  try {
+    const model=parseTrmdl(buffer);
+    if(model.meshFiles?.length)return 'trmdl';
+  }catch(_){}
+  try {
+    if(hasGeometry(buffer))return 'trmbf';
+  }catch(_){}
   return '';
 }
 function identifyNativeModel(buffer){
@@ -389,16 +402,8 @@ export async function prepareGfpakCompanions(blob,filename,report=()=>{}) {
       bytes=await peekData(raw);
       type=identifyAuxiliary(bytes);
       if(!type){
-        try{
-          if(plausibleRig(parseTrskl(bytes)))type='trskl';
-        }catch(_){}
-      }
-      if(!type){
-        try{
-          const materials=parseTrmtr(bytes).materials;
-          if(materials?.some(m=>m.textures?.length||m.shaders?.length||
-            Object.keys(m.colors||{}).length))type='trmtr';
-        }catch(_){}
+        const detected=identifyTrinity(bytes);
+        if(detected==='trskl'||detected==='trmtr')type=detected;
       }
     }catch(error){continue;}
     if(!['bntx','dds','png','jpg','webp','tranm','trskl','trmtr'].includes(type))continue;
