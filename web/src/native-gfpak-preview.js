@@ -78,7 +78,7 @@ async function chooseResource(rows,kind,reference,archiveName,report,read){
   // descriptor has the real reference, so retry unknown members by parsing
   // the required target format before declaring the model incomplete.
   if(kind==='trmbf'&&!filtered.length){
-    for(const row of rows.filter(row=>!row.kind||row.kind==='trmsh')){
+    for(const row of rows.filter(row=>!row.known || ext(row.known)==='.trmbf')){
       if(row.resource.size>PROBE_LIMIT)continue;
       try{
         if(hasGeometry(await read(row))){row.kind='trmbf';filtered.push(row);}
