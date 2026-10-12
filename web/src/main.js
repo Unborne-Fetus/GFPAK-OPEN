@@ -165,14 +165,44 @@ function setModel(result, format, packageName) {
   const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
+  refreshAnimationControls(result);
+  log('Loaded ' + info.meshes + ' mesh(es)' +
+    (result.postLoad ? '; companion textures and clips are loading in the background.' :
+      ' and ' + info.clips + ' animation clip(s).'), 'success');
+}
+
+function refreshAnimationControls(result) {
   const clips = el('clipSelect');
   clips.replaceChildren();
-  result.animations.forEach((a, index) => clips.add(new Option(a.name || 'Animation ' + (index + 1), String(index))));
-  if (!result.animations.length) clips.add(new Option('No animations available', ''));
+  result.animations.forEach((a, index) =>
+    clips.add(new Option(a.name || 'Animation ' + (index + 1), String(index))));
+  if (!result.animations.length) clips.add(new Option(
+    result.postLoad ? 'Animation clips loading…' : 'No animations available', ''));
   clips.disabled = !result.animations.length;
   el('toggleAnimation').disabled = !result.animations.length;
-  el('toggleAnimation').textContent = result.animations.length ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
-  log('Loaded ' + info.meshes + ' mesh(es) and ' + info.clips + ' animation clip(s).', 'success');
+  el('toggleAnimation').textContent = result.animations.length ?
+    'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
+  el('statClips').textContent = Number(result.animations.length).toLocaleString();
+}
+
+function completeFastPreview(result) {
+  if (typeof result.postLoad !== 'function') return;
+  // Kick off auxiliary downloads only after a frame has been presented.
+  // This keeps massive animation and BNTX loads off the first-paint path.
+  requestAnimationFrame(() => window.setTimeout(() => {
+    if (state.loaded !== result) return;
+    result.postLoad().then(() => {
+      if (state.loaded !== result) return;
+      state.stage.setAnimations(result.animations);
+      refreshAnimationControls(result);
+      log('Textures and ' + result.animations.length +
+        ' animation clip(s) finished loading in the background.', 'success');
+    }).catch(error => {
+      if (state.loaded === result)
+        log('Some companion resources could not be loaded: ' +
+          (error.message || error), 'info');
+    });
+  }, 0));
 }
 
 async function openModel() {
@@ -738,7 +768,8 @@ async function openFastDesktopPreview(detail) {
         };
       })
     };
-    const result = await loadModel(project, manifest.selected, message => log(message));
+    const result = await loadModel(project, manifest.selected,
+      message => log(message), {fastPreview:true});
     setModel(result, extension(manifest.selected), project.label);
     // The desktop explorer is a separate tab; make the loaded 3D viewport
     // actually visible instead of leaving it obscured behind File Explorer.
@@ -749,8 +780,9 @@ async function openFastDesktopPreview(detail) {
     el('tabConverter').classList.remove('active');
     el('tabConverter').setAttribute('aria-selected', 'false');
     showTab('viewer');
-    log('Fast native preview loaded without launching Blender.', 'success');
+    log('Fast native geometry preview loaded without launching Blender.', 'success');
     finished(true);
+    completeFastPreview(result);
   } catch (error) {
     log('Fast preview: ' + (error.message || String(error)) + '. Trying compatible fallback.', 'info');
     finished(false, error.message || String(error));
