@@ -118,6 +118,31 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
  * model has exactly one material. Never substitute normal/roughness maps for
  * a diffuse skin, or choose arbitrarily between multiple texture variants.
  */
+const diffuseSuffixes=['diffuse','color','basecolor','base','albedo','alb','col','skin'];
+function trimMaterialName(value) {
+  return String(value||'').toLowerCase()
+    .replace(/(?:material|_mat)$/i,'').replace(/[^a-z0-9]/g,'');
+}
+function trimTextureSurface(value){
+  return String(value||'').replaceAll('\\','/').split('/').at(-1)
+    .replace(/\.(?:bntx|dds|png|ktx2|webp|jpe?g)$/i,'')
+    .replace(/^pm\d{4}(?:_\d{2}){0,2}[_-]?/i,'')
+    .replace(/[^a-z0-9]/gi,'').toLowerCase();
+}
+/** A multi-surface BNTX may be stored under a hash. Use its *real internal*
+ * surface names and accept only a single demonstrably matching diffuse map.
+ */
+export function matchingLinkedDiffuseSurface(item,materialName) {
+  const key=trimMaterialName(materialName);
+  if(!key||key.length<3)return null;
+  const names=item.textureNames||[];
+  const matched=names.filter(value=>{
+    const v=trimTextureSurface(value);
+    return v===key||diffuseSuffixes.some(s=>v===key+s);
+  });
+  return matched.length===1?matched[0]:null;
+}
+
 export function matchingLinkedDiffuseTexture(items, materialName, materialCount = 1) {
   const linked = items.filter(item => item.linkedKind === 'texture' &&
     /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path));
@@ -126,8 +151,10 @@ export function matchingLinkedDiffuseTexture(items, materialName, materialCount 
       .replace(/\.[^.]+$/, '').toLowerCase();
     return !/(?:^|[_-])(normal|nrm|rough|metal|mask|alpha|orm|occlusion|ao|emissive|emission)(?:$|[_-])/i.test(name);
   });
-  const key = String(materialName || '').toLowerCase()
-    .replace(/(?:material|_mat)$/i, '').replace(/[^a-z0-9]/g, '');
+  const key=trimMaterialName(materialName);
+  const internal=diffuse.filter(item=>matchingLinkedDiffuseSurface(item,materialName));
+  if(internal.length===1)return internal[0];
+  if(internal.length>1)return null;
   if (key.length >= 3) {
     const candidates = diffuse.filter(item => {
       const basename = item.path.replaceAll('\\', '/').split('/').at(-1)
