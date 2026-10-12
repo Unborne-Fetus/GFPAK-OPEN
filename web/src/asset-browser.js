@@ -986,8 +986,9 @@ async function preview(row = selected) {
   id('assetPreview').disabled = true;
   try {
     select(row);
-    const direct = /\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i.test(row.name) &&
-      ['file', 'zipfile', 'nca_file'].includes(row.kind);
+    const direct = (['gfpak', 'gfpak_resource'].includes(row.kind) ||
+      (/\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i.test(row.name) &&
+       ['file', 'zipfile', 'nca_file'].includes(row.kind)));
     if (direct && typeof api.browse_fast_preview === 'function') {
       try {
         showNotice('Fast preview: reading only the selected model and matching companions…');
