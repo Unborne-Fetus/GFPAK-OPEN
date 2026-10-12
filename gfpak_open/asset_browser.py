@@ -118,6 +118,7 @@ class AssetBrowser:
         self._nca_virtual_nodes: dict[str, tuple[int, int, str]] = {}
         self._virtual_gfpaks: dict[str, tuple[VirtualGFPak, dict[int, str]]] = {}
         self._virtual_gfpak_nodes: dict[str, tuple[str, int]] = {}
+        self._model_matches: dict[str, list[dict]] = {}
 
     def _node(self, kind: str, path: Path, *, inner: str = "",
               index: int = -1, name: str | None = None,
@@ -175,6 +176,7 @@ class AssetBrowser:
         self._nca_virtual_nodes.clear()
         self._virtual_gfpaks.clear()
         self._virtual_gfpak_nodes.clear()
+        self._model_matches.clear()
         self._linked_extracted = None
         self._linked_nca.clear()
         self._linked_base_nca.clear()
@@ -796,8 +798,22 @@ class AssetBrowser:
         return dest
 
     def asset_family(self, id_: str) -> dict:
-        """Related assets currently discovered by browsing real game resources."""
+        """Display catalog-wide evidence-backed model companions when available."""
         node = self.node(id_)
+        if node["category"] == "model" and id_ in self._model_matches:
+            matches = self._model_matches[id_]
+            counts = dict(Counter(item["kind"] for item in matches))
+            return {
+                "asset_id": pokemon_id(node["name"]) or
+                            pokemon_id(node.get("inner", "")) or "Associated assets",
+                "engine": "Evidence-based model companion matching",
+                "counts": counts,
+                "files": matches,
+                "truncated": False,
+                "note": ("Verified: shared model stem or Pokémon family. "
+                         "Probable: sole model in source directory. "
+                         "Ambiguous generic files are intentionally excluded.")
+            }
         def display_path(item: dict) -> str:
             if item["kind"] in {"nca_file", "nca_dir"}:
                 return self._nca_virtual_nodes[item["id"]][2]
