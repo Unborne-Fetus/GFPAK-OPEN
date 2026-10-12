@@ -45,3 +45,19 @@ test('native multi-axis rest rotations agree with the authored inverse bind pose
   result.rig.boneInverses[0].elements.forEach((value,i)=>
     assert.ok(Math.abs(value-inverse.elements[i])<1e-6));
 });
+
+test('native segment-scale compensation keeps child proportions while parent squash animates',async()=>{
+  const {NativeBone}=await import('../src/trinity-model.js');
+  const root=new THREE.Group(),parent=new NativeBone(),child=new NativeBone();
+  child.segmentScaleCompensate=true;child.position.set(2,0,0);child.scale.set(.8,1,1);
+  root.add(parent);parent.add(child);parent.scale.set(.5,1,1);
+  root.updateMatrixWorld(true);
+  assert.deepEqual(child.getWorldPosition(new THREE.Vector3()).toArray(),[2,0,0]);
+  assert.ok(Math.abs(child.getWorldScale(new THREE.Vector3()).x-.8)<1e-6);
+  parent.scale.set(.25,1,1);root.updateMatrixWorld(true);
+  assert.ok(Math.abs(child.getWorldScale(new THREE.Vector3()).x-.8)<1e-6);
+  assert.equal(child.scale.x,.8);
+  const ordinary=new NativeBone();ordinary.scale.set(.8,1,1);parent.add(ordinary);
+  root.updateMatrixWorld(true);
+  assert.ok(Math.abs(ordinary.getWorldScale(new THREE.Vector3()).x-.2)<1e-6);
+});
