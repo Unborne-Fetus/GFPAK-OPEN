@@ -485,6 +485,82 @@ async function loadNativeClips(project, selected, skeleton, report, scene) {
 }
 
 /**
+ * Some Switch TRMDL versions omit skeleton/material references entirely, while
+ * the files still exist as hashed GFPAK siblings. Recover only validated,
+ * unambiguous companions from the selected Pokémon project.
+ */
+async function recoverTrinitySkeleton(project, selected, reference, report) {
+  const candidates=project.items.filter(item=>ext(item.path)==='.trskl');
+  if(reference){
+    try {
+      const explicit=findResource(project,reference,selected,'.trskl',false);
+      if(explicit){
+        const parsed=parseTrskl(await bytesFor(explicit));
+        if(parsed.bones?.length){
+          report('Verified skeleton reference '+reference+': '+parsed.bones.length+' bones.');
+          return parsed;
+        }
+      }
+    }catch(error){report('Referenced skeleton could not be decoded: '+error.message);}
+  }
+  const parsed=[];
+  for(const item of candidates.slice(0,48)){
+    try{
+      const value=parseTrskl(await bytesFor(item));
+      if(!value.bones?.length || value.bones.some(b=>!b.name ||
+        (b.parent>=value.bones.length)||(b.parent===b.index)))continue;
+      parsed.push({item,value});
+    }catch(error){report('Skipped invalid skeleton '+item.path+': '+error.message);}
+  }
+  if(parsed.length===1){
+    report('Recovered unambiguous '+parsed[0].value.bones.length+
+      '-bone skeleton from '+parsed[0].item.path+' (model did not identify its rig).');
+    return parsed[0].value;
+  }
+  if(!parsed.length)
+    report('No valid TRSKL rig available for this model; bones and skeletal clips cannot load.');
+  else report('Found '+parsed.length+
+    ' valid TRSKL rigs without a unique model reference; skipping unsafe rig substitution.');
+  return null;
+}
+
+async function recoverTrinityMaterials(project, selected, references, parts, report) {
+  const sourceNames=new Set(parts.map(part=>normalizeMaterialName(part.material)).filter(Boolean));
+  const entries=project.items.filter(item=>ext(item.path)==='.trmtr');
+  const byPath=new Set();
+  for(const ref of references){
+    try {
+      const entry=findResource(project,ref,selected,'.trmtr',false);
+      if(entry)byPath.add(entry.path);
+    }catch(error){report('Material reference '+ref+' cannot be resolved: '+error.message);}
+  }
+  const parsed=[];
+  for(const item of entries.slice(0,48)){
+    try{
+      const data=parseTrmtr(await bytesFor(item));
+      if(!data.materials?.length)continue;
+      const names=new Set(data.materials.map(m=>normalizeMaterialName(m.name)));
+      const overlap=[...sourceNames].filter(n=>names.has(n)).length;
+      if(byPath.has(item.path)||overlap>0)parsed.push({item,data,overlap,explicit:byPath.has(item.path)});
+    }catch(error){report('Skipped invalid TRMTR '+item.path+': '+error.message);}
+  }
+  if(!parsed.length && entries.length===1){
+    try{
+      const data=parseTrmtr(await bytesFor(entries[0]));
+      if(data.materials?.length){
+        parsed.push({item:entries[0],data,overlap:0,explicit:false});
+        report('Recovered sole material definition '+entries[0].path+'.');
+      }
+    }catch(error){report('Material definition could not be decoded: '+error.message);}
+  }
+  for(const item of parsed)report('Matched '+item.data.materials.length+
+    ' material definition(s) from '+item.item.path+
+    (item.explicit?' by model reference':' by mesh material names')+'.');
+  if(!parsed.length)report('No matching TRMTR definition: using neutral materials until a compatible source is found.');
+  return parsed.map(item=>item.data);
+}
+
+/**
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
  */
@@ -513,22 +589,9 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   }
   if (!parts.length) throw new TrinityError('No renderable Trinity geometry was decoded');
 
-  let skeleton = null;
-  if (meta.skeleton) {
-    try {
-      const skeletonFile = findResource(project, meta.skeleton, selected, '.trskl', false);
-      if (skeletonFile) skeleton = parseTrskl(await bytesFor(skeletonFile));
-      else report('Skeleton reference found, but TRSKL file is unavailable.');
-    } catch (error) { report('TRSKL decoding error: ' + error.message); }
-  }
-  const materialDefs = [];
-  for (const ref of meta.materials) {
-    const materialFile = findResource(project, ref, selected, '.trmtr', false);
-    if (!materialFile) continue;
-    try { materialDefs.push(parseTrmtr(await bytesFor(materialFile))); }
-    catch (error) { report('Material decode skipped: ' + error.message); }
-  }
-  const lookup = createMaterials(materialDefs);
+  const skeleton=await recoverTrinitySkeleton(project,selected,meta.skeleton,report);
+  const materialDefs=await recoverTrinityMaterials(project,selected,meta.materials,parts,report);
+  const lookup=createMaterials(materialDefs);
   const created = [];
   let sourceImages = [];
   const scene = new THREE.Group();
@@ -537,7 +600,8 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   const defaults = new Map();
   for (const part of parts) {
     const name = (part.material || '').toLowerCase();
-    let material = lookup.get(name)?.material;
+    let material = lookup.get(name)?.material ||
+      [...lookup.entries()].find(([key])=>normalizeMaterialName(key)===normalizeMaterialName(name))?.[1].material;
     if (!material) {
       if (!defaults.has(name)) defaults.set(name, new THREE.MeshStandardMaterial({
         name: part.material || 'Unassigned material', color: 0xd9e0e7,
