@@ -189,7 +189,7 @@ async function readLegacyAnimations(project, selected, rig, report) {
  *
  * Some GFBANM animation variants and original game shaders remain unsupported.
  */
-export async function loadGfbmdl(project, selected, report = () => {}) {
+export async function loadGfbmdl(project, selected, report = () => {}, options = {}) {
   const entry = project.items.find(item => item.path === selected);
   if (!entry) throw new Error('GFBMDL file not found');
   report('Decoding GFBMDL FlatBuffers model geometry locally…');
@@ -217,45 +217,77 @@ export async function loadGfbmdl(project, selected, report = () => {}) {
   const known = nearbyTextures(project, selected);
   const textureObjects = [];
   const textureCache = new Map();
-  for (let i = 0; i < model.materials.length; i++) {
-    const match = chooseMap(model.textureNames, model.materials[i]);
-    if (!match) continue;
-    const referencedName = model.textureNames[match.textureIndex];
-    const file = findLegacyTexture(referencedName, known);
-    if (!file) {
-      report('Could not uniquely match texture ' + referencedName + ' to a local image or BNTX container.');
-      continue;
+  const animations = [];
+  let disposed = false;
+  let extrasPromise = null;
+  let released = false;
+  const releaseTextures = () => {
+    if (released) return;
+    released = true;
+    for (const texture of textureObjects) {
+      texture.image?.close?.();
+      texture.dispose();
     }
-    try {
-      const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '');
-      let texture = textureCache.get(key);
-      if (!texture) {
-        texture = await loadDecodedTexture(file, true, [referencedName]);
-        textureCache.set(key, texture);
-        textureObjects.push(texture);
+  };
+  const postLoad = () => {
+    if (disposed) return Promise.resolve([]);
+    if (!extrasPromise) {
+      extrasPromise = (async () => {
+        const renderTextures = async () => {
+      for (let i = 0; i < model.materials.length; i++) {
+        const match = chooseMap(model.textureNames, model.materials[i]);
+        if (!match) continue;
+        const referencedName = model.textureNames[match.textureIndex];
+        const file = findLegacyTexture(referencedName, known);
+        if (!file) {
+          report('Could not uniquely match texture ' + referencedName + ' to a local image or BNTX container.');
+          continue;
+        }
+        try {
+          const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '');
+          let texture = textureCache.get(key);
+          if (!texture) {
+            texture = await loadDecodedTexture(file, true, [referencedName]);
+            textureCache.set(key, texture);
+            textureObjects.push(texture);
+          }
+          materials[i].map = texture;
+          materials[i].color.setRGB(1, 1, 1);
+          materials[i].needsUpdate = true;
+        } catch (error) {
+          report('Could not apply texture ' + file.path + ': ' + error.message);
+        }
       }
-      materials[i].map = texture;
-      materials[i].color.setRGB(1, 1, 1);
-      materials[i].needsUpdate = true;
-    } catch (error) {
-      report('Could not apply texture ' + file.path + ': ' + error.message);
+        };
+        const [, clips] = await Promise.all([
+          renderTextures(), readLegacyAnimations(project, selected, rig, report)
+        ]);
+        if (!disposed) animations.push(...clips);
+        report('GFBMDL companion textures and ' + clips.length +
+          ' native animation clip(s) loaded.');
+        return animations;
+      })();
+      extrasPromise.finally(() => { if (disposed) releaseTextures(); }).catch(() => {});
     }
-  }
-
-  const animations = await readLegacyAnimations(project, selected, rig, report);
+    return extrasPromise;
+  };
   report('Decoded ' + model.stats.meshCount + ' real GFBMDL meshes and ' +
     model.stats.vertexCount.toLocaleString() + ' vertices, ' +
-    (rig?.bones.length || 0) + ' bones and ' + animations.length + ' animation clips. ' +
-    'Original shaders, some BNTX formats and skeletal variants remain unsupported.');
-  return {
+    (rig?.bones.length || 0) + ' bones. ' +
+    (options.fastPreview ? 'Geometry ready; loading textures and clips next.' :
+      'Loading textures and clips.') +
+    ' Original shaders and some skeletal variants remain unsupported.');
+  const result = {
     root, animations, selected,
     sourceFormat: 'GFBMDL',
     sourceStats: model.stats,
     disposeAssets: () => {
-      for (const texture of textureObjects) {
-        texture.image?.close?.();
-        texture.dispose();
-      }
+      disposed = true;
+      if (extrasPromise) extrasPromise.finally(releaseTextures).catch(() => {});
+      else releaseTextures();
     }
   };
+  if (options.fastPreview) result.postLoad = postLoad;
+  else await postLoad();
+  return result;
 }
