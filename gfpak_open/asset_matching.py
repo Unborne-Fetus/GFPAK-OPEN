@@ -39,6 +39,12 @@ def _score(model, part, unique_dir_models):
         return 0, ""
     model_scope, part_scope = model.get("scope", ""), part.get("scope", "")
     if model_scope != part_scope:
+        # Cross-container attachments are permitted only with an explicit
+        # shared Pokémon token inside the SAME user-opened game. These are
+        # probable matches because different forms may have different rigs.
+        if (mt and pt and mt == pt and model.get("game_scope")
+                and model.get("game_scope") == part.get("game_scope")):
+            return 70, "matching Pokémon ID across files in the same game"
         return 0, ""
     same_dir = mdir == pdir
     if ms == ps and ms:
@@ -62,19 +68,20 @@ def match_model_assets(rows):
     """
     models = [r for r in rows if r.get("category") in MODEL_KINDS and r.get("id")]
     parts = [r for r in rows if r.get("category") in COMPANION_KINDS and r.get("id")]
-    by_scope = defaultdict(list)
     by_species = defaultdict(list)
+    by_game_species = defaultdict(list)
     by_dir = defaultdict(list)
     unique_dir_models = Counter()
     for model in models:
         directory, name = _path(model)
         scope = model.get("scope", "")
         unique_dir_models[(scope, directory)] += 1
-        by_scope[scope].append(model)
         by_dir[(scope, directory)].append(model)
         token = pokemon_id(model.get("relative") or name)
         if token:
             by_species[(scope, token)].append(model)
+            if model.get("game_scope"):
+                by_game_species[(model["game_scope"], token)].append(model)
     output = defaultdict(list)
     for part in parts:
         scope = part.get("scope", "")
@@ -85,6 +92,9 @@ def match_model_assets(rows):
         possible = {m["id"]: m for m in by_dir.get((scope, directory), [])}
         if token:
             possible.update({m["id"]: m for m in by_species.get((scope, token), [])})
+            if part.get("game_scope"):
+                possible.update({m["id"]: m for m in by_game_species.get(
+                    (part["game_scope"], token), [])})
         scored = []
         for model in possible.values():
             value, reason = _score(model, part, unique_dir_models)
