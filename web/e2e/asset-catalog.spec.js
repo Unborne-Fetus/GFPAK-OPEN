@@ -101,3 +101,43 @@ test('asset scanner displays three clear categories without reading file payload
   await expect(page.locator('#assetRows')).toContainText('body.bntx');
   expect(await page.evaluate(()=>window.scanCalls)).toEqual(['sec']);
 });
+
+test('a discovered texture opens native inspector without Blender',async({page})=>{
+  await page.addInitScript(()=>{
+    window.fallbackConverts=0;
+    window.pywebview={api:{
+      setup_status:async()=>({
+        blender:'',addon:'',setup:{state:'ready',error:''},sources:[],
+        settings:{hashes:'',oodle:'',textures:''},animations:true
+      }),
+      browse_choose:async()=>({
+        root:{id:'root',kind:'directory',name:'textures',category:'folder',expandable:true},
+        children:{root:{id:'root',name:'textures'},entries:[
+          {id:'t',kind:'file',name:'body.png',category:'texture',size:68,expandable:false}
+        ],counts:{texture:1},note:''}
+      }),
+      browse_fast_texture:async()=>({
+        path:'body.png',size:68,url:'/__quick_asset/texture/0'
+      }),
+      preview_browser_item:async()=>{window.fallbackConverts++;return true;},
+      browse_item_details:async()=>({notes:[],hex_lines:[]}),
+      browse_asset_family:async()=>({asset_id:'',files:[],counts:{}}),
+      browse_scan_status:async()=>({running:false,result:null,error:''})
+    }};
+  });
+  const png=Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==',
+    'base64');
+  await page.route('**/__quick_asset/texture/0',route=>
+    route.fulfill({status:200,contentType:'image/png',body:png})
+  );
+  await page.goto('/');
+  await page.locator('#tabAssets').click();
+  await page.locator('#assetOpenFolder').click();
+  await expect(page.locator('#assetRows')).toContainText('View texture');
+  await page.locator('#assetRows .asset-open').first().click();
+  await expect(page.locator('#textureDialog')).toBeVisible();
+  await expect(page.locator('#textureSourceName')).toContainText('body.png');
+  await expect(page.locator('#textureSavePng')).toBeEnabled();
+  expect(await page.evaluate(()=>window.fallbackConverts)).toBe(0);
+});
