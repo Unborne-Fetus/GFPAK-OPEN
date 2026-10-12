@@ -99,6 +99,42 @@ test('descriptor companion aliases resolve when dictionary canonical names diffe
   preview.disposeAssets();
 });
 
+test('TRMSH and TRMBF in a separate same-Pokémon GFPAK can complete a model',async()=>{
+  const files=makeTrinityTriangle();
+  const modelArchive=gfpak({'hashed/model.bin':files['models/test.trmdl']});
+  const companionArchive=gfpak({
+    'hashed/mesh.bin':files['models/test.trmsh'],
+    'hashed/buffers.bin':files['models/test.trmbf']
+  });
+  await assert.rejects(prepareGfpakModelPreview(modelArchive,'pm0025_00_00.gfpak'),
+    /Missing trmsh file/);
+  const {project,selected}=await prepareGfpakModelPreview(modelArchive,
+    'pm0025_00_00.gfpak',()=>{},null,
+    [{blob:companionArchive,filename:'pm0025_00_00_mesh.gfpak'}]);
+  assert.equal(project.items.length,3);
+  assert.ok(project.items.some(item=>item.sourceArchive==='pm0025_00_00_mesh.gfpak'));
+  const preview=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.equal(preview.sourceStats.vertices,3);
+  preview.disposeAssets();
+});
+
+test('model skeleton takes priority over unrelated additional rig in another archive',async()=>{
+  const animated=makeAnimatedTrinityTriangle();
+  const first=gfpak(animated);
+  const {project,selected}=await prepareGfpakModelPreview(first,'pm0025_00_00.gfpak');
+  const otherSkeleton={
+    path:'companions/pm0025_00_00_other/resource_001.trskl',
+    sourceArchive:'pm0025_00_00_other.gfpak',
+    getBytes:async()=>animated['models/test.trskl'].buffer.slice(
+      animated['models/test.trskl'].byteOffset,
+      animated['models/test.trskl'].byteOffset+animated['models/test.trskl'].byteLength)
+  };
+  project.items.push(otherSkeleton);
+  const preview=await loadTrinityModel(project,selected,()=>{},{fastPreview:true});
+  assert.equal(preview.sourceStats.bones,1);
+  preview.disposeAssets();
+});
+
 test('PLA GFPAK with known hash dictionary preserves real original companion filenames',async()=>{
   const blob=gfpak(makeTrinityTriangle());
   const dictionary=parseHashDictionary('models/\ntest.trmdl\ntest.trmsh\ntest.trmbf\n');
