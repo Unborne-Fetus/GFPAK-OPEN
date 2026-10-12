@@ -132,6 +132,33 @@ class AssetBrowserTests(unittest.TestCase):
             self.assertEqual(listing["counts"]["texture"], 1)
             self.assertEqual(listing["counts"]["animation"], 1)
 
+    def test_fast_gfpak_preview_streams_native_assets_without_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "pm0025_00_00.gfpak"
+            create_resolved_gfpak(archive)
+            browser = AssetBrowser()
+            root = browser.open(archive)
+            manifest = browser.fast_preview_items(root["id"])
+            self.assertEqual(manifest["selected"], "pm0025_00_00.trmdl")
+            self.assertEqual(manifest["items"][0]["source"][0], "gfpak")
+            self.assertEqual({row["path"] for row in manifest["items"]}, {
+                "pm0025_00_00.trmdl", "pm0025_00_00.trmsh",
+                "pm0025_00_00.trmbf", "body.bntx", "pikachu_idle.tranm"
+            })
+            size, chunks = browser.stream_fast_preview_item(
+                manifest["items"][0]["source"])
+            decoded = b"".join(chunks)
+            self.assertEqual(len(decoded), size)
+            self.assertIn(b"body.bntx", decoded)
+            self.assertTrue(archive.exists())
+            # Opening a model resource selects that exact model, not an
+            # unrelated model from the same game archive.
+            listing = browser.children(root["id"])
+            model = next(row for row in listing["entries"]
+                         if row["category"] == "model")
+            matched = browser.fast_preview_items(model["id"])
+            self.assertEqual(matched["selected"], manifest["selected"])
+
     def test_link_extracted_folder_under_nsp_and_browse_full_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
