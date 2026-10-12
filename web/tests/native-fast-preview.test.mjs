@@ -42,3 +42,70 @@ test('fast GFBMDL preview shows original mesh before optional native tracks',asy
   assert.equal(result.animations.length,0);
   result.disposeAssets();
 });
+
+// A genuine BC1 DDS file is sufficient to verify Three.js material assignment
+// without browser-only ImageBitmap APIs or game-copyrighted assets.
+function sampleDDS() {
+  const b = new Uint8Array(136), v = new DataView(b.buffer);
+  v.setUint32(0, 0x20534444, true);
+  v.setUint32(4, 124, true);
+  v.setUint32(8, 0xA1007, true);
+  v.setUint32(12, 4, true);
+  v.setUint32(16, 4, true);
+  v.setUint32(20, 8, true);
+  v.setUint32(28, 1, true);
+  v.setUint32(76, 32, true);
+  v.setUint32(80, 4, true);
+  v.setUint32(84, 0x31545844, true);
+  v.setUint32(108, 0x1000, true);
+  b.set([0, 0xf8, 0x1f, 0, 0, 0, 0, 0], 128);
+  return b;
+}
+
+test('Preview in 3D imports linked cross-folder animation and texture into Trinity scene', async() => {
+  const {makeAnimatedTrinityTriangle} = await import('./trinity-animation-fixture.mjs');
+  const source = makeAnimatedTrinityTriangle();
+  const animation = source['models/test.tranm'];
+  delete source['models/test.tranm'];
+  source['animations/idle.tranm'] = animation;
+  source['textures/body.dds'] = sampleDDS();
+  const reads = [];
+  const project = {items:Object.entries(source).map(([path,bytes])=>({
+    path, size:bytes.byteLength,
+    linkedKind: path.endsWith('idle.tranm') ? 'animation' :
+      path.endsWith('body.dds') ? 'texture' : null,
+    matchConfidence:'verified',
+    getBytes:async()=>{reads.push(path);return bufferOf(bytes);}
+  }))};
+  const result = await loadTrinityModel(project, 'models/test.trmdl',
+    ()=>{}, {fastPreview:true});
+  assert.equal(result.animations.length,0);
+  assert.ok(!reads.includes('animations/idle.tranm'));
+  assert.ok(!reads.includes('textures/body.dds'));
+  await result.postLoad();
+  assert.equal(result.animations.length,1);
+  assert.ok(result.animations[0].validate());
+  const mesh = result.root.children.find(child => child.isMesh);
+  assert.ok(mesh.material.map?.isCompressedTexture);
+  assert.ok(reads.includes('animations/idle.tranm'));
+  assert.ok(reads.includes('textures/body.dds'));
+  result.disposeAssets();
+});
+
+test('Preview in 3D imports one linked cross-folder texture into legacy GFBMDL scene',async()=>{
+  const model=makeGfbmdlTriangle(), image=sampleDDS();
+  const project={items:[
+    {path:'models/legacy.gfbmdl',size:model.byteLength,getBytes:async()=>model},
+    {path:'materials/body.dds',size:image.byteLength,
+      linkedKind:'texture',matchConfidence:'verified',
+      getBytes:async()=>bufferOf(image)}
+  ]};
+  const result=await loadGfbmdl(project,'models/legacy.gfbmdl',
+    ()=>{}, {fastPreview:true});
+  const mesh=result.root.children.find(child=>child.isMesh);
+  assert.ok(mesh);
+  assert.equal(mesh.material.map,null);
+  await result.postLoad();
+  assert.ok(mesh.material.map?.isCompressedTexture);
+  result.disposeAssets();
+});
