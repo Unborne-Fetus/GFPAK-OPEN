@@ -198,6 +198,9 @@ function populateTextureSelect(project) {
   const textures = listProjectTextures(project);
   const select = el('textureSelect');
   select.replaceChildren(...textures.slice(0, 1200).map(item => new Option(item.path, item.path)));
+  // A multi-row SELECT has no guaranteed default selection; otherwise a
+  // single imported BNTX appears in the list but the Inspect button does nothing.
+  if (select.options.length) select.selectedIndex = 0;
   el('textureCount').textContent = textures.length + ' file(s)';
   el('textureChoice').hidden = !textures.length;
   el('inspectSelectedTexture').disabled = !textures.length;
