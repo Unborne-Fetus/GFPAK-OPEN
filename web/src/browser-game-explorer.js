@@ -1,7 +1,9 @@
 import {openGamePackage, openExtractedFolder, exportIndex} from './game-file-reader.js';
+import {parseLocalKeys} from './nca-crypto.js';
 /** Browser-only UI for large local game files. No native bridge required. */
 const el = name => document.getElementById(name);
 let game = null, selected = null, matching = [], visible = 250, opening = false;
+let localKeys = null, currentPackage = null;
 
 function message(text, error = false) {
   el('webGameNotice').textContent = text;
@@ -105,11 +107,13 @@ async function ingestPackage(file) {
   message('Reading complete local package index; examining readable NCA section headers…');
   try {
     const parsed=await openGamePackage(file,{
+      keys:localKeys,
       onProgress:(done,total,found)=>{
         message('Checking NCA headers '+done+'/'+total+' · '+found+
           ' indexed files. Encrypted content stays locked.');
       }
     });
+    currentPackage=file;
     setGame(parsed);
   } catch(error) {
     message('Could not read package: '+(error.message||error),true);
@@ -136,7 +140,7 @@ async function preview(){
   try{
     if(/\.(gfpak|zip)$/i.test(selected.name)){
       if(selected.size>400*1024*1024)throw Error('This embedded package is too large to open in browser memory');
-      const file=new File([selected.getBlob()],selected.name.split('/').at(-1));
+      const file=new File([await selected.getBlob()],selected.name.split('/').at(-1));
       window.dispatchEvent(new CustomEvent('gfpak-web-open-file',{detail:{files:[file]}}));
       return;
     }
@@ -176,13 +180,43 @@ function init(){
   el('tabBrowserGame').addEventListener('click',showPanel);
   el('webGameOpenPackage').addEventListener('click',()=>el('webGameFile').click());
   el('webGameOpenFolder').addEventListener('click',()=>el('webGameFolder').click());
+  el('webGameOpenKeys').addEventListener('click',()=>el('webGameKeysFile').click());
+  el('webGameKeysFile').addEventListener('change',async e=>{
+    const file=e.target.files?.[0];e.target.value='';
+    if(!file)return;
+    try {
+      if(file.size>1024*1024)throw Error('Keys file exceeds 1 MiB');
+      const loaded=parseLocalKeys(await file.text());
+      if(!loaded.size){loaded.clear();throw Error('No recognized AES keys in the selected file');}
+      localKeys?.clear();localKeys=loaded;
+      el('webGameClearKeys').disabled=false;
+      el('webGameKeysStatus').textContent='Local keys loaded ('+loaded.size+
+        ' entries) in this browser session. Not uploaded, logged or saved. '+
+        'Reopen or rescan your game to read encrypted sections.';
+      if(currentPackage)await ingestPackage(currentPackage);
+    }catch(error){message('Could not load local keys: '+(error.message||error),true);}
+  });
+  el('webGameClearKeys').addEventListener('click',()=>{
+    localKeys?.clear();localKeys=null;currentPackage=null;
+    game=null;selected=null;matching=[];
+    el('webGameClearKeys').disabled=true;
+    el('webGameKeysStatus').textContent='Keys forgotten. Decrypted file references cleared; reload your game to continue.';
+    el('webGameTitle').textContent='No game loaded';
+    el('webGameRows').replaceChildren();
+    el('webGameSaveIndex').disabled=true;
+    el('webGameFiles').textContent='0';
+    el('webGameModels').textContent='0';
+    el('webGameTextures').textContent='0';
+    el('webGameAnimations').textContent='0';
+    updateButtons();
+  });
   el('webGameFile').addEventListener('change',e=>{
     const file=e.target.files?.[0];e.target.value='';void ingestPackage(file);
   });
   el('webGameFolder').addEventListener('change',e=>{
     try{
       const files=Array.from(e.target.files||[]);e.target.value='';
-      if(files.length)setGame(openExtractedFolder(files));
+      if(files.length){currentPackage=null;setGame(openExtractedFolder(files));}
     }catch(error){message(error.message||String(error),true);}
   });
   window.addEventListener('gfpak-web-open-game',e=>void ingestPackage(e.detail?.file));
@@ -190,8 +224,17 @@ function init(){
   el('webGameCategory').addEventListener('change',()=>render());
   el('webGameMore').addEventListener('click',()=>{visible+=250;render(false);});
   el('webGamePreview').addEventListener('click',()=>void preview());
-  el('webGameExport').addEventListener('click',()=>{
-    if(selected)download(selected.name,selected.getBlob());
+  el('webGameExport').addEventListener('click',async()=>{
+    if(!selected)return;
+    const row=selected;
+    try {
+      el('webGameExport').disabled=true;
+      message('Reading selected original/decrypted resource locally…');
+      const blob=await row.getBlob();
+      download(row.name,blob);
+      message('Saved '+row.name+' · '+formatSize(row.size));
+    }catch(error){message('Export failed: '+(error.message||error),true);}
+    finally{updateButtons();}
   });
   el('webGameSaveIndex').addEventListener('click',()=>{
     if(game)download(game.name.replace(/\.[^.]+$/,'')+'-index.json',
