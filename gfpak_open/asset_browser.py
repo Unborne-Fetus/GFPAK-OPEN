@@ -876,6 +876,7 @@ class AssetBrowser:
                 include(filename, meta.file_size, ("zip", path, filename))
         else:
             reader, index, section, full = self._nca_virtual_file(selected)
+            model_name = full
             parent = full.rpartition("/")[0]
             fs = self._nca_sections.filesystem(reader, index, section)
             info = fs.file(full)
