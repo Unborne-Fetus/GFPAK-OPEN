@@ -59,6 +59,15 @@ function findResource(project, ref, basePath, suffix, required = true) {
     normalized(item.path) === normalizedRef || normalized(item.path) === sourceRef);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) throw new TrinityError('Ambiguous companion model path: ' + ref);
+  // A GFPAK descriptor can reference "head" while its filename-hash
+  // dictionary resolves the mesh to an unrelated canonical pathname.
+  // The scanner records the real descriptor association independently.
+  const aliased=candidates.filter(item=>(item.nativeAliases||[]).some(alias=>{
+    const token=normalized(alias);
+    return token===sourceRef || token===normalizedRef || basename(token)===filename;
+  }));
+  if(aliased.length===1)return aliased[0];
+  if(aliased.length>1)throw new TrinityError('Ambiguous descriptor companion '+ref);
   if (filename) candidates = candidates.filter(item => basename(item.path) === filename);
   if (!filename && expected) {
     const expectedStem = stem(basePath);
