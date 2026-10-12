@@ -389,7 +389,16 @@
             <button type="button" id="nativeFolder" class="button button-secondary">Select folder</button>
           </div>
           <p id="nativeSources" class="helper-copy">No native conversion sources selected.</p>
+          <details class="native-advanced">
+            <summary>Optional model settings</summary>
+            <label class="toggle-row"><input id="nativeAnimations" type="checkbox" checked /><span>Include compatible animations</span></label>
+            <label class="input-label" for="nativeHashes">GFPAK filename dictionary</label>
+            <div class="native-path"><input class="field" id="nativeHashes" readonly /><button type="button" data-native-pick="hashes" class="button button-secondary">Browse</button><button type="button" data-native-clear="hashes" class="text-button">Clear</button></div>
+            <label class="input-label" for="nativeTextures">Additional texture folder</label>
+            <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button><button type="button" data-native-clear="textures" class="text-button">Clear</button></div>
+          </details>
           <button type="button" id="nativeConvert" class="button button-primary">Preview in 3D ↗</button>
+          <button type="button" id="nativeBatchExport" class="button button-secondary" disabled>Export all GLBs in one ZIP ↓</button>
           <div id="nativeProgress" class="helper-copy" role="status" aria-live="polite"></div>
           <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Model preview details"></div>
           <div id="nativeResults" class="native-results" aria-live="polite"></div>

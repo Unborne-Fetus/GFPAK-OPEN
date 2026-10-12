@@ -32,6 +32,7 @@ class DesktopAPI:
         except (OSError, ValueError):
             self.settings = {}
         self.sources: list[Path] = []
+        self._source_models: dict[str, tuple[AssetBrowser, str]] = {}
         self._session = tempfile.TemporaryDirectory(prefix="GFPAK-OPEN-session-")
         self._cache = Path(self._session.name)
         self.export_paths: dict[str, Path] = {}
@@ -116,26 +117,85 @@ class DesktopAPI:
         with self._lock:
             return {"setup": {"state": "ready", "error": ""},
                     "sources": [str(x) for x in self.sources],
-                    "settings": {}, "animations": True,
+                    "settings": {key: self.settings.get(key, "") for key in ("hashes", "textures")},
+                    "animations": bool(self.settings.get("animations", True)),
                     "cache": "Preview and export use the built-in 3D viewer"}
 
-    def source_previews(self):
-        """Stream selected models through the same built-in decoder as Explorer."""
-        manifests = []
+    def source_models(self):
+        """Inventory every selected model; retain server-side references, not payloads."""
+        models, errors = [], []
+        self._source_models.clear()
         for source in self.sources:
-            if source.is_dir():
-                candidates = sorted(p for p in source.rglob("*")
-                                    if p.is_file() and p.suffix.lower() in
-                                    {".gfpak", ".trmdl", ".gfbmdl", ".glb", ".gltf", ".obj", ".fbx", ".dae"})
-            else:
-                candidates = [source]
-            for candidate in candidates:
-                if len(manifests) >= 256:
-                    raise ValueError("Select at most 256 models per preview batch")
+            try:
                 browser = AssetBrowser(nca_workspace=self._cache / "sources" / uuid.uuid4().hex)
-                node = browser.open(candidate)
-                manifests.append(self.browse_fast_preview(node["id"], browser))
-        return manifests
+                browser.filename_dictionary = self.settings.get("hashes") or None
+                root = browser.open(source)
+                if source.is_dir():
+                    assets = browser.scan()["assets"]
+                elif root["kind"] == "gfpak":
+                    assets = browser.scan_gfpak_assets(root["id"])["assets"]
+                else:
+                    # Inventory siblings for complete animation matching, while keeping
+                    # the user-selected model as the only conversion candidate.
+                    assets = [browser._public(browser._fs_node(item))
+                              for item in sorted(source.parent.iterdir())
+                              if item.is_file() and not item.is_symlink()]
+                for row in assets:
+                    row.setdefault("game_scope", str(browser.root_path))
+                texture_folder = Path(self.settings["textures"]) if self.settings.get("textures") else None
+                if texture_folder and texture_folder.is_dir():
+                    from .asset_browser import classify
+                    for texture in sorted(texture_folder.rglob("*")):
+                        if texture.is_file() and not texture.is_symlink() and classify(texture.name) == "texture":
+                            row = browser._public(browser._fs_node(texture))
+                            row.update(relative=texture.name, game_scope=str(browser.root_path))
+                            assets.append(row)
+                browser._model_matches.update(match_model_assets(assets))
+                candidates = [row for row in assets if row["category"] == "model"
+                              and (source.is_dir() or root["kind"] == "gfpak" or row["id"] == root["id"])]
+                if texture_folder and len(candidates) == 1:
+                    model_id = candidates[0]["id"]
+                    linked = browser._model_matches.setdefault(model_id, [])
+                    used = {item["id"] for item in linked}
+                    for row in assets:
+                        if row["category"] == "texture" and row["id"] not in used and Path(browser.node(row["id"])["path"]).is_relative_to(texture_folder):
+                            linked.append({"id": row["id"], "confidence": "probable",
+                                           "reason": "user-selected texture folder for a single model"})
+                if not candidates:
+                    errors.append(source.name + ": No resolved supported models found")
+                for row in candidates:
+                    key = uuid.uuid4().hex
+                    self._source_models[key] = (browser, row["id"])
+                    models.append({"key": key, "name": row.get("relative", row["name"])})
+            except Exception as exc:
+                errors.append(source.name + ": " + str(exc))
+        return {"models": models, "errors": errors}
+
+    def source_preview(self, key: str):
+        found = self._source_models.get(key)
+        if not found:
+            raise ValueError("Source selection expired; select the models again")
+        browser, node_id = found
+        return {**self.browse_fast_preview(node_id, browser), "exportKey": key,
+                "animations": bool(self.settings.get("animations", True))}
+
+    def source_previews(self):
+        # Compatibility for older clients; current UI resolves one manifest at a time.
+        result = self.source_models()
+        return [self.source_preview(row["key"]) for row in result["models"]]
+
+    def source_export_pokemon(self, key: str):
+        found = self._source_models.get(key)
+        if not found:
+            raise ValueError("Source selection expired; select the models again")
+        browser, node_id = found
+        node = browser.node(node_id)
+        from .pokemon_assets import pokemon_id
+        name = pokemon_id(node["name"]) or "pokemon"
+        selected = self._dialog("save", name + ".zip", ("ZIP archive (*.zip)",))
+        if not selected:
+            return False
+        return str(browser.export_pokemon(node_id, Path(selected[0])))
 
     def _dialog(self, kind, title, file_types=(), multiple=False):
         import webview
@@ -166,7 +226,22 @@ class DesktopAPI:
             self.sources = [Path(p) for p in paths]
         return [str(p) for p in self.sources]
 
+    def select_option(self, option):
+        if option not in ("hashes", "textures"):
+            raise ValueError("Unsupported model setting")
+        selected = self._dialog("folder" if option == "textures" else "open", "Select optional " + option)
+        if selected:
+            self.settings[option] = selected[0]
+            self._save()
+        return self.settings.get(option, "")
+
     def set_options(self, values):
+        for key in ("hashes", "textures"):
+            if key in values:
+                self.settings[key] = str(values[key])[:4096]
+        if "animations" in values:
+            self.settings["animations"] = bool(values["animations"])
+        self._save()
         return True
 
     def _clear_cached_models(self):
@@ -241,6 +316,7 @@ class DesktopAPI:
                 browser, [entry["source"] for entry in records])
             return {
                 "label": manifest["label"], "selected": manifest["selected"],
+                "exportNodeId": node_id,
                 "matched": manifest.get("matched", {}),
                 "items": [{
                     "path": entry["path"], "size": entry["size"],

@@ -10,8 +10,8 @@ GFPAK OPEN recognizes model packages from Pokémon Switch games from **Let's Go 
 
 | Game | Original native format | Browser rendering | Native conversion route |
 | --- | --- | --- | --- |
-| Let's Go Pikachu / Eevee | GFBMDL, GFPAK, GFBANM | Native GFBMDL mesh preview/export; also converted assets | Browser FlatBuffers decoder or desktop importer; original shaders and some GFBANM variants remain unsupported; experimental skeletal clips added |
-| Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Native GFBMDL mesh preview/export; also converted assets | Browser FlatBuffers decoder or desktop importer; original shaders and GFBANM are not yet decoded |
+| Let's Go Pikachu / Eevee | GFBMDL, GFPAK, GFBANM | Native GFBMDL mesh preview/export; also converted assets | Built-in FlatBuffers decoder; original shaders and some GFBANM variants remain unsupported; experimental skeletal clips added |
+| Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Native GFBMDL mesh preview/export; also converted assets | Built-in FlatBuffers decoder; original shaders and GFBANM are not yet decoded |
 | New Pokémon Snap | NUSRCMDLB / NUTEXB | Converted 3D assets | Game-specific extraction required |
 | Brilliant Diamond / Shining Pearl | Unity assets and asset bundles | Converted 3D assets | AssetStudio / AssetRipper to FBX/OBJ/GLB |
 | Legends: Arceus | GFPAK / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native experimental Trinity decoder; Oodle GFPAKs still blocked |
@@ -62,9 +62,11 @@ The desktop application opens one studio window with the 3D viewer, GFPAK Inspec
 3. Use **Export GLB** in the viewer to save decoded geometry, skeleton, compatible animation clips and textures. **Export Pokémon** saves the associated original assets together in a ZIP.
 
 The portable EXE includes its runtime dependencies. Building it from GitHub with `run.bat` still requires Python and Node.js. Full fidelity for every game/version is not yet supported: unsupported formats report decoder errors rather than requiring another app.
-4. Temporary previews are deleted when another preview begins or when the desktop app exits normally. Click **Save GLB** to explicitly copy the cached model to a permanent location (or export in the 3D Viewer tab). Your original input files are never removed.
-5. For supported Trinity GFPAKs, the desktop converter first identifies verified **TRMDL/TRMSH/TRMBF groups from the archive's FNV-1a hashes** without needing a filename dictionary. It then attempts to restore the exact companion filenames by reading strings from the decoded model and verifying their hashes. Unrecognized resources still benefit from an optional gfpak.txt/JSON dictionary.
-6. Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
+The Model Converter fully scans selected folders and GFPAKs, lists every resolved model, and matches companions across subfolders. Each model can be previewed separately. **Export all GLBs in one ZIP** converts sequentially with compatible textures, skeletons and animations; `export-report.json` records any failures without discarding successful exports. Original Pokémon ZIP export follows the exact source selected in either the converter or explorer, including unresolved archive members where available.
+
+Optional model settings retain filename dictionary selection, an additional texture folder, and the animation inclusion switch. These do not require Blender or its importer.
+
+Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
 
 ### Expanded Pokémon Switch archive compatibility (October 2026)
 

@@ -1392,10 +1392,13 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () =>
     canInspectTexture(selected) ? inspectTexture() : preview());
-  window.addEventListener('gfpak-export-pokemon', async () => {
-    if (!previewExportId) return;
+  window.addEventListener('gfpak-export-pokemon', async event => {
+    const sourceKey = event.detail?.key;
+    const nodeId = event.detail?.nodeId || previewExportId;
+    if (!sourceKey && !nodeId) return;
     try {
-      const result = await api.browse_export_pokemon(previewExportId);
+      const result = sourceKey ? await api.source_export_pokemon(sourceKey) :
+        await api.browse_export_pokemon(nodeId);
       if (result) showNotice('Pokémon ZIP saved: '+result);
     } catch(error) {showNotice(error.message || String(error),true);}
   });

@@ -22,6 +22,7 @@ const state = {
   project: null,
   exportProject: null,
   desktopSource: false,
+  desktopExport: null,
   archive: null,
   dictionary: new Map(),
   loaded: null,
@@ -729,7 +730,7 @@ function attachEvents() {
   el('exportPokemonButton').addEventListener('click', async () => {
     if (!state.loaded || state.busy) return;
     if (state.desktopSource) {
-      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon'));
+      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail: state.desktopExport}));
       return;
     }
     busy(true,'Exporting Pokémon','Packing original model and companion files…');
@@ -790,7 +791,7 @@ async function openFastDesktopPreview(detail) {
     const cached = new Map();
     const project = {
       label: manifest.label || 'Game File Explorer',
-      items: manifest.items.map(item => {
+      items: manifest.items.filter(item => manifest.animations !== false || !/\.(tranm|gfbanm|tracm)$/i.test(item.path)).map(item => {
         const getBytes = async () => {
           if (!cached.has(item.url)) {
             cached.set(item.url, (async () => {
@@ -822,6 +823,7 @@ async function openFastDesktopPreview(detail) {
     const result = await loadModel(project, manifest.selected,
       message => log(message), {fastPreview:true});
     state.exportProject = project; state.desktopSource=true;
+    state.desktopExport = {key: manifest.exportKey || null, nodeId: manifest.exportNodeId || null};
     setModel(result, extension(manifest.selected), project.label);
     // The desktop explorer is a separate tab; make the loaded 3D viewport
     // actually visible instead of leaving it obscured behind File Explorer.
@@ -836,7 +838,7 @@ async function openFastDesktopPreview(detail) {
     finished(true);
     completeFastPreview(result);
   } catch (error) {
-    log('Fast preview: ' + (error.message || String(error)) + '. Trying compatible fallback.', 'info');
+    log('Fast preview: ' + (error.message || String(error)) + '. Built-in preview unavailable.', 'info');
     finished(false, error.message || String(error));
   } finally {
     busy(false);

@@ -99,6 +99,7 @@ class _StandaloneNCA:
 
 class AssetBrowser:
     def __init__(self, nca_workspace: Path | None = None):
+        self.filename_dictionary = None
         self._nodes: dict[str, dict] = {}
         self._keys: dict[tuple, str] = {}
         self._archives: dict[Path, GFPak] = {}
@@ -218,7 +219,7 @@ class AssetBrowser:
         if path not in self._inferred:
             archive = self._archive(path)
             names = infer_model_resources(archive.resources, path.stem)
-            dictionary = discover_dictionary(path)
+            dictionary = self.filename_dictionary or discover_dictionary(path)
             if dictionary:
                 try:
                     names.update(read_resource_names(archive, HashDictionary(dictionary)))
@@ -1051,7 +1052,7 @@ class AssetBrowser:
         if not models:
             raise ValueError(
                 "No resolved native GFBMDL/TRMDL resource was found. "
-                "The original converter can still attempt this GFPAK.")
+                "Supply a filename dictionary in the optional model settings.")
         selected_index, selected_name = models[0]
         from .pokemon_assets import pokemon_id
         family = pokemon_id(selected_name)
