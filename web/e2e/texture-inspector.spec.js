@@ -34,6 +34,10 @@ test('standalone BNTX surfaces open and export a real PNG',async({page})=>{
   await expect(page.locator('#textureChoice')).toBeVisible();
   await expect(page.locator('#textureCount')).toContainText('1 file');
   await page.locator('#inspectSelectedTexture').click();
+  await expect.poll(async () =>
+    await page.locator('#textureDialog').evaluate(dialog => dialog.open)
+      ? 'open' : 'not open; activity: ' + (await page.locator('#logBody').textContent()).slice(-600),
+    {timeout:8000}).toBe('open');
   await expect(page.locator('#textureDialog')).toBeVisible();
   await expect(page.locator('#textureSourceName')).toContainText('1 texture surface');
   await expect(page.locator('#textureSurface option')).toHaveText('body · 2×2');
