@@ -260,6 +260,47 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(limited["scanned"], 2)
             self.assertTrue(limited["truncated"])
 
+    def test_game_wide_package_catalog_detects_nested_assets_from_nca_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "whole-game.nsp"
+            content = plain_nca([
+                ("pfs", pfs0_files([
+                    ("pokemon/pm0025_00_00.trmdl", b"model"),
+                    ("pokemon/body.bntx", b"texture"),
+                    ("pokemon/idle.tranm", b"animation")
+                ])),
+                ("romfs", romfs_nested())
+            ])
+            package(game, [("program.nca", content)])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            main = browser.open(game)
+            catalog = browser.scan_game_assets(main["id"])
+            self.assertGreaterEqual(catalog["counts"].get("model", 0), 1)
+            self.assertGreaterEqual(catalog["counts"].get("texture", 0), 1)
+            self.assertGreaterEqual(catalog["counts"].get("animation", 0), 1)
+            self.assertGreaterEqual(catalog["counts"].get("model archive", 0), 1)
+            self.assertTrue(catalog["unresolved"])  # An actual nested GFPAK is opaque.
+            self.assertEqual(catalog["scanned_ncas"], 1)
+            self.assertEqual(catalog["total_ncas"], 1)
+            self.assertGreater(catalog["scanned"], 3)
+            self.assertTrue(all(browser.node(row["id"]) for row in catalog["assets"]))
+            limited = browser.scan_game_assets(main["id"], limit=2)
+            self.assertTrue(limited["truncated"])
+            self.assertLessEqual(limited["scanned"], 2)
+
+    def test_package_locked_sections_are_marked_unresolved_instead_of_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "locked-game.nsp"
+            package(game, [("program.nca", b"not an NCA")])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            opened = browser.open(game)
+            catalog = browser.scan_game_assets(opened["id"])
+            self.assertTrue(catalog["unresolved"])
+            self.assertEqual(catalog["counts"], {})
+            self.assertTrue(catalog["warnings"])
+
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
