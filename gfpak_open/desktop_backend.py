@@ -333,6 +333,22 @@ class DesktopAPI:
             return {"root": root, "directory": str(self._browser.root_path),
                     "children": self._browser.children(root["id"])}
 
+    def browse_attach_base_nca(self, node_id: str):
+        """Choose an original NCA as a local read-only update base."""
+        with self._lock:
+            browser = self._browser
+            node = browser.node(node_id)
+            if node["kind"] != "nspfile" or not node["name"].lower().endswith((".nca", ".ncz")):
+                raise ValueError("Select an NCA package entry first")
+        selected = self._dialog("file", "Choose the matching original base NCA",
+                                ("Nintendo content archive (*.nca)",))
+        if not selected:
+            return None
+        with self._lock:
+            if browser is not self._browser:
+                raise ValueError("Opened package changed; select the NCA again")
+            return browser.attach_base_nca(node_id, selected[0])
+
     def browse_attach_extracted_nca(self, node_id: str):
         """Associate an existing extracted folder with the selected NCA."""
         with self._lock:
