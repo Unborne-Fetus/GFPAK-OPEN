@@ -504,6 +504,47 @@ class NativeNCAIntegrationTests(unittest.TestCase):
                 self.assertEqual(zipped.read("pm0025_00_00.trmdl"),
                                  b"model descriptor")
 
+    def test_raw_zip_preserves_packed_nca_gfpak_members_when_decoder_unavailable(self):
+        """A missing Oodle decoder cannot discard original compressed bytes."""
+        from dataclasses import replace
+        from gfpak_open.core import GFPakError
+        import json
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "romfs.nsp"
+            package(game, [("program.nca", plain_nca([
+                ("romfs", romfs_nested(native_gfpak_fixture()))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(game)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            node = next(item for item in catalog["assets"]
+                        if item["name"] == "pm0025_00_00.gfpak")
+            archive, names = browser._mounted_gfpak(node["id"])
+            packed_index = next(idx for idx, name in names.items()
+                                if name.endswith(".bntx"))
+            packed_resource = archive.resources[packed_index]
+            archive.resources[packed_index] = replace(packed_resource, compression=3)
+            with patch.object(archive, "read_resource",
+                              side_effect=GFPakError("Oodle decoder missing")):
+                target = browser.export_pokemon(node["id"], root / "stored-assets.zip")
+            with zipfile.ZipFile(target) as zipped:
+                name = names[packed_index] + ".packed"
+                self.assertIn(name, zipped.namelist())
+                self.assertEqual(zipped.read(name),
+                                 archive._range(packed_resource.offset,
+                                                packed_resource.packed_size))
+                manifest = json.loads(zipped.read("raw-assets-manifest.json"))
+                entry = next(item for item in manifest["packedMembers"]
+                             if item["storedPath"] == name)
+                self.assertEqual(entry["compression"], 3)
+                self.assertEqual(entry["decodedSize"], packed_resource.size)
+                self.assertIn("pm0025_00_00.trmdl", zipped.namelist())
+                self.assertNotIn("pokedex3d/regular.glb", zipped.namelist())
+
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
