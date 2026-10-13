@@ -205,6 +205,9 @@ function completeFastPreview(result) {
     if (state.loaded !== result) return;
     result.postLoad().then(() => {
       if (state.loaded !== result) return;
+      // Native BNTX/DDS surfaces are assigned after the first geometry frame.
+      // Re-apply the GPU's strongest supported sampling for full quality.
+      state.stage.refreshTextures();
       state.stage.setAnimations(result.animations);
       refreshAnimationControls(result);
       el('inspectorState').textContent = 'LOADED';
