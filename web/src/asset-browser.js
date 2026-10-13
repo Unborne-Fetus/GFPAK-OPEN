@@ -768,6 +768,7 @@ async function nxLoadDetails(row) {
 }
 
 function select(row) {
+  if (selected?.id !== row?.id) previewExportId = null;
   selected = row;
   const diagnosticPanel = id('assetNcaAutoReport');
   if (diagnosticPanel) {
@@ -787,6 +788,8 @@ function select(row) {
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' :
     canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
   id('assetExportPokemon').disabled = !canPreview(row);
+  const compatibleExport = id('assetExportPokedex3d');
+  if (compatibleExport) compatibleExport.disabled = !canPreview(row);
   id('assetCopyNcaDiagnostics').disabled = !row ||
     !((row.kind === 'nspfile' && /\.(nca|ncz)$/i.test(row.name)) ||
       ['nca_locked', 'nca_section', 'nca_dir', 'nca_file'].includes(row.kind));
@@ -1244,25 +1247,34 @@ async function inspectTexture(row = selected) {
 }
 
 async function fastPreview(manifest) {
-  // Wait for the viewer's async decoder, not just the DOM event dispatch.
-  // Do not launch Blender if genuine native meshes loaded successfully.
+  // Some third-party native model decoders can stall on a particular resource.
+  // Always settle the explorer request rather than leaving Preview disabled.
   return new Promise(resolve => {
     let settled = false;
-    const finish = (success, reason = '') => {
+    const watchdog = window.setTimeout(() => finish(false,
+      'The native 3D decoder did not complete. The original assets can still be exported.'), 120000);
+    function finish(success, reason = '') {
       if (settled) return;
       settled = true;
+      window.clearTimeout(watchdog);
       resolve({success: !!success, reason});
-    };
+    }
     window.dispatchEvent(new CustomEvent('gfpak-fast-native-preview', {
       detail: {manifest, finish}
     }));
-    // If the viewer is not installed (e.g. older desktop builds), fall back.
     if (!window.gfpakFastPreviewAvailable) finish(false, 'Native viewer unavailable');
   });
 }
 
 async function preview(row = selected, forExport = false) {
-  if (!canPreview(row) || previewInFlight) return false;
+  if (!canPreview(row)) {
+    if (forExport) throw new Error('Select a Pokémon model or GFPAK archive first.');
+    return false;
+  }
+  if (previewInFlight) {
+    if (forExport) throw new Error('A 3D preview is already loading.');
+    return false;
+  }
   previewInFlight = true;
   id('assetPreview').disabled = true;
   try {
@@ -1271,30 +1283,45 @@ async function preview(row = selected, forExport = false) {
       (row.kind === 'nca_file' && /\.gfpak$/i.test(row.name)) ||
       (/\.(glb|gltf|fbx|obj|dae|trmdl|trmsh|gfbmdl)$/i.test(row.name) &&
        ['file', 'zipfile', 'nca_file'].includes(row.kind)));
+    let reason = 'No native preview reader supports this format.';
     if (direct && typeof api.browse_fast_preview === 'function') {
       try {
-        showNotice('Fast preview: reading only the selected model and matching companions…');
+        showNotice('Loading the selected model and its matching textures and animations…');
         const manifest = await api.browse_fast_preview(row.id);
         const outcome = await fastPreview(manifest);
         if (outcome.success) {
           previewExportId = row.id;
-          showNotice('Native 3D preview loaded without Blender or temporary conversion.');
+          showNotice('Native 3D preview loaded. Pokédex 3D Max ZIP export is available.');
           return true;
         }
-        showNotice('Native decoder unavailable (' + outcome.reason +
-          '); trying Blender only for this unsupported model.');
+        reason = outcome.reason || 'The native decoder could not build a 3D mesh.';
       } catch (error) {
-        showNotice('Fast preview unavailable (' + (error.message || error) +
-          '); trying the existing converter.');
+        reason = error.message || String(error);
       }
     }
-    if (forExport) throw new Error('The native decoder could not load this Pokémon for GLB export.');
-    showNotice('Preparing fallback 3D preview with the local converter…');
+    // An unlocked NCA/GFPAK is already readable. Falling back to the external
+    // converter re-extracts huge sections and can run indefinitely; it cannot
+    // repair a native decoding error. Preserve the actual failure and keep raw
+    // ZIP export independent of rendering.
+    const message = '3D preview unavailable: ' + reason +
+      '. You can still use Export Raw Asset ZIP without a preview.';
+    if (forExport) throw new Error(message);
+    if (['nca_file', 'nca_gfpak_resource'].includes(row.kind)) {
+      showNotice(message, true);
+      return false;
+    }
+    // Legacy loose files retain their opt-in conversion path where available.
+    showNotice('Native decoder unavailable: ' + reason +
+      '. Preparing the local converter for this loose model…');
     const started = await api.preview_browser_item(row.id);
     if (started !== false) window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
     else showNotice('A conversion is already running.', true);
-  } catch (error) { showNotice(error.message || String(error), true); }
-  finally {
+    return started !== false;
+  } catch (error) {
+    showNotice(error.message || String(error), true);
+    if (forExport) throw error;
+    return false;
+  } finally {
     previewInFlight = false;
     id('assetPreview').disabled = !canPreview(selected) && !canInspectTexture(selected);
   }
@@ -1486,19 +1513,49 @@ function initialize() {
       detail?.finish?.(error.message || String(error));
     }
   });
+  // Two independent exports: original files never require the 3D decoder.
+  const compatibleButton = document.createElement('button');
+  compatibleButton.id = 'assetExportPokedex3d';
+  compatibleButton.type = 'button';
+  compatibleButton.className = 'button button-secondary';
+  compatibleButton.textContent = '↓ EXPORT POKÉDEX 3D MAX ZIP';
+  compatibleButton.disabled = true;
+  id('assetExportPokemon').after(compatibleButton);
+  id('assetExportPokemon').textContent = '↓ EXPORT RAW ASSET ZIP';
+  id('assetExportPokemon').title =
+    'Export original model, texture, animation, and other archive assets without rendering.';
   id('assetExportPokemon').addEventListener('click', async () => {
-    if (!selected) return;
+    if (!canPreview(selected)) return;
     const row = selected;
-    id('assetExportPokemon').disabled = true;
-    showNotice('Preparing the Pokémon model, textures and animations for export…');
+    const button = id('assetExportPokemon');
+    button.disabled = true;
+    showNotice('Exporting original Pokémon assets directly from the game files. No 3D preview required…');
     try {
-      if (!await preview(row,true)) throw new Error('Could not prepare this Pokémon for export.');
-      await new Promise((resolve,reject)=>window.dispatchEvent(
-        new CustomEvent('gfpak-request-pokemon-export',{detail:{
-          finish:error=>error ? reject(new Error(error)) : resolve()
+      const result = await api.browse_export_pokemon(row.id);
+      showNotice(result ? 'Raw asset ZIP saved: ' + result : 'Raw asset export cancelled.');
+    } catch (error) {
+      showNotice('Raw asset export failed: ' + (error.message || String(error)), true);
+    } finally {
+      button.disabled = !canPreview(selected);
+    }
+  });
+  compatibleButton.addEventListener('click', async () => {
+    if (!canPreview(selected)) return;
+    const row = selected;
+    compatibleButton.disabled = true;
+    showNotice('Preparing a rendered 3D model for Pokédex 3D Max ZIP…');
+    try {
+      if (!await preview(row, true)) throw new Error(
+        'Native preview could not build this model. Use Export Raw Asset ZIP for the original files.');
+      await new Promise((resolve, reject) => window.dispatchEvent(
+        new CustomEvent('gfpak-request-pokemon-export', {detail: {
+          finish: error => error ? reject(new Error(error)) : resolve()
         }})));
-    } catch (error) { showNotice(error.message || String(error), true); }
-    finally { id('assetExportPokemon').disabled = !canPreview(selected); }
+    } catch (error) {
+      showNotice('Pokédex 3D Max ZIP unavailable: ' + (error.message || String(error)), true);
+    } finally {
+      compatibleButton.disabled = !canPreview(selected);
+    }
   });
   id('assetCopyNcaDiagnostics').addEventListener('click', copyNcaDiagnostics);
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
