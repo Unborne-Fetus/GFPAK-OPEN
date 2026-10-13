@@ -306,7 +306,7 @@ async function openInput(files,folder=false){
     const support=gameCapabilities(detected.id);
     const detectedGame=detected.id==='pla'?'la':detected.id;
     const chosenGame=document.getElementById('gameSource')?.value;
-    if(state.pokedexGameSelect && POKEDEX_GAMES.includes(chosenGame)){
+    if(state.pokedexGameSelect && POKEDEX_GAMES.includes(chosenGame==='pla'?'la':chosenGame)){
       state.pokedexGameSelect.value=chosenGame==='pla'?'la':chosenGame;
     }else if(state.pokedexGameSelect && POKEDEX_GAMES.includes(detectedGame)){
       state.pokedexGameSelect.value=detectedGame;
@@ -637,32 +637,56 @@ async function preview(node){
     notice('Opening '+node.name+' in 3D · '+(matched.length-1)+' linked companions.');
   }catch(e){notice('Preview could not start: '+(e.message||String(e)),true);}
 }
+function rawArchiveMembers(archive) {
+  const members=[];
+  const pending=[archive];
+  while(pending.length){
+    const folder=pending.pop();
+    if(folder.children===null){
+      members.push(folder);continue;
+    }
+    for(const child of folder.children.values())pending.push(child);
+  }
+  return members;
+}
 async function exportAssetPack(node){
-  if(!node || !['model','asset package'].includes(node.category))return;
+  if(!node||!['model','asset package'].includes(node.category))return;
   try{
-    // Export operates on original file sources and never invokes the renderer.
-    const matches=node.kind==='gfpak'?[node]:matchingAssets(node);
+    // Unlike the converted Pokédex ZIP, this export never invokes loadModel,
+    // exportGlb, the canvas renderer, or a 3D preview.
+    if(node.kind==='gfpak')await expand(node);
+    const matches=node.kind==='gfpak'?rawArchiveMembers(node):matchingAssets(node);
+    if(!matches.length)
+      throw Error('This archive has no indexed resources. Open the GFPAK or load its hash dictionary first.');
     const total=matches.reduce((n,item)=>n+item.size,0);
-    if(total>MAX_EXPORT)throw Error('Raw asset ZIP exceeds the current 300 MiB memory limit; use smaller assets.');
-    const zip=new JSZip();
+    if(total>MAX_EXPORT)
+      throw Error('Raw asset ZIP exceeds the current 300 MiB browser memory limit; select fewer resources.');
+    const zip=new JSZip(),used=new Set();
     for(const item of matches){
       const source=await ensureSource(item);
-      const path=item.path.slice(state.root.path.length+1);
-      zip.file(path,await source.read(0,item.size));
+      const relative=node.kind==='gfpak'?
+        item.path.slice(node.path.length+1):
+        item.path.slice(state.root.path.length+1);
+      const path=relative.replaceAll('\\','/');
+      if(!path||path.startsWith('/')||/^[a-z]:/i.test(path)||
+         path.split('/').some(part=>part==='..'||part==='.'||!part))
+        throw Error('Unsafe archived filename: '+path);
+      if(used.has(path.toLowerCase()))
+        throw Error('Conflicting archived filename: '+path);
+      used.add(path.toLowerCase());
+      // Store original *decoded* resources (including unidentified hashes),
+      // preserving their names exactly as the desktop export does.
+      zip.file(path,await source.read(0,source.size));
     }
-    zip.file('gfpak-browser-assets.json',JSON.stringify({
-      format:'gfpak-browser-assets',version:1,source:state.sourceName,
-      selected:node.path,files:matches.map(n=>n.path),
-      note:'Contains original assets only. The 3D viewer exports reconstructed GLB separately.'
-    },null,2));
-    const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');
-    a.href=url;a.download=node.name.replace(/\.[^.]+$/,'')+'-assets.zip';a.click();
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download=node.name.replace(/\.[^.]+$/,'')+'-assets.zip';a.click();
     setTimeout(()=>URL.revokeObjectURL(url),30000);
-    notice('Exported '+matches.length+' original asset files as ZIP. Use the 3D viewer for GLB export.');
-  }catch(e){notice('Asset ZIP failed: '+(e.message||String(e)),true);}
+    notice('Exported '+matches.length+' original asset files as ZIP (no rendering). '+
+      'For an importable Pokédex 3D Max model use the separate Pokédex ZIP button.');
+  }catch(e){notice('Raw asset ZIP failed: '+(e.message||String(e)),true);}
 }
-
 
 async function exportPokedex3dPack(node){
   if(!node||state.zipExporting)return;
