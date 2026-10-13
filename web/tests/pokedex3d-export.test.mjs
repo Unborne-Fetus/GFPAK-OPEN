@@ -95,6 +95,7 @@ test('Pokédex ZIP includes original textures/skeleton/animations + import-ready
 test('PLA aliases to la and source Pokémon model identities remain game-internal',()=>{
   assert.equal(normalizeExportGame('pla'),'la');
   assert.equal(modelIdentityFromPath('pm0942_00_00/body.trmdl').modelId,942);
+  assert.equal(modelIdentityFromPath('pm0212_00_00.gfpak/body.trmdl').modelId,212);
   assert.throws(()=>modelIdentityFromPath('pm0942/pm0025.trmdl'),/unambiguous/);
 });
 test('ZIP export blocks unsafe/duplicate original entries and unknown game',async()=>{
