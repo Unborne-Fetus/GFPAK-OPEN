@@ -1054,8 +1054,7 @@ async function applyOpenedSource(result) {
     nxResetTree(result.root, result.children);
     id('assetAttach').disabled = result.root.kind !== 'nsp';
     const nativeArchive = ['nsp', 'xci'].includes(result.root.kind);
-    id('ncaReaderBar').hidden = !nativeArchive;
-    if (nativeArchive) refreshNCAReader();
+    void refreshNCAReader();
     id('assetSearch').value = '';
     id('assetCategory').value = 'all';
     selectAssetClass('all');
@@ -1370,6 +1369,8 @@ function initialize() {
   initialized = true;
   api = window.pywebview.api;
   id('tabAssets').hidden = false;
+  id('ncaReaderBar').hidden = false;
+  void refreshNCAReader();
   id('tabAssets').addEventListener('click', openTab);
   for (const tab of ['tabViewer', 'tabArchive', 'tabConverter']) {
     id(tab).addEventListener('click', () => {
