@@ -49,3 +49,70 @@ export function inferGfpakModelNames(resources,filename='model.gfpak') {
   }
   return result;
 }
+
+const REFERENCE=/[A-Za-z0-9_][A-Za-z0-9_./-]{2,190}\.(?:trmdl|trmsh|trmbf|trmtr|trskl|trmmt|tranm|gfbanm|gfbmdl|tracn|tracp|tracr|tracs|tracm|traef|tracl|tralk|trslp|trtex|bntx|png|dds|tga|jpeg|jpg|webp)/gi;
+const DESCRIPTOR=/\.(trmdl|trmsh|trmtr|trskl|gfbmdl)$/i;
+const BASIS=[0xcbf29ce484222325n,0xcbf29ce484222645n];
+function fnv64(value,seed) {
+  let hash=seed;
+  for(const byte of new TextEncoder().encode(value))
+    hash=((hash^BigInt(byte))*0x100000001b3n)&MASK;
+  return hash.toString(16).padStart(16,'0');
+}
+/**
+ * Port desktop resource_discovery.py: reveal exact companion filenames only
+ * after an embedded native FlatBuffer reference matches a GFPAK hash.
+ * Decodes at most 24 MiB of previously discovered descriptor files. Oodle
+ * and corrupted descriptors remain unknown rather than wrongly named.
+ */
+export async function discoverGfpakReferenceNames(archive,initial,readResource){
+  const names=new Map(initial), hashOwners=new Map();
+  for(const resource of archive.resources){
+    for(const hash of [resource.pathHash,resource.fileHash]){
+      if(!hash)continue;
+      let indices=hashOwners.get(hash);
+      if(!indices){indices=new Set();hashOwners.set(hash,indices);}
+      indices.add(resource.index);
+    }
+  }
+  const queue=archive.resources.filter(res=>
+    DESCRIPTOR.test(names.get(res.index)||'')).map(res=>res.index);
+  const seen=new Set();
+  let budget=24*1024*1024;
+  while(queue.length&&seen.size<96&&budget>0){
+    const index=queue.shift();
+    if(seen.has(index))continue;
+    seen.add(index);
+    const res=archive.resources[index];
+    if(!res||res.size>8*1024*1024||res.size>budget)continue;
+    budget-=res.size;
+    let raw;
+    try{raw=await readResource(res);}
+    catch{continue;}
+    const bytes=raw instanceof Blob?new Uint8Array(await raw.arrayBuffer()):
+      raw instanceof Uint8Array?raw:new Uint8Array(raw);
+    const content=new TextDecoder('latin1').decode(bytes);
+    const references=new Set(content.match(REFERENCE)||[]);
+    for(const reference of references){
+      const path=reference.replaceAll('\\','/');
+      const parts=path.split('/');
+      if(parts.some(p=>!p||p==='.'||p==='..')||parts.length>32)continue;
+      const basename=parts.at(-1);
+      const matches=new Set();
+      for(const spelling of new Set([path,basename]))for(const seed of BASIS){
+        const hash=fnv64(spelling,seed);
+        for(const owner of hashOwners.get(hash)||[])matches.add(owner);
+      }
+      if(matches.size!==1)continue;
+      const owner=[...matches][0];
+      const previous=names.get(owner)||'';
+      // Proven original filenames beat hash-suffix aliases; no duplicate paths.
+      if(previous===path)continue;
+      if([...names.entries()].some(([id,name])=>id!==owner&&name.toLowerCase()===path.toLowerCase()))
+        continue;
+      names.set(owner,path);
+      if(DESCRIPTOR.test(path)&&!seen.has(owner))queue.push(owner);
+    }
+  }
+  return names;
+}
