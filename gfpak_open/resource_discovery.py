@@ -105,6 +105,8 @@ def _native_model_type(data):
         # Root slot 8 references mesh tables, each of which contains polygon,
         # vertex declaration and vertex byte vectors (slots 0, 1, 2).
         meshes = entries(root, 8, 10000)
+        if not meshes:
+            return None
         mesh = meshes[0]
         attributes = entries(mesh, 1, 64)
         if not attributes:
