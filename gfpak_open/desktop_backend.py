@@ -87,9 +87,11 @@ class DesktopAPI:
         # deleted, continue in plaintext/metadata-only mode instead of making
         # the entire app fail to start.
         folder_key = local_keys_folder() / "prod.keys"
+        folder_title = local_keys_folder() / "title.keys"
         selected = str(folder_key) if folder_key.is_file() else (self.settings.get("nca_keyset") or "")
+        title_selected = str(folder_title) if folder_title.is_file() else ""
         try:
-            self._browser.configure_nca_reader(selected)
+            self._browser.configure_nca_reader(selected, title_selected)
             if selected and self.settings.get("nca_keyset") != selected:
                 self.settings["nca_keyset"] = selected
                 self._save()
@@ -103,6 +105,8 @@ class DesktopAPI:
             return {
                 "reader": "Built-in NCA3 / RomFS / ExeFS",
                 "keyset": keyset.name if keyset and keyset.is_file() else "",
+                "title_keys": bool(self._browser._nca_sections.title_keyset and
+                                   self._browser._nca_sections.title_keyset.is_file()),
                 "ready": True,
                 "has_keys": self._browser._nca_sections.key_ready(),
                 "note": ("No external NCA reader executable required. "
@@ -121,7 +125,7 @@ class DesktopAPI:
             subprocess.Popen(["open", str(folder)])
         else:
             subprocess.Popen(["xdg-open", str(folder)])
-        return {"folder": str(folder), "expected_file": "prod.keys"}
+        return {"folder": str(folder), "expected_files": ["prod.keys", "title.keys"]}
 
     def browse_refresh_keys(self):
         with self._lock:
