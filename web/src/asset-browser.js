@@ -1295,7 +1295,10 @@ async function preview(row = selected, forExport = false) {
         const outcome = await fastPreview(manifest);
         if (outcome.success) {
           previewExportId = row.id;
-          showNotice('Native 3D preview loaded. Pokédex 3D Max ZIP export is available.');
+          showNotice(manifest.related_model_archive
+            ? 'Native 3D preview loaded using model archive ' +
+              manifest.related_model_archive + ' and related assets. Pokédex ZIP export is available.'
+            : 'Native 3D preview loaded. Pokédex 3D Max ZIP export is available.');
           return true;
         }
         reason = outcome.reason || 'The native decoder could not build a 3D mesh.';
