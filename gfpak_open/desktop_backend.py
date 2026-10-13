@@ -580,7 +580,26 @@ class DesktopAPI:
                                       json.dumps(child.get("capabilities", {}), sort_keys=True))
             except (OSError, RuntimeError, ValueError) as error:
                 report.append("Section scan error: " + str(error))
-            report.append("No raw game content, keys, or secret values included.")
+            # Independently inspect the decoded header even when the section
+            # reader stops because the rights-managed content key is absent.
+            # Only 0xC00 bytes are read. Never put raw rights IDs or keys in UI.
+            try:
+                from .nca_native import inspect_nca3_entry
+                if parent["name"].lower().endswith(".ncz"):
+                    analyzer = self._browser._ncz_restored.get(parent["id"])
+                    index = 0
+                    if analyzer is None:
+                        raise ValueError("Compressed NCA was not restored for header inspection")
+                else:
+                    analyzer = (self._browser._nca_sources.get(parent["id"]) or
+                                self._browser.nsp_reader(Path(parent["path"])))
+                    index = parent["index"]
+                metadata = inspect_nca3_entry(
+                    analyzer, index, self._browser._nca_sections._keys)
+                report.append("Header inspection: " + json.dumps(metadata, sort_keys=True))
+            except (OSError, RuntimeError, ValueError) as error:
+                report.append("Header inspection error: " + str(error))
+            report.append("No raw game content, raw rights IDs, keys, or secret values included.")
             return "\n".join(report)
 
     def browse_item_details(self, node_id: str):
