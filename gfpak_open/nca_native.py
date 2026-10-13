@@ -572,6 +572,7 @@ class NativeSection:
         """Describe NCA storage features without pretending they are decoded."""
         return {
             "section": self.number, "encryption": self.encryption,
+            "header_probe_status": self.probe_filesystem_header()["status"],
             "filesystem": "RomFS" if self.fs_type == 0 else
                           "PartitionFS" if self.fs_type == 1 else "Unknown",
             "update_patch": bool(self.patch_indirect_size or self.patch_crypto_size or
