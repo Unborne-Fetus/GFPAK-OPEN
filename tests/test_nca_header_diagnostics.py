@@ -80,16 +80,21 @@ class NCAHeaderDiagnosticsTests(unittest.TestCase):
             self.assertEqual(info["nca_magic"], "NCA3")
             self.assertEqual(path.stat().st_size, 0xC00)
 
-    def test_regular_reader_uses_same_header_decoder(self):
+    def test_regular_reader_rejects_empty_nca_but_shared_decoder_accepts_header(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "sample.nsp"
-            path.write_bytes(nca3_header(with_section=False))
+            raw = nca3_header(with_section=False)
+            path.write_bytes(raw)
             entry = SimpleNamespace(name="sample.nca", offset=0, size=0xC00)
             analyzer = SimpleNamespace(path=path, get=lambda _: entry)
-            reader = NativeNCA(analyzer, 0, Keyset(None))
-            self.assertTrue(reader.plaintext)
-            self.assertEqual(reader.header_tweak, "none")
-            self.assertEqual(reader.sections, {})
+            header, plaintext, tweak = decode_nca3_header(raw, Keyset(None))
+            self.assertEqual(header, raw)
+            self.assertTrue(plaintext)
+            self.assertEqual(tweak, "none")
+            # Metadata-only inspection can recognize the header, but the
+            # regular reader must not pretend an NCA has usable filesystems.
+            with self.assertRaisesRegex(NativeNCAError, "readable filesystem sections"):
+                NativeNCA(analyzer, 0, Keyset(None))
 
 
 if __name__ == "__main__":
