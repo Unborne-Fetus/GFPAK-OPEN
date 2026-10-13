@@ -5,7 +5,7 @@
  */
 import JSZip from 'jszip';
 import {parseGfpakFile, extractResourceAsync, resolvedName} from './gfpak.js';
-import {inferGfpakModelNames} from './gfpak-model-inference.js';
+import {inferGfpakModelNames,discoverGfpakReferenceNames} from './gfpak-model-inference.js';
 import {decodeNcaHeader,deriveNcaSectionKeys,makeNcaSectionSource} from './browser-nca-crypto.js';
 
 const utf8 = new TextDecoder('utf-8', {fatal:true});
@@ -145,11 +145,18 @@ export async function openZip(blob) {
 export async function openGfpak(blob, dictionary=new Map(), filename=blob?.name||'archive.gfpak') {
   const archive=await parseGfpakFile(blob,filename);
   const inferred=inferGfpakModelNames(archive.resources,archive.filename);
+  // Honor the user's local hash dictionary, then follow verified descriptors
+  // for exact mesh/material/skeleton/texture filenames like the desktop app.
+  const named=new Map(inferred);
+  for(const res of archive.resources){
+    const explicit=resolvedName(res,dictionary);
+    if(explicit)named.set(res.index,explicit);
+  }
+  const resolved=await discoverGfpakReferenceNames(
+    archive,named,res=>extractResourceAsync(archive,res));
   return archive.resources.map(res=>{
     const fromDictionary=resolvedName(res,dictionary);
-    // Inference reproduces the desktop's proven TRMDL/TRMSH/TRMBF hash trio,
-    // never claims to recover the actual filename or arbitrary missing type.
-    const found=fromDictionary||inferred.get(res.index)||null;
+    const found=fromDictionary||resolved.get(res.index)||null;
     const fallback='unresolved/'+res.pathHash+'.bin';
     const name=found && found.split('/').every(part=>nameSafe(part)) ? found : fallback;
     return {
