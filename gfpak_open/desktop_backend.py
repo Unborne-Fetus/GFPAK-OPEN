@@ -469,7 +469,14 @@ class DesktopAPI:
                 raise ValueError("Package changed; select the file again")
         return str(browser.export_item(node_id, Path(selected[0]), packed=packed))
 
-    def browse_export_pokemon(self, node_id: str):
+    def browse_export_pokemon(self, node_id: str, glb_base64: str | None = None,
+                              metadata: dict | None = None):
+        converted = None
+        if glb_base64 is not None:
+            import base64
+            if not isinstance(glb_base64, str) or len(glb_base64) > 360 * 1024 * 1024:
+                raise ValueError('Converted Pokémon model exceeds the export size limit')
+            converted = base64.b64decode(glb_base64, validate=True)
         with self._lock:
             browser = self._browser
             node = browser.node(node_id)
@@ -481,7 +488,8 @@ class DesktopAPI:
         with self._lock:
             if browser is not self._browser:
                 raise ValueError('Package changed; select the Pokémon again')
-        return str(browser.export_pokemon(node_id, Path(selected[0])))
+        return str(browser.export_pokemon(node_id, Path(selected[0]),
+                                         converted_glb=converted, metadata=metadata))
 
     def browse_asset_family(self, node_id: str):
         with self._lock:

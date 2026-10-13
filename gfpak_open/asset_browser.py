@@ -740,8 +740,32 @@ class AssetBrowser:
                 raise
         return dest
 
-    def export_pokemon(self, id_: str, target: str | Path) -> Path:
+    def export_pokemon(self, id_: str, target: str | Path, *,
+                       converted_glb: bytes | None = None, metadata: dict | None = None) -> Path:
         """Stream original model companions into one ZIP, including unknown members."""
+        if converted_glb is not None:
+            # Validate the bridge before writing or replacing an export ZIP.
+            import struct
+            import json
+            if (len(converted_glb) < 20 or len(converted_glb) > 256 * 1024 * 1024 or
+                    struct.unpack_from('<4sII', converted_glb) !=
+                    (b'glTF', 2, len(converted_glb)) or
+                    converted_glb[16:20] != b'JSON'):
+                raise ValueError('Invalid converted Pokémon GLB')
+            length = struct.unpack_from('<I', converted_glb, 12)[0]
+            if length > len(converted_glb) - 20:
+                raise ValueError('Invalid converted Pokémon GLB JSON length')
+            document = json.loads(converted_glb[20:20+length])
+            if not document.get('meshes'):
+                raise ValueError('Converted Pokémon GLB has no meshes')
+            if (not isinstance(metadata, dict) or metadata.get('format') != 'gfpak-pokemon-export' or
+                    metadata.get('version') != 1 or
+                    metadata.get('convertedModel') != 'pokedex3d/regular.glb' or
+                    not isinstance(metadata.get('selectedModel'), str) or
+                    metadata.get('sourceGame') not in {'lgpe','swsh','la','sv','za','bdsp'}):
+                raise ValueError('Invalid Pokémon export metadata')
+        elif metadata is not None:
+            raise ValueError('Pokémon metadata requires a converted GLB')
         node = self.node(id_)
         kind = node['kind']
         entries = []
@@ -787,6 +811,9 @@ class AssetBrowser:
             with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zipped:
                 for entry in entries:
                     name = safe_path(entry['path']).as_posix()
+                    if converted_glb is not None and name.lower() in {
+                            'pokedex3d/regular.glb', 'gfpak-pokemon-export.json'}:
+                        continue
                     if name.lower() in used:
                         continue
                     used.add(name.lower())
@@ -798,6 +825,9 @@ class AssetBrowser:
                             written += len(chunk)
                     if written != size:
                         raise ValueError('Asset changed during export: ' + name)
+                if converted_glb is not None:
+                    zipped.writestr('pokedex3d/regular.glb', converted_glb)
+                    zipped.writestr('gfpak-pokemon-export.json', json.dumps(metadata, indent=2))
             os.replace(temporary, destination)
         finally:
             if os.path.exists(temporary):

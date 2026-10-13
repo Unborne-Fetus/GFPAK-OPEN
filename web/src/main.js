@@ -1,6 +1,6 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
-import {exportPokemonZip} from './pokemon-export.js';
+import {exportPokemonZip, pokemonExportMetadata} from './pokemon-export.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -650,6 +650,43 @@ async function exportModel() {
   }
 }
 
+async function preparePokemonExport() {
+  const loaded = state.loaded;
+  if (!loaded) throw new Error('Preview the Pokémon before exporting.');
+  await loaded.postLoad?.();
+  if (state.loaded !== loaded) throw new Error('Model changed during export; try again.');
+  const glb = await exportGlb(loaded.root, loaded.animations);
+  const metadata = pokemonExportMetadata(loaded.selected,currentGame().id,glb);
+  return {glb,metadata};
+}
+
+async function exportPokemon() {
+  if (!state.loaded || state.busy) throw new Error('3D viewer is busy or has no Pokémon loaded.');
+  busy(true,'Exporting Pokémon','Packing model, textures, skeleton and animations…');
+  try {
+    const {glb,metadata} = await preparePokemonExport();
+    if (state.desktopSource) {
+      // Keep the native streaming exporter for all original and unknown assets.
+      const bytes = new Uint8Array(glb);
+      const chunks = [];
+      for (let i=0;i<bytes.length;i+=32768)
+        chunks.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+      await new Promise((resolve,reject) => {
+        window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail:{
+          glbBase64:btoa(chunks.join('')),metadata,
+          finish:(error)=>error ? reject(new Error(error)) : resolve()
+        }}));
+      });
+    } else {
+      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected,
+        {glb,sourceGame:metadata.sourceGame});
+      const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
+      downloadBlob(name,blob,'application/zip');
+      log('Exported '+name+' with original assets and the Pokédex GLB.','success');
+    }
+  } finally {busy(false);}
+}
+
 function addDemo() {
   if (state.busy) return;
   state.project = null;
@@ -727,19 +764,7 @@ function attachEvents() {
   });
   el('exportButton').addEventListener('click', exportModel);
   el('exportPokemonButton').addEventListener('click', async () => {
-    if (!state.loaded || state.busy) return;
-    if (state.desktopSource) {
-      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon'));
-      return;
-    }
-    busy(true,'Exporting Pokémon','Packing original model and companion files…');
-    try {
-      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected);
-      const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
-      downloadBlob(name,blob,'application/zip');
-      log('Exported original Pokémon assets to '+name+'.','success');
-    } catch(error) {errorMessage(error);}
-    finally {busy(false);}
+    try {await exportPokemon();} catch(error) {errorMessage(error);}
   });
   el('tabViewer').addEventListener('click', () => showTab('viewer'));
   el('tabArchive').addEventListener('click', () => showTab('archive'));
@@ -846,6 +871,10 @@ async function openFastDesktopPreview(detail) {
 function start() {
   window.gfpakFastPreviewAvailable = true;
   window.gfpakFastTextureAvailable = true;
+  window.addEventListener('gfpak-request-pokemon-export', event => {
+    exportPokemon().then(()=>event.detail?.finish?.())
+      .catch(error=>event.detail?.finish?.(error.message || String(error)));
+  });
   window.addEventListener('gfpak-fast-native-texture', event => {
     const info = event.detail?.manifest;
     if (!info?.url || !info?.path) {

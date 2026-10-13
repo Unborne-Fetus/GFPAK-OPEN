@@ -1196,8 +1196,8 @@ async function fastPreview(manifest) {
   });
 }
 
-async function preview(row = selected) {
-  if (!canPreview(row) || previewInFlight) return;
+async function preview(row = selected, forExport = false) {
+  if (!canPreview(row) || previewInFlight) return false;
   previewInFlight = true;
   id('assetPreview').disabled = true;
   try {
@@ -1210,11 +1210,11 @@ async function preview(row = selected) {
       try {
         showNotice('Fast preview: reading only the selected model and matching companions…');
         const manifest = await api.browse_fast_preview(row.id);
-        previewExportId = row.id;
         const outcome = await fastPreview(manifest);
         if (outcome.success) {
+          previewExportId = row.id;
           showNotice('Native 3D preview loaded without Blender or temporary conversion.');
-          return;
+          return true;
         }
         showNotice('Native decoder unavailable (' + outcome.reason +
           '); trying Blender only for this unsupported model.');
@@ -1223,6 +1223,7 @@ async function preview(row = selected) {
           '); trying the existing converter.');
       }
     }
+    if (forExport) throw new Error('The native decoder could not load this Pokémon for GLB export.');
     showNotice('Preparing fallback 3D preview with the local converter…');
     const started = await api.preview_browser_item(row.id);
     if (started !== false) window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
@@ -1397,22 +1398,34 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () =>
     canInspectTexture(selected) ? inspectTexture() : preview());
-  window.addEventListener('gfpak-export-pokemon', async () => {
-    if (!previewExportId) return;
+  window.addEventListener('gfpak-export-pokemon', async event => {
+    const detail = event.detail;
+    if (!previewExportId) {
+      detail?.finish?.('Preview the Pokémon before exporting.');
+      return;
+    }
     try {
-      const result = await api.browse_export_pokemon(previewExportId);
+      const result = await api.browse_export_pokemon(previewExportId,
+        detail.glbBase64,detail.metadata);
       if (result) showNotice('Pokémon ZIP saved: '+result);
-    } catch(error) {showNotice(error.message || String(error),true);}
+      else showNotice('Export cancelled.');
+      detail.finish();
+    } catch(error) {
+      showNotice(error.message || String(error),true);
+      detail?.finish?.(error.message || String(error));
+    }
   });
   id('assetExportPokemon').addEventListener('click', async () => {
     if (!selected) return;
     const row = selected;
     id('assetExportPokemon').disabled = true;
-    showNotice('Exporting the Pokémon and its original companion files…');
+    showNotice('Preparing the Pokémon model, textures and animations for export…');
     try {
-      const result = await api.browse_export_pokemon(row.id);
-      if (result) showNotice('Pokémon ZIP saved: ' + result);
-      else showNotice('Export cancelled.');
+      if (!await preview(row,true)) throw new Error('Could not prepare this Pokémon for export.');
+      await new Promise((resolve,reject)=>window.dispatchEvent(
+        new CustomEvent('gfpak-request-pokemon-export',{detail:{
+          finish:error=>error ? reject(new Error(error)) : resolve()
+        }})));
     } catch (error) { showNotice(error.message || String(error), true); }
     finally { id('assetExportPokemon').disabled = !canPreview(selected); }
   });

@@ -1,5 +1,6 @@
 """Read-only game file explorer tests with synthetic user-selected assets."""
 import struct
+import json
 import tempfile
 import unittest
 import zipfile
@@ -61,6 +62,30 @@ def create_pfs0(path):
 
 
 class AssetBrowserTests(unittest.TestCase):
+    def test_pokemon_zip_embeds_bridge_and_preserves_old_zip_on_invalid_glb(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'pm0025_00_00.gfpak'
+            create_resolved_gfpak(source)
+            browser = AssetBrowser()
+            node = browser.open(source)
+            data = json.dumps({'asset': {'version': '2.0'}, 'meshes': [{}]}).encode()
+            data += b' ' * (-len(data) % 4)
+            glb = struct.pack('<4sIIII', b'glTF', 2, 20 + len(data), len(data), 0x4e4f534a) + data
+            metadata = {'format': 'gfpak-pokemon-export', 'version': 1,
+                        'selectedModel': 'pm0025_00_00.trmdl', 'sourceGame': 'la',
+                        'convertedModel': 'pokedex3d/regular.glb'}
+            target = Path(tmp) / 'pokemon.zip'
+            browser.export_pokemon(node['id'], target, converted_glb=glb, metadata=metadata)
+            with zipfile.ZipFile(target) as archive:
+                self.assertEqual(len(archive.namelist()), 7)
+                self.assertEqual(archive.read('pokedex3d/regular.glb'), glb)
+                self.assertEqual(json.loads(archive.read('gfpak-pokemon-export.json')), metadata)
+                self.assertEqual(archive.read('body.bntx'), b'fake BNTX')
+            original = target.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'Invalid converted'):
+                browser.export_pokemon(node['id'], target, converted_glb=b'bad', metadata=metadata)
+            self.assertEqual(target.read_bytes(), original)
+
     def test_pokemon_zip_keeps_original_companions_and_unknown_resources(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'pm0025_00_00.gfpak'

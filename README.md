@@ -23,6 +23,20 @@ GFPAK OPEN recognizes model packages from Pokémon Switch games from **Let's Go 
 
 ## GitHub Pages — web 3D studio
 
+### Export Pokémon to Pokédex 3D Max
+
+Choose the correct source game, preview the Pokémon, then click **Export Pokémon**.
+The ZIP keeps the original model, skeleton, textures and animation companions and
+adds **`pokedex3d/regular.glb`** (the decoded model with embedded textures and
+available animation clips) and **`gfpak-pokemon-export.json`** (versioned source
+game and model information). Export waits for background companion loading.
+The desktop Game File Explorer's **Export Pokémon ZIP** action prepares the
+native preview automatically and adds the same files, without Blender.
+
+In Pokédex 3D Max, select **Import GFPAK Pokémon ZIP** and open this ZIP. The
+Pokédex still validates textures and a usable idle animation; undecodable or
+incomplete source assets do not become complete models merely by exporting.
+
 The sidebar includes a game selector with automatic filename-based suggestions. It supports:
 
 - GLB, GLTF, FBX, OBJ + MTL, DAE, STL, PLY, 3DS, **GFBMDL, TRMDL and TRMSH** model rendering, using actual geometry decoders.
