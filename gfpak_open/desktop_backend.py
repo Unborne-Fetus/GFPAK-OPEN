@@ -597,6 +597,23 @@ class DesktopAPI:
                 metadata = inspect_nca3_entry(
                     analyzer, index, self._browser._nca_sections._keys)
                 report.append("Header inspection: " + json.dumps(metadata, sort_keys=True))
+                probes = metadata.get("filesystem_header_probes", ())
+                invalid = [str(item["section"]) for item in probes
+                           if item["status"].startswith("invalid-decoded-")]
+                valid = [str(item["section"]) for item in probes
+                         if item["status"].startswith("valid-")]
+                if invalid:
+                    report.append(
+                        "Filesystem verdict: decoded filesystem header INVALID for "
+                        "section(s) " + ", ".join(invalid) + ". Ticket/key recognition "
+                        "does not prove correct section decryption. Possible causes: "
+                        "content key mismatch, AES-CTR handling, or incorrect IVFC offset."
+                    )
+                if valid:
+                    report.append(
+                        "Filesystem verdict: recognized filesystem header in "
+                        "section(s) " + ", ".join(valid) + "."
+                    )
             except (OSError, RuntimeError, ValueError) as error:
                 report.append("Header inspection error: " + str(error))
             report.append("No raw game content, raw rights IDs, keys, or secret values included.")
