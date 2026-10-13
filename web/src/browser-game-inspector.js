@@ -54,6 +54,7 @@ function mk(name,options={},parent=null) {
     loader:options.loader||null,loaded:!options.loader,
     error:null, metadata:options.metadata||{},
     lazySource:options.loadSource||null,
+    packedSource:options.loadPackedSource||null,
     path:parent?(parent.path+'/'+name):name
   };
   if(node.children!==null && ['directory','nca_dir','nca_section'].includes(node.kind))
@@ -92,6 +93,7 @@ function recordOption(entry,source){
   return {
     size:entry.size,category:entry.category||categoryOf(entry.name),kind,
     source:source||entry.source||null,loadSource:entry.loadSource||null,
+    loadPackedSource:entry.loadPackedSource||null,
     metadata:{offset:entry.offset,hash:entry.hash,
       compression:entry.compression,packedSize:entry.packedSize},
     folder:['nca','gfpak','zip','package'].includes(kind) ||
@@ -287,7 +289,8 @@ async function openInput(files,folder=false){
     render();
     updateNspDashboard();
     notice('Loaded '+root.name+' · '+state.nodes.length.toLocaleString()+
-      ' known entries. Select a file or expand a folder to inspect it.');
+      ' known entries. Starting read-only asset discovery…');
+    setTimeout(()=>{if(state.root===root&&!state.busy)void scan();},0);
   }catch(e){render();notice('Could not inspect package: '+(e.message||String(e)),true);}
   finally{state.busy=false;}
 }
@@ -439,11 +442,13 @@ function select(node){
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
   byId('assetExportPokemon').disabled=!canPreview(node);
   byId('assetSaveFile').disabled=!node||(!node.source&&!node.lazySource);
-  byId('assetSavePacked').hidden=true;
+  byId('assetSavePacked').hidden=!node?.packedSource;
+  byId('assetSavePacked').disabled=!node?.packedSource;
   byId('assetCopyNcaDiagnostics').disabled=!node||!['nca','nca_section'].includes(node.kind);
   byId('assetThumbnail').hidden=true;
   byId('assetGeneralHex').hidden=true;
   byId('assetFamily').hidden=true;
+  if(node?.category==='model') renderFamily(node);
   byId('assetNcaAutoReport').hidden=true;
   byId('assetFileMetadata').replaceChildren();
   byId('nspSelection').hidden=!node||node.children!==null||(!node.source&&!node.lazySource);
@@ -578,6 +583,43 @@ async function exportAssetPack(node){
     notice('Exported '+matches.length+' original asset files as ZIP. Use the 3D viewer for GLB export.');
   }catch(e){notice('Asset ZIP failed: '+(e.message||String(e)),true);}
 }
+
+async function savePacked(node){
+  if(!node?.packedSource)return;
+  try{
+    const source=await node.packedSource();
+    if(source.size>512*1024*1024)throw Error('Packed extraction limited to 512 MiB');
+    const bytes=await source.read(0,source.size);
+    const blob=new Blob([bytes]);
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=node.name.replace(/\.[^.]+$/,'')+'.packed';
+    a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    notice('Saved packed bytes. Compression was preserved; no decoded model was invented.');
+  }catch(e){notice('Packed extraction failed: '+(e.message||String(e)),true);}
+}
+function renderFamily(model){
+  const files=matchingAssets(model).slice(1);
+  if(!files.length)return;
+  const family=model.name.match(/pm\d{3,5}(?:_\d{2})?/i)?.[0]||'same-folder';
+  byId('assetFamily').hidden=false;byId('assetFamilyId').textContent=family;
+  const counts={};
+  for(const node of files)counts[node.category]=(counts[node.category]||0)+1;
+  const chips=byId('assetFamilyCounts');chips.replaceChildren();
+  for(const [kind,n] of Object.entries(counts)){
+    const chip=document.createElement('span');chip.textContent=kind+': '+n;chips.append(chip);
+  }
+  const list=byId('assetFamilyFiles');list.replaceChildren();
+  for(const node of files.slice(0,40)){
+    const button=document.createElement('button');button.type='button';
+    button.className='nx-companion-entry';button.textContent=node.category+' · '+node.name;
+    button.title=node.path;button.addEventListener('click',()=>select(node));
+    list.append(button);
+  }
+  if(files.length>40){
+    const more=document.createElement('div');more.className='nx-companion-entry';
+    more.textContent='+'+(files.length-40)+' additional companions';list.append(more);
+  }
+}
 async function save(node){
   if(!node)return;
   try{
@@ -710,6 +752,7 @@ function install(){
   byId('assetPreview').addEventListener('click',()=>void preview(state.selected));
   byId('assetExportPokemon').addEventListener('click',()=>void exportAssetPack(state.selected));
   byId('assetSaveFile').addEventListener('click',()=>void save(state.selected));
+  byId('assetSavePacked').addEventListener('click',()=>void savePacked(state.selected));
   byId('nspExtract').addEventListener('click',()=>void save(state.selected));
   byId('nspReadHex').addEventListener('click',async()=>{
     const node=state.selected;if(!node)return;
@@ -745,6 +788,7 @@ function install(){
   const hashesButton=document.createElement('button');hashesButton.type='button';
   hashesButton.className='button button-secondary';hashesButton.textContent='Load GFPAK hash dictionary';
   byId('assetOpenFile').after(hashesButton);
+  byId('assetOpenFile').textContent='Open GFPAK / ZIP / NSP / XCI / NCA';
   hashesButton.addEventListener('click',()=>hashes.click());
   hashes.addEventListener('change',async event=>{
     const file=event.target.files?.[0];if(!file)return;
