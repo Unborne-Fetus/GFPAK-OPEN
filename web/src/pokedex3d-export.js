@@ -14,8 +14,8 @@ export const POKEDEX_GLB_MAX = 256 * 1024 * 1024;
 export const POKEDEX_GL_B_MIN = 1025;
 export const COMPATIBLE_MODEL_SUFFIXES = /\.(glb|gltf|fbx|obj|dae|trmdl|gfbmdl|trmsh)$/i;
 
-const badIdle = /attack|damage|faint|death|down|bind|t[-_ ]?pose/i;
-const goodIdle = /idle|wait|stand|breath|rest|fight[_ -]?a/i;
+const badIdle = /attack|damage|faint|death|down|hit|move|run|walk|jump|bind|t[-_ ]?pose/i;
+const goodIdle = /default(?:idle|wait)|battle(?:idle|wait)|fight[_ -]?a|(?:^|[_-])idle(?:[0-9]*|[_-].*)?$|wait|stand|breath|rest/i;
 const utf8 = new TextDecoder();
 function dataBuffer(data) {
   if(data instanceof ArrayBuffer)return data;
@@ -58,9 +58,14 @@ export function validatePokedexGlb(raw) {
        !Number.isInteger(doc.images[index]?.bufferView))
       throw Error('GLB texture is external or not linked to an embedded image.');
   }
-  if(!doc.materials?.some(mat=>mat?.pbrMetallicRoughness?.baseColorTexture &&
-      Number.isInteger(mat.pbrMetallicRoughness.baseColorTexture.index)))
-    throw Error('Converted GLB has no base-color texture material.');
+  // Match scripts/import_switch_game_assets.py::glb_textures_complete:
+  // every material, not just one, must have a valid base-color texture.
+  if(!Array.isArray(doc.materials)||!doc.materials.length ||
+     doc.materials.some(mat=>{
+       const index=mat?.pbrMetallicRoughness?.baseColorTexture?.index;
+       return !Number.isInteger(index)||index<0||index>=doc.textures.length;
+     }))
+    throw Error('Not every GLB material has a valid embedded base-color texture.');
   const clips=(doc.animations||[]).filter(clip=>
     Array.isArray(clip?.channels)&&clip.channels.length&&
     Array.isArray(clip?.samplers)&&clip.samplers.length)
