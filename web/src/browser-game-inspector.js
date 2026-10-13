@@ -503,7 +503,7 @@ function matchingAssets(model){
   const parent=model.parent;
   const prefix=model.name.replace(/\.[^.]+$/,'').toLowerCase();
   const companions=state.files.filter(other=>{
-    if(other===model||!other.source ||other.children!==null)return false;
+    if(other===model||(!other.source&&!other.lazySource)||other.children!==null)return false;
     if(!['model','mesh','texture','skeleton','animation','material','other'].includes(other.category))
       return false;
     const otherName=other.name.toLowerCase();
@@ -519,8 +519,8 @@ function matchingAssets(model){
 async function preview(node){
   if(!node)return;
   if(node.category!=='model'&&node.category!=='texture')return;
-  await ensureSource(node);
   try{
+    await ensureSource(node);
     if(node.category==='texture'){
       if(node.size>MAX_EXPORT)throw Error('Texture exceeds preview memory cap');
       const bytes=await node.source.read(0,node.size);
@@ -541,7 +541,8 @@ async function preview(node){
       const zip=new JSZip();
       for(const asset of matched){
         const relative=asset.path.slice(state.root.path.length+1);
-        zip.file(relative,await asset.source.read(0,asset.size));
+        const source=await ensureSource(asset);
+        zip.file(relative,await source.read(0,asset.size));
       }
       const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
       const file=new File([blob],'browser-preview.zip',{type:'application/zip'});
@@ -551,9 +552,34 @@ async function preview(node){
     notice('Opening '+node.name+' in 3D · '+(matched.length-1)+' linked companions.');
   }catch(e){notice('Preview could not start: '+(e.message||String(e)),true);}
 }
-async function save(node,packed=false){
-  if(!node?.source)return;
+async function exportAssetPack(node){
+  if(!canPreview(node))return;
   try{
+    const matches=matchingAssets(node);
+    const total=matches.reduce((n,item)=>n+item.size,0);
+    if(total>MAX_EXPORT)throw Error('Raw asset ZIP exceeds 300 MiB limit');
+    const zip=new JSZip();
+    for(const item of matches){
+      const source=await ensureSource(item);
+      const path=item.path.slice(state.root.path.length+1);
+      zip.file(path,await source.read(0,item.size));
+    }
+    zip.file('gfpak-browser-assets.json',JSON.stringify({
+      format:'gfpak-browser-assets',version:1,source:state.sourceName,
+      selected:node.path,files:matches.map(n=>n.path),
+      note:'Contains original assets only. The 3D viewer exports reconstructed GLB separately.'
+    },null,2));
+    const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');
+    a.href=url;a.download=node.name.replace(/\.[^.]+$/,'')+'-assets.zip';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    notice('Exported '+matches.length+' original asset files as ZIP. Use the 3D viewer for GLB export.');
+  }catch(e){notice('Asset ZIP failed: '+(e.message||String(e)),true);}
+}
+async function save(node){
+  if(!node)return;
+  try{
+    await ensureSource(node);
     if(node.size>512*1024*1024)throw Error('Export capped at 512 MiB per file');
     const bytes=await node.source.read(0,node.size);
     const blob=new Blob([bytes]);
@@ -679,20 +705,22 @@ function install(){
   }
   byId('assetScan').addEventListener('click',()=>void scan());
   byId('assetPreview').addEventListener('click',()=>void preview(state.selected));
-  byId('assetExportPokemon').addEventListener('click',()=>void preview(state.selected));
+  byId('assetExportPokemon').addEventListener('click',()=>void exportAssetPack(state.selected));
   byId('assetSaveFile').addEventListener('click',()=>void save(state.selected));
   byId('nspExtract').addEventListener('click',()=>void save(state.selected));
   byId('nspReadHex').addEventListener('click',async()=>{
-    const node=state.selected;if(!node?.source)return;
+    const node=state.selected;if(!node)return;
     try{
+      await ensureSource(node);
       const offset=Number(byId('nspHexOffset').value),length=Number(byId('nspHexLength').value);
       const bytes=await node.source.read(offset,Math.min(length,node.size-offset));
       byId('nspHexDump').textContent=hexDump(bytes,offset);
     }catch(e){notice(e.message||String(e),true);}
   });
   byId('nspHash').addEventListener('click',async()=>{
-    const node=state.selected;if(!node?.source)return;
+    const node=state.selected;if(!node)return;
     try{
+      await ensureSource(node);
       if(node.size>256*1024*1024)throw Error('Browser SHA-256 capped at 256 MiB');
       const bytes=await node.source.read(0,node.size);
       const result=await crypto.subtle.digest('SHA-256',bytes);
@@ -713,7 +741,6 @@ function install(){
   byId('assetBrowser').append(hashes);
   const hashesButton=document.createElement('button');hashesButton.type='button';
   hashesButton.className='button button-secondary';hashesButton.textContent='Load GFPAK hash dictionary';
-  byId('asset-actions-placeholder')?.append(hashesButton);
   byId('assetOpenFile').after(hashesButton);
   hashesButton.addEventListener('click',()=>hashes.click());
   hashes.addEventListener('change',async event=>{
@@ -726,7 +753,6 @@ function install(){
   });
   for(const menu of document.querySelectorAll('#assetBrowser .nx-menu button'))
     menu.addEventListener('click',()=>{for(const parent of document.querySelectorAll('#assetBrowser .nx-menu'))parent.open=false;});
-  byId('assetGuidance')?.replaceChildren();
   // Keep limitations visible rather than incorrectly claiming native decryption.
   const guidance=byId('assetBrowser').querySelector('.asset-guidance');
   if(guidance)guidance.textContent=
