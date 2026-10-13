@@ -5,6 +5,7 @@
  */
 import JSZip from 'jszip';
 import {parseGfpakFile, extractResourceAsync, resolvedName} from './gfpak.js';
+import {inferGfpakModelNames} from './gfpak-model-inference.js';
 import {decodeNcaHeader,deriveNcaSectionKeys,makeNcaSectionSource} from './browser-nca-crypto.js';
 
 const utf8 = new TextDecoder('utf-8', {fatal:true});
@@ -143,8 +144,12 @@ export async function openZip(blob) {
 }
 export async function openGfpak(blob, dictionary=new Map()) {
   const archive=await parseGfpakFile(blob);
+  const inferred=inferGfpakModelNames(archive.resources,archive.filename);
   return archive.resources.map(res=>{
-    const found=resolvedName(res,dictionary);
+    const fromDictionary=resolvedName(res,dictionary);
+    // Inference reproduces the desktop's proven TRMDL/TRMSH/TRMBF hash trio,
+    // never claims to recover the actual filename or arbitrary missing type.
+    const found=fromDictionary||inferred.get(res.index)||null;
     const fallback='unresolved/'+res.pathHash+'.bin';
     const name=found && found.split('/').every(part=>nameSafe(part)) ? found : fallback;
     return {
