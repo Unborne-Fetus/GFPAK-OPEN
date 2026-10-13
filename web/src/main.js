@@ -1,6 +1,7 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
 import {exportPokemonZip, pokemonExportMetadata} from './pokemon-export.js';
+import {validatePokedexGlb} from './pokedex3d-export.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -656,6 +657,11 @@ async function preparePokemonExport() {
   await loaded.postLoad?.();
   if (state.loaded !== loaded) throw new Error('Model changed during export; try again.');
   const glb = await exportGlb(loaded.root, loaded.animations);
+  // The Pokédex importer rejects untextured or non-idle GLBs. Enforce the
+  // exact same requirements for the existing 3D viewer's ZIP export, too.
+  const verified = validatePokedexGlb(glb);
+  log('Pokédex ZIP verified: '+verified.textureCount+' embedded textures and '+
+    verified.animations.length+' real clips (idle: '+verified.idle+').','success');
   const metadata = pokemonExportMetadata(loaded.selected,currentGame().id,glb);
   return {glb,metadata};
 }
