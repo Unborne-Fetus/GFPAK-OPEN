@@ -62,6 +62,44 @@ def create_pfs0(path):
 
 
 class AssetBrowserTests(unittest.TestCase):
+    def test_nsp_inside_zip_opens_using_existing_nsp_reader(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            nsp = folder / "game.nsp"
+            create_pfs0(nsp)
+            archive = folder / "download.zip"
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as handle:
+                handle.write(nsp, "games/game.nsp")
+            browser = AssetBrowser()
+            root = browser.open(archive)
+            level = browser.children(root["id"])["entries"][0]
+            self.assertEqual(level["name"], "games")
+            pkg = browser.children(level["id"])["entries"][0]
+            self.assertEqual(pkg["name"], "game.nsp")
+            self.assertTrue(pkg["expandable"])
+            nca_list = browser.children(pkg["id"])["entries"]
+            self.assertEqual([item["name"] for item in nca_list],
+                             ["model.nca", "meta.cnmt.nca"])
+            self.assertEqual(browser.node(pkg["id"])["kind"], "nsp")
+            # Reopening the ZIP removes staged NSPs without changing the ZIP.
+            staged = Path(browser.node(pkg["id"])["path"])
+            self.assertTrue(staged.is_file())
+            browser.open(archive)
+            self.assertFalse(staged.exists())
+
+    def test_invalid_nested_nsp_keeps_zip_unchanged(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "package.zip"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr("bad.nsp", b"invalid header")
+            before = archive.read_bytes()
+            browser = AssetBrowser()
+            pkg = browser.children(browser.open(archive)["id"])["entries"][0]
+            with self.assertRaises((ValueError, OSError)):
+                browser.children(pkg["id"])
+            self.assertEqual(before, archive.read_bytes())
+
+
     def test_pokemon_zip_embeds_bridge_and_preserves_old_zip_on_invalid_glb(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'pm0025_00_00.gfpak'
