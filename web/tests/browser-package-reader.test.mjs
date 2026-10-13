@@ -166,7 +166,7 @@ test('browser RomFS rejects fabricated cursors and cycles between pages',async()
   const fs=fakeLargeRomfs(270,{cycle:true});
   await assert.rejects(romChildrenPage(fs,0,'f:ffffffff'),/cursor/i);
   const first=await romChildrenPage(fs,0);
-  const second=await romChildrenPage(fs,0,first.nextCursor);
-  assert.equal(second.entries.length,20);
-  await assert.rejects(romChildrenPage(fs,0,second.nextCursor),/cycle|repeated/i);
+  // The cycle is encountered while fetching page two (the last sibling
+  // points back to the first page), not on a later third request.
+  await assert.rejects(romChildrenPage(fs,0,first.nextCursor),/cycle|repeated/i);
 });
