@@ -86,10 +86,12 @@ class NCAHeaderDiagnosticsTests(unittest.TestCase):
             path.write_bytes(nca3_header(with_section=False))
             entry = SimpleNamespace(name="sample.nca", offset=0, size=0xC00)
             analyzer = SimpleNamespace(path=path, get=lambda _: entry)
-            reader = NativeNCA(analyzer, 0, Keyset(None))
-            self.assertTrue(reader.plaintext)
-            self.assertEqual(reader.header_tweak, "none")
-            self.assertEqual(reader.sections, {})
+            # Header inspection permits metadata-only NCAs, but the filesystem
+            # reader deliberately rejects an archive with no usable sections.
+            header_info = inspect_nca3_entry(analyzer, 0, Keyset(None))
+            self.assertEqual(header_info["nca_magic"], "NCA3")
+            with self.assertRaisesRegex(NativeNCAError, "readable filesystem sections"):
+                NativeNCA(analyzer, 0, Keyset(None))
 
 
 if __name__ == "__main__":
