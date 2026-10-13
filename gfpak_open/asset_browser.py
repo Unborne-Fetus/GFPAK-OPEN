@@ -964,7 +964,18 @@ class AssetBrowser:
                     statuses.append("Sparse BucketTree detected; plaintext mappings work, encrypted sparse IV handling remains limited")
                 if features["compressed_storage"]:
                     statuses.append("Compressed BucketTree detected; stored, zero and LZ4 blocks supported for compatible unpatched sections")
-                result["notes"].extend(statuses or ["Compatible filesystem section"])
+                header_status = features.get("header_probe_status", "not-checked")
+                if header_status.startswith("invalid-decoded-"):
+                    statuses.append(
+                        "Filesystem header validation failed: section data did not decode "
+                        "as the declared filesystem. A recognized ticket does not prove "
+                        "the content key and AES-CTR data are correct. Copy NCA Diagnostics."
+                    )
+                elif header_status.startswith("valid-"):
+                    statuses.append("Filesystem header validation passed (" + header_status + ").")
+                elif header_status not in ("not-checked", "unsupported"):
+                    statuses.append("Filesystem header check: " + header_status)
+                result["notes"].extend(statuses or ["Filesystem section identified; content not verified."])
                 result["capabilities"] = features
             else:
                 result["notes"].append("Directory - expand it to inspect files.")
