@@ -21,7 +21,7 @@ def nca3_header(rights: bytes = bytes(16), with_section: bool = True) -> bytes:
     raw[0x230:0x240] = rights
     if with_section:
         struct.pack_into("<II", raw, 0x240, 6, 7)
-        raw[0x400:0x402] = b"\\x02\\x00"
+        raw[0x400:0x402] = b"\x02\x00"
         raw[0x404] = 3
     return bytes(raw)
 
@@ -42,7 +42,7 @@ class NCAHeaderDiagnosticsTests(unittest.TestCase):
         rights = bytes.fromhex("00112233445566778899aabbccddeeff")
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "title.keys"
-            path.write_text(rights.hex() + " = " + "ab" * 16 + "\\n", encoding="utf-8")
+            path.write_text(rights.hex() + " = " + "ab" * 16 + "\n", encoding="utf-8")
             keys = Keyset(None, path)
             details = inspect_nca3_header(nca3_header(rights), keys)
         self.assertEqual(details["rights_id_key_match"], "exact-match")
@@ -57,7 +57,7 @@ class NCAHeaderDiagnosticsTests(unittest.TestCase):
         rights = bytes.fromhex("00112233445566778899aabbccddeeff")
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "title.keys"
-            path.write_text(rights[::-1].hex() + " = " + "cd" * 16 + "\\n", encoding="utf-8")
+            path.write_text(rights[::-1].hex() + " = " + "cd" * 16 + "\n", encoding="utf-8")
             details = inspect_nca3_header(nca3_header(rights), Keyset(None, path))
         self.assertEqual(details["rights_id_key_match"],
                          "byte-reversed-entry-only (not used for decryption)")
