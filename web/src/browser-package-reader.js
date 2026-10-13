@@ -142,8 +142,8 @@ export async function openZip(blob) {
     };
   }).filter(Boolean);
 }
-export async function openGfpak(blob, dictionary=new Map()) {
-  const archive=await parseGfpakFile(blob);
+export async function openGfpak(blob, dictionary=new Map(), filename=blob?.name||'archive.gfpak') {
+  const archive=await parseGfpakFile(blob,filename);
   const inferred=inferGfpakModelNames(archive.resources,archive.filename);
   return archive.resources.map(res=>{
     const fromDictionary=resolvedName(res,dictionary);
