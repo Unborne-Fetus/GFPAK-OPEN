@@ -898,6 +898,13 @@ function start() {
   window.addEventListener('gfpak-native-model', event => {
     if (event.detail instanceof File) chooseProject([event.detail]);
   });
+  window.addEventListener('gfpak-browser-texture', event => {
+    const {name, bytes} = event.detail || {};
+    if (!name || !(bytes instanceof Uint8Array)) return;
+    inspectSourceTexture({path:name,size:bytes.byteLength,
+      getBytes:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)
+    }).catch(error=>errorMessage(error));
+  });
   initGameOptions();
   attachEvents();
   resetInspector();
