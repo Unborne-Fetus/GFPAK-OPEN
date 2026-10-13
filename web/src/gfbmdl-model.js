@@ -96,8 +96,15 @@ function threeMesh(geometrySource, materialArray, rig = null) {
   if (!position || position.length % 3) throw new Error('GFBMDL has an invalid position stream');
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
   if (attributes.normal?.length >= geometrySource.vertexCount * 3) {
+    // Native normals may be XYZW. Copy XYZ per vertex instead of slicing
+    // the whole stream, which feeds W into the next vertex's normal.
+    const stride = attributes.normal.length / geometrySource.vertexCount;
+    const normals = new Float32Array(geometrySource.vertexCount * 3);
+    for (let i = 0; i < geometrySource.vertexCount; i++) {
+      normals.set(attributes.normal.subarray(i * stride, i * stride + 3), i * 3);
+    }
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(
-      attributes.normal.slice(0, geometrySource.vertexCount * 3), 3));
+      normals, 3));
   }
   if (attributes.uv?.length >= geometrySource.vertexCount * 2) {
     const uv = new Float32Array(geometrySource.vertexCount * 2);
