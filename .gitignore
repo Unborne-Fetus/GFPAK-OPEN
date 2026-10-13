@@ -12,3 +12,7 @@ build/
 *.glb
 *.fbx
 *.obj
+
+# Never commit console key files; users drop prod.keys locally.
+keys/
+*.keys
