@@ -47,7 +47,59 @@ def animation():
     return bytes(data)
 
 
+def gfbmdl_triangle():
+    """A structurally valid GFBMDL FlatBuffers geometry fixture (no game data)."""
+    data = bytearray(512)
+    def u16(offset, value):
+        struct.pack_into("<H", data, offset, value)
+    def u32(offset, value):
+        struct.pack_into("<I", data, offset, value)
+    def i32(offset, value):
+        struct.pack_into("<i", data, offset, value)
+    u32(0, 64)
+    u16(32, 22); u16(34, 16)
+    u16(36, 4); u16(52, 8)
+    i32(64, 32); u32(68, 2); u32(72, 48)
+    u32(120, 1); u32(124, 68)
+    u16(160, 10); u16(162, 16)
+    u16(164, 4); u16(166, 8); u16(168, 12)
+    i32(192, 32); u32(196, 24); u32(200, 40); u32(204, 116)
+    u32(220, 1); u32(224, 208)
+    u32(240, 1); u32(244, 36)
+    u16(264, 10); u16(266, 16)
+    u16(268, 4); u16(270, 8); u16(272, 12)
+    i32(280, 16); u32(284, 0); u32(288, 0); u32(292, 3)
+    u32(320, 36)
+    for i, value in enumerate((0., 0., 0., 1., 0., 0., 0., 1., 0.)):
+        struct.pack_into("<f", data, 324 + 4*i, value)
+    u16(416, 8); u16(418, 12); u16(420, 4); u16(422, 8)
+    i32(432, 16); u32(436, 0); u32(440, 40)
+    u32(480, 3); u16(484, 0); u16(486, 1); u16(488, 2)
+    return bytes(data)
+
+
 class DiscoveryTests(unittest.TestCase):
+    def test_gfbmdl_discovery_without_trinity_hash_family(self):
+        """SWSH native GFBMDL must not require TRMDL/TRMSH/TRMBF hashes."""
+        native = gfbmdl_triangle()
+        archive = Archive([
+            ('unrecognized_random_asset', native),
+            ('unrecognized_texture', b'BNTX\\0')
+        ])
+        self.assertEqual(content_extension(native), '.gfbmdl')
+        self.assertEqual(content_extension(b'\\x00' * 512), None)
+        names = discover_resource_names(archive, {})
+        self.assertEqual(names[0], 'resource_0000.gfbmdl')
+        self.assertEqual(names[1], 'resource_0001.bntx')
+        self.assertEqual(set(archive.reads), {0, 1})
+
+    def test_gfbmdl_probes_reject_invalid_mesh_structures(self):
+        data = bytearray(gfbmdl_triangle())
+        # A valid root alone is insufficient: mesh tables need real geometry.
+        struct.pack_into('<I', data, 320, 0)
+        self.assertIsNone(content_extension(data))
+        self.assertIsNone(content_extension(gfbmdl_triangle()[:80]))
+
     def test_reference_chain_restores_material_and_texture_names(self):
         archive = Archive([
             ('pm0025.trmdl', b'body.trmmt\0'),
