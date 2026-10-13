@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -24,6 +26,12 @@ from .converter import ConversionOptions, convert_model, validate_glb
 def settings_path():
     root = Path(os.getenv("APPDATA") or Path.home() / ".config")
     return root / "GFPAK-OPEN" / "settings.json"
+
+
+def local_keys_folder():
+    """Local-only keys directory beside the source checkout or portable EXE."""
+    base = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    return base / "keys"
 
 
 class DesktopAPI:
@@ -78,9 +86,13 @@ class DesktopAPI:
         # The native parser is always available. If a keys file was moved or
         # deleted, continue in plaintext/metadata-only mode instead of making
         # the entire app fail to start.
-        selected = self.settings.get("nca_keyset") or ""
+        folder_key = local_keys_folder() / "prod.keys"
+        selected = str(folder_key) if folder_key.is_file() else (self.settings.get("nca_keyset") or "")
         try:
             self._browser.configure_nca_reader(selected)
+            if selected and self.settings.get("nca_keyset") != selected:
+                self.settings["nca_keyset"] = selected
+                self._save()
         except (OSError, ValueError):
             self._browser.configure_nca_reader("")
             self.settings.pop("nca_keyset", None)
@@ -98,6 +110,23 @@ class DesktopAPI:
                          "need an existing compatible user-supplied keys file; "
                          "keys are not bundled or downloaded.")
             }
+
+    def browse_open_keys_folder(self):
+        """Open the local directory in Windows Explorer; never upload keys."""
+        folder = local_keys_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(str(folder))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+        return {"folder": str(folder), "expected_file": "prod.keys"}
+
+    def browse_refresh_keys(self):
+        with self._lock:
+            self._configure_nca_browser()
+            return self.browse_nca_settings()
 
     def browse_nca_select(self, option: str):
         if option != "keyset":
