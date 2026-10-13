@@ -16,6 +16,7 @@ test('GFBMDL XYZW normals preserve each vertex XYZ and discard W', async () => {
   records.forEach((value,i)=>v.setFloat32(324+i*4,value,true));
   const result=await loadGfbmdl({items:[{path:'sample.gfbmdl',getBytes:async()=>bytes}]},
     'sample.gfbmdl',()=>{}, {fastPreview:true});
+  assert.deepEqual(result.root.rotation.toArray().slice(0,3),[0,0,0]);
   const mesh=result.root.children.find(x=>x.isMesh);
   assert.deepEqual([...mesh.geometry.getAttribute('normal').array],[0,0,1,0,1,0,1,0,0]);
   assert.deepEqual([...mesh.geometry.getAttribute('position').array],[0,0,0,1,0,0,0,1,0]);
