@@ -62,7 +62,7 @@ def native_gfpak_fixture():
     return bytes(result)
 
 
-def romfs_nested():
+def romfs_nested(content: bytes | None = None):
     """Construct a real RomFS table with bin/archive/pokemon nested directories."""
     names = ("", "bin", "archive", "pokemon")
     positions = []
@@ -72,7 +72,8 @@ def romfs_nested():
         label = name.encode()
         directory.extend(b"\0" * (24 + (len(label) + 3 & ~3)))
     filename = b"pm0025_00_00.gfpak"
-    content = b"GFLXPACK test Pikachu model"
+    if content is None:
+        content = b"GFLXPACK test Pikachu model"
     for i, name in enumerate(names):
         child = positions[i+1] if i < len(names)-1 else 0xFFFFFFFF
         first_file = 0 if i == 3 else 0xFFFFFFFF
@@ -262,6 +263,85 @@ class NativeNCAIntegrationTests(unittest.TestCase):
                                  b"GFLXPACK test Pikachu model")
             self.assertFalse(list((root / "cache").glob("*.nca")))
             self.assertTrue(nsp.read_bytes().startswith(b"PFS0"))
+
+    def test_unlocked_nested_romfs_preview_export_survives_key_refresh(self):
+        """Model nodes discovered after unlock must survive a reader rebuild.
+
+        Reproduces: load keys, scan nested Sword/Shield-style RomFS, focus the
+        window (unchanged keys), then replace the key file (same valid keys).
+        Preview and Pokémon ZIP must both locate the same original resources.
+        """
+        import zipfile
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            header_key = bytes(range(32))
+            area_key = bytes(range(0x20, 0x30))
+            content_key = bytes(range(0x40, 0x50))
+            inner = native_gfpak_fixture()
+            romfs = romfs_nested(inner)
+            encrypted = plain_nca([("romfs", romfs)], encrypted=True,
+                                  headerkey=header_key, areakey=area_key,
+                                  contentkey=content_key)
+            game = root / "locked-then-unlocked.nsp"
+            package(game, [("program.nca", encrypted)])
+            keys = root / "local.keys"
+            original = ("nca_header_key = " + header_key.hex() + "\n" +
+                        "nca_key_area_key_application_00 = " + area_key.hex() + "\n")
+            keys.write_text(original)
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            self.assertTrue(browser.configure_nca_reader(keys))
+            game_node = browser.open(game)
+            nca = browser.children(game_node["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            model = next(row for row in catalog["assets"]
+                         if row["name"] == "pm0025_00_00.gfpak")
+            reader = browser._nca_sources[model["id"]]
+            old_fs = browser._nca_sections.filesystem(reader, 0, 0)
+            self.assertFalse(browser.configure_nca_reader(keys))
+            self.assertIs(old_fs, browser._nca_sections.filesystem(reader, 0, 0))
+
+            # An actual key-file revision invalidates the reader's in-memory
+            # directory names while leaving the user-visible model selectable.
+            keys.write_text(original + "# refreshed by user\n")
+            self.assertTrue(browser.configure_nca_reader(keys))
+            new_fs = browser._nca_sections.filesystem(reader, 0, 0)
+            self.assertIsNot(old_fs, new_fs)
+            self.assertEqual(set(new_fs._directories), {""})
+            browser._virtual_gfpaks.clear()
+
+            preview = browser.preview_source(model["id"])
+            self.assertEqual(preview.read_bytes(), inner)
+            manifest = browser.fast_preview_items(model["id"])
+            self.assertEqual(manifest["selected"], "pm0025_00_00.trmdl")
+            model_data = next(item for item in manifest["items"]
+                              if item["path"] == "pm0025_00_00.trmdl")
+            size, chunks = browser.stream_fast_preview_item(model_data["source"])
+            self.assertEqual((size, b"".join(chunks)), (len(b"model descriptor"), b"model descriptor"))
+            export = root / "pokemon.zip"
+            browser.export_pokemon(model["id"], export)
+            with zipfile.ZipFile(export) as zipped:
+                self.assertIn("pm0025_00_00.trmdl", zipped.namelist())
+                self.assertEqual(zipped.read("pm0025_00_00.trmdl"), b"model descriptor")
+
+    def test_unlocked_romfs_unknown_paths_still_fail_closed(self):
+        """Folder recovery only discovers real metadata, never fabricated paths."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "sample.nsp"
+            package(game, [("program.nca", plain_nca([("romfs", romfs_nested())]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            game_node = browser.open(game)
+            nca = browser.children(game_node["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            reader = browser._nca_sources[section["id"]]
+            fs = browser._nca_sections.filesystem(reader, 0, 0)
+            self.assertEqual(fs.children_page("bin/archive/pokemon")["entries"][0]["name"],
+                             "pm0025_00_00.gfpak")
+            with self.assertRaisesRegex(NativeNCAError, "Unknown RomFS folder"):
+                fs.children_page("bin/archive/not-real")
+            with self.assertRaisesRegex(NativeNCAError, "Unknown RomFS folder"):
+                fs.children_page("../bin")
 
     def test_nca_asset_catalog_locates_models_textures_animations(self):
         # Only file metadata is needed; no model conversion or extraction.
