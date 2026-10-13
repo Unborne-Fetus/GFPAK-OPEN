@@ -771,6 +771,8 @@ function select(row) {
   id('assetPreview').textContent = canPreview(row) ? '◈ Preview in 3D' :
     canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
   id('assetExportPokemon').disabled = !canPreview(row);
+  id('assetCopyNcaDiagnostics').disabled = !row ||
+    !((row.kind === 'nspfile' && /\\.(nca|ncz)$/i.test(row.name)) || row.kind === 'nca_locked');
   id('assetSaveFile').disabled = !row || !['file', 'zipfile',
     'gfpak_resource', 'nca_gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
   const isPackedResource = ['gfpak_resource', 'nca_gfpak_resource'].includes(row?.kind);
@@ -1084,6 +1086,17 @@ async function restoreSource() {
       showNotice('Restored the last game source and saved keys-file selection.');
     }
   } catch (error) { showNotice('Could not restore previous game source: ' + error.message, true); }
+}
+
+async function copyNcaDiagnostics() {
+  if (!selected) return;
+  try {
+    const report = await api.browse_nca_diagnostics(selected.id);
+    await navigator.clipboard.writeText(report);
+    showNotice('NCA diagnostics copied. No keys or game data included.');
+  } catch (error) {
+    showNotice('Could not copy diagnostics: ' + (error.message || String(error)), true);
+  }
 }
 
 async function nxSaveSelectedFile(packed = false) {
@@ -1455,6 +1468,7 @@ function initialize() {
     } catch (error) { showNotice(error.message || String(error), true); }
     finally { id('assetExportPokemon').disabled = !canPreview(selected); }
   });
+  id('assetCopyNcaDiagnostics').addEventListener('click', copyNcaDiagnostics);
   id('assetSaveFile').addEventListener('click', () => nxSaveSelectedFile());
   id('assetSavePacked').addEventListener('click', () => nxSaveSelectedFile(true));
   id('assetScan').addEventListener('click', () => scanFolder());
