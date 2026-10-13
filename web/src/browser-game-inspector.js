@@ -466,7 +466,7 @@ function select(node){
     'Select a file to inspect its details.';
   byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture';
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
-  byId('assetExportPokemon').disabled=!node || node.children!==null || node.category!=='model';
+  byId('assetExportPokemon').disabled=!node || !['model','asset package'].includes(node.category);
   byId('assetSaveFile').disabled=!node||(!node.source&&!node.lazySource);
   byId('assetSavePacked').hidden=!node?.packedSource;
   byId('assetSavePacked').disabled=!node?.packedSource;
@@ -595,11 +595,12 @@ async function preview(node){
   }catch(e){notice('Preview could not start: '+(e.message||String(e)),true);}
 }
 async function exportAssetPack(node){
-  if(!node || node.children!==null || node.category!=='model')return;
+  if(!node || !['model','asset package'].includes(node.category))return;
   try{
-    const matches=matchingAssets(node);
+    // Export operates on original file sources and never invokes the renderer.
+    const matches=node.kind==='gfpak'?[node]:matchingAssets(node);
     const total=matches.reduce((n,item)=>n+item.size,0);
-    if(total>MAX_EXPORT)throw Error('Raw asset ZIP exceeds 300 MiB limit');
+    if(total>MAX_EXPORT)throw Error('Raw asset ZIP exceeds the current 300 MiB memory limit; use smaller assets.');
     const zip=new JSZip();
     for(const item of matches){
       const source=await ensureSource(item);
