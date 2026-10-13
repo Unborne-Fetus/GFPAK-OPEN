@@ -33,7 +33,7 @@ function fixture(encryption=3,rightsManaged=false){
   const h=new DataView(header.buffer);
   h.setUint32(0x240,6,true);h.setUint32(0x244,8,true);
   header[0x400]=2;header[0x402]=1;header[0x403]=0;header[0x404]=encryption;
-  // AES-CTR section counter prefix is zero in this synthetic fixture.
+  header[0x540]=0x12;header[0x543]=0x34; // Nonzero NCA AES-CTR prefix.
   header.set(encrypt('aes-128-ecb',keyAreaKey,null,areaPlain),0x300);
   const keys=new Map([['nca_key_area_key_application_00',new Uint8Array(keyAreaKey)]]);
   if(rightsManaged){
@@ -46,6 +46,8 @@ function fixture(encryption=3,rightsManaged=false){
   section.set(body,0);
   if(encryption===3){
     const counter=new Uint8Array(16);
+    // NCA section header stores the 8-byte counter prefix reversed.
+    counter.set(header.slice(0x540,0x548).reverse(),0);
     // Absolute 0xC00 byte position = block 0xC0.
     counter[15]=0xc0;
     const encrypted=encrypt('aes-128-ctr',contentKey,counter,section);
