@@ -6,7 +6,7 @@ import {
   modelIdentityFromPath,compatibleProjectItems
 } from '../src/pokedex3d-export.js';
 
-function compatibleGlb({idle=true,embedded=true,textured=true}={}){
+function compatibleGlb({idle=true,embedded=true,textured=true,mixedMaterials=false}={}){
   // Match the structural fixture used in Pokédex 3D Max's Python importer.
   const doc={
     asset:{version:'2.0'}, scenes:[{nodes:[0]}],scene:0,
@@ -15,7 +15,10 @@ function compatibleGlb({idle=true,embedded=true,textured=true}={}){
     accessors:[{bufferView:0,componentType:5126,count:3,type:'VEC3'}],
     bufferViews:[{buffer:0,byteLength:36},{buffer:0,byteOffset:36,byteLength:1280}],
     buffers:[{byteLength:1316}],
-    materials:textured?[{pbrMetallicRoughness:{baseColorTexture:{index:0}}}]:[{}],
+    materials:textured?[
+      {pbrMetallicRoughness:{baseColorTexture:{index:0}}},
+      ...(mixedMaterials?[{}]:[])
+    ]:[{}],
     textures:[{source:0}],
     images:[embedded?{bufferView:1,mimeType:'image/png'}:{uri:'https://example.com/texture.png'}],
     animations:idle?[{
@@ -52,6 +55,7 @@ test('exporter rejects GLBs with missing idle, embedded textures, or base-color 
   assert.throws(()=>validatePokedexGlb(compatibleGlb({idle:false})),/idle animation/i);
   assert.throws(()=>validatePokedexGlb(compatibleGlb({embedded:false})),/external|embedded/i);
   assert.throws(()=>validatePokedexGlb(compatibleGlb({textured:false})),/base-color/i);
+  assert.throws(()=>validatePokedexGlb(compatibleGlb({mixedMaterials:true})),/every GLB material/i);
 });
 test('Pokédex ZIP includes original textures/skeleton/animations + import-ready GLB + exact desktop manifest',async()=>{
   const selected='pm0942_00_00/body.trmdl';
