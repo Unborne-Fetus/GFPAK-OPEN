@@ -4,6 +4,20 @@
 import * as THREE from 'three';
 import { configureTextureSampling } from './texture-quality.js';
 
+// The channels partition a palette, rather than overlaying independent paint.
+// Successive mix() calls leave albedo showing between two fully covered layers.
+const LAYER_BLEND_GLSL = `
+  uniform float gfBaseColorMultiply;
+  vec3 gfBlendLayers(vec3 albedo, vec4 weights) {
+    float total = dot(weights, vec4(1.0));
+    vec3 layers = gfLayerColors[0] * weights.r + gfLayerColors[1] * weights.g
+                + gfLayerColors[2] * weights.b + gfLayerColors[3] * weights.a;
+    vec3 palette = layers / max(total, 0.00001);
+    vec3 tinted = mix(palette, albedo * palette, gfBaseColorMultiply);
+    return mix(albedo, tinted, min(total, 1.0));
+  }
+`;
+
 export function layerPalette(colors = {}) {
   const palette = [1, 2, 3, 4].map(i => colors['BaseColorLayer' + i]);
   return palette.every(c => c?.length === 4 && c.every(Number.isFinite))
@@ -19,7 +33,8 @@ export function applyLayerColors(definition, created, report = () => {}) {
     Number.isFinite(scalars['LayerMaskScale' + i]) ? scalars['LayerMaskScale' + i] : 1));
   const uniforms = {
     gfLayerMask: {value:mask}, gfLayerColors:{value:palette},
-    gfLayerScales:{value:scales}, gfMaskTransform:{value:mask.matrix}
+    gfLayerScales:{value:scales}, gfMaskTransform:{value:mask.matrix},
+    gfBaseColorMultiply:{value:definition.flags?.BaseColorMultiply === 'False' ? 0 : 1}
   };
   // Fallback for an unavailable offscreen GPU; preserves colors in preview.
   const shaderFallback = () => {
@@ -29,11 +44,11 @@ export function applyLayerColors(definition, created, report = () => {}) {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = 'varying vec2 gfBaseUv;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\ngfBaseUv = ' + maskUv + ';');
-      shader.fragmentShader = 'varying vec2 gfBaseUv;\nuniform mat3 gfMaskTransform;\nuniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + shader.fragmentShader;
+      shader.fragmentShader = 'varying vec2 gfBaseUv;\nuniform mat3 gfMaskTransform;\nuniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + LAYER_BLEND_GLSL + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
-        '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[0],gfWeights.r);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[1],gfWeights.g);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[2],gfWeights.b);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[3],gfWeights.a);');
+        '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = gfBlendLayers(diffuseColor.rgb, gfWeights);');
     };
-    material.customProgramCacheKey = () => 'trinity-four-color-layers-uv' + mask.channel;
+    material.customProgramCacheKey = () => 'trinity-weighted-color-layers-uv' + mask.channel;
     material.needsUpdate = true;
   };
   // A flat bake cannot collapse different UV sets without changing the skin.
@@ -60,13 +75,11 @@ export function applyLayerColors(definition, created, report = () => {}) {
         uniform sampler2D gfAlbedo; uniform sampler2D gfLayerMask;
         uniform vec3 gfLayerColors[4]; uniform vec4 gfLayerScales;
         uniform mat3 gfMaskTransform; uniform mat3 gfAlbedoTransform;
+        ${LAYER_BLEND_GLSL}
         void main(){
           vec4 weights=clamp(texture2D(gfLayerMask,(gfMaskTransform*vec3(gfUV,1.0)).xy)*gfLayerScales,0.0,1.0);
           vec4 albedo=texture2D(gfAlbedo,(gfAlbedoTransform*vec3(gfUV,1.0)).xy);
-          vec3 color=mix(albedo.rgb,gfLayerColors[0],weights.r);
-          color=mix(color,gfLayerColors[1],weights.g);
-          color=mix(color,gfLayerColors[2],weights.b);
-          color=mix(color,gfLayerColors[3],weights.a);
+          vec3 color=gfBlendLayers(albedo.rgb, weights);
           gl_FragColor=vec4(color,albedo.a);
           #include <colorspace_fragment>
         }`

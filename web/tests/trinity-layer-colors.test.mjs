@@ -40,7 +40,7 @@ test('native material color parameters reach masked base-color shader',()=>{
   mat.onBeforeCompile(shader);
   assert.equal(shader.uniforms.gfLayerMask.value,mask);
   assert.ok(shader.uniforms.gfLayerColors.value[0].x>.47);
-  assert.match(shader.fragmentShader,/diffuseColor.rgb = mix/);
+  assert.match(shader.fragmentShader,/diffuseColor.rgb = gfBlendLayers/);
 });
 
 test('ordinary material without native layer palette retains normal shading',()=>{
