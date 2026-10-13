@@ -1178,6 +1178,42 @@ class AssetBrowser:
             raise ValueError("Texture exceeds the 256 MiB safe preview limit")
         return {"path": name, "size": size, "source": descriptor}
 
+    def model_diagnostics(self, id_: str) -> dict:
+        """Shareable, key-safe discovery summary for one selected GFPAK.
+
+        The report contains no bytes, hashes, console keys, file paths,
+        rights IDs or original resource names.
+        """
+        node = self.node(id_)
+        kind = node["kind"]
+        if kind in {"gfpak", "gfpak_resource"}:
+            archive = self._archive(Path(node["path"]))
+            names = self._known_names(Path(node["path"]))
+        elif kind == "nca_gfpak_resource" or (
+                kind == "nca_file" and node["name"].lower().endswith(".gfpak")):
+            parent_id = (id_ if kind == "nca_file"
+                         else self._virtual_gfpak_nodes[id_][0])
+            archive, names = self._mounted_gfpak(parent_id)
+        else:
+            raise ValueError("Select a GFPAK archive or one of its members")
+        kinds = Counter(str(member.compression) for member in archive.resources)
+        models = sum(Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}
+                     for name in names.values())
+        diagnostics = getattr(archive, "discovery_diagnostics", {})
+        return {
+            "format": "gfpak-model-diagnostics-v1",
+            "archive": archive.source.name,
+            "resources": len(archive.resources),
+            "compression_types": dict(kinds),
+            "recognized_models": models,
+            "recognized_members": len(names),
+            "discovery": dict(diagnostics),
+            "status": ("Native model identified" if models
+                       else self._model_discovery_failure(archive, names)),
+            "note": ("Metadata counts only. No game payloads, keys, "
+                     "hashes, rights IDs, or full filesystem paths.")
+        }
+
     @staticmethod
     def _model_discovery_failure(archive: GFPak, names: dict[int, str]) -> str:
         """Explain absent models without inventing names or leaking game data."""
