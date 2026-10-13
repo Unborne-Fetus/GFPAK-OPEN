@@ -1039,11 +1039,7 @@ function updateGameCompatibility(result) {
     ' · Animations: ' + support.animations;
 }
 
-async function openSource(mode) {
-  try {
-    showNotice('Opening selected files…');
-    const result = await api.browse_choose(mode);
-    if (!result) return;
+async function applyOpenedSource(result) {
     updateGameCompatibility(result);
     ++catalogRevision;
     assetCatalog = null;
@@ -1068,7 +1064,26 @@ async function openSource(mode) {
     renderListing();
     if (['directory', 'gfpak', 'nsp', 'xci'].includes(result.root.kind))
       void scanFolder(result.root, true);
+}
+
+async function openSource(mode) {
+  try {
+    showNotice('Opening selected files…');
+    const result = await api.browse_choose(mode);
+    if (result) await applyOpenedSource(result);
   } catch (error) { showNotice(error.message || String(error), true); }
+}
+
+async function restoreSource() {
+  try {
+    const result = await api.browse_restore();
+    if (result?.missing) {
+      showNotice(result.message, true);
+    } else if (result?.root) {
+      await applyOpenedSource(result);
+      showNotice('Restored the last game source and saved keys-file selection.');
+    }
+  } catch (error) { showNotice('Could not restore previous game source: ' + error.message, true); }
 }
 
 async function nxSaveSelectedFile(packed = false) {
@@ -1369,6 +1384,7 @@ function initialize() {
   id('assetAttachBaseNCA').addEventListener('click', nxAttachBaseNCA);
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
+  void restoreSource();
   id('assetBack').addEventListener('click', () => {
     if (scanListing) selectAssetClass('all');
     else if (pathStack.length > 1) pathStack.pop();
