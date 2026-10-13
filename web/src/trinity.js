@@ -157,7 +157,9 @@ export function parseTrmtr(bytes) {
         scalars: Object.fromEntries(list(reader, table, 4, 128).map(t => {
           const at = reader.field(t, 1);
           return [reader.string(t, 0), at ? reader.f32(at) : 0];
-        }))
+        })),
+        integers: Object.fromEntries(list(reader, table, 9, 128).map(t =>
+          [reader.string(t, 0), reader.integer(t, 1, -1)]))
       }))
     };
   } catch (error) {
@@ -237,7 +239,7 @@ function decodeVertices(descriptor, vertexStreams) {
   const position = descriptor.elements.find(e => e.usage === 1);
   if (!position) throw new TrinityError('Mesh declaration is missing POSITION data');
   const posStride = descriptor.strides[position.strideIndex];
-  const posBuffer = vertexStreams[position.layer];
+  const posBuffer = vertexStreams[position.strideIndex];
   if (!posBuffer || !posStride || posStride < 4 || posStride > 2048)
     throw new TrinityError('Mesh POSITION buffer or stride is missing');
   const count = Math.floor(posBuffer.byteLength / posStride);
@@ -257,22 +259,25 @@ function decodeVertices(descriptor, vertexStreams) {
       f32: pos => view.getFloat32(pos, true)
     };
   });
-  // UV channels beyond layer 0 and additional skin streams need separate
-  // mappings. Decode the primary channel without pretending to preserve others.
+  // layer is the semantic index (UV0/UV1, tangent/bitangent), not a
+  // vertex-buffer index. strideIndex selects the actual buffer binding.
   for (const element of descriptor.elements) {
-    const channel = USAGE[element.usage];
+    let channel = USAGE[element.usage];
+    if (channel === 'uv' && element.layer > 0 && element.layer <= 3) channel += element.layer;
+    else if (channel === 'tangent' && element.layer === 1) channel = 'binormal';
+    else if (element.layer !== 0) continue;
     if (!channel || channels.has(channel)) continue;
     const stride = descriptor.strides[element.strideIndex];
-    const source = vertexStreams[element.layer];
+    const source = vertexStreams[element.strideIndex];
     const bytes = FORMAT_BYTES[element.format];
     if (!source || !stride || !bytes || element.offset < 0 ||
         element.offset + bytes > stride || stride > 2048) {
       if (channel === 'position') throw new TrinityError('Unsupported POSITION vertex format or stride');
       continue;
     }
-    const n = channel === 'uv' ? 2 : channel === 'position' || channel === 'normal' ? 3 : 4;
+    const n = /^uv/.test(channel) ? 2 : channel === 'position' || channel === 'normal' ? 3 : 4;
     if (!output[channel]) output[channel] = new Float32Array(count * n);
-    const read = readerCache[element.layer];
+    const read = readerCache[element.strideIndex];
     if (!read) continue;
     for (let i = 0; i < count; i++) {
       const offset = i * stride + element.offset;

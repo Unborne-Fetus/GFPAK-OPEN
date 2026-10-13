@@ -148,3 +148,11 @@ test('BC5 normal texture reconstructs Z and uses the same UV orientation as BC7'
  assert.equal(texture.flipY,false);
  texture.dispose();
 });
+test('Trinity RGBA normal maps decode Z from alpha rather than the material blue channel',async()=>{
+ const {bytes}=sampleBntx({width:2,height:2});
+ bytes.set([128,128,0,255],0x200);
+ const texture=await loadDecodedTexture({path:'body_nrm.bntx',getBytes:async()=>bytes},false,['NormalMap']);
+ assert.deepEqual(Array.from(texture.image.data.slice(0,4)),[128,128,255,255]);
+ assert.equal(texture.colorSpace,THREE.NoColorSpace);
+ texture.dispose();
+});

@@ -23,18 +23,21 @@ export function applyLayerColors(definition, created, report = () => {}) {
   };
   // Fallback for an unavailable offscreen GPU; preserves colors in preview.
   const shaderFallback = () => {
+    const maskUv = mask.channel ? 'uv' + mask.channel : 'uv';
+    if (mask.channel) material.defines = {...material.defines, ['USE_UV' + mask.channel]: ''};
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = 'varying vec2 gfBaseUv;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\ngfBaseUv = uv;');
+      shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\ngfBaseUv = ' + maskUv + ';');
       shader.fragmentShader = 'varying vec2 gfBaseUv;\nuniform mat3 gfMaskTransform;\nuniform sampler2D gfLayerMask;\nuniform vec3 gfLayerColors[4];\nuniform vec4 gfLayerScales;\n' + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
         '#include <map_fragment>\nvec4 gfWeights = clamp(texture2D(gfLayerMask, (gfMaskTransform*vec3(gfBaseUv,1.0)).xy) * gfLayerScales, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[0],gfWeights.r);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[1],gfWeights.g);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[2],gfWeights.b);\ndiffuseColor.rgb = mix(diffuseColor.rgb,gfLayerColors[3],gfWeights.a);');
     };
-    material.customProgramCacheKey = () => 'trinity-four-color-layers';
+    material.customProgramCacheKey = () => 'trinity-four-color-layers-uv' + mask.channel;
     material.needsUpdate = true;
   };
-  if (typeof document === 'undefined') { shaderFallback(); return; }
+  // A flat bake cannot collapse different UV sets without changing the skin.
+  if (typeof document === 'undefined' || mask.channel !== material.map.channel) { shaderFallback(); return; }
   let renderer, target, geometry, pass;
   try {
     renderer = new THREE.WebGLRenderer({alpha:true,antialias:false});
@@ -76,6 +79,7 @@ export function applyLayerColors(definition, created, report = () => {}) {
     renderer.readRenderTargetPixels(target,0,0,width,height,data);
     const baked = new THREE.DataTexture(data,width,height,THREE.RGBAFormat);
     baked.name = material.name + ' layered base color';
+    baked.channel = material.map.channel;
     baked.colorSpace = THREE.SRGBColorSpace;
     baked.wrapS = baked.wrapT = THREE.RepeatWrapping;
     // UV transforms were sampled into this map; applying them again distorts it.

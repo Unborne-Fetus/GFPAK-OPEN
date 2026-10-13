@@ -62,14 +62,20 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
     }
     const surfaceIndex = matched[0]?.index ?? 0;
     const decoded = decodeBntxTexture(archive, surfaceIndex);
+    const nativeNormal = !srgb && /(?:normal|_nrm)(?:[._]|$)/i.test([item.path,...preferredNames].join(' '));
+    const bc5 = archive.textures[surfaceIndex].format >>> 8 === 0x1e;
     // BC5 normal maps store only X/Y. Reconstruct positive Z before Three.js
     // expands RGB from [0,1] to a tangent-space normal in [-1,1].
-    if (!srgb && archive.textures[surfaceIndex].format >>> 8 === 0x1e &&
-        /(?:normal|_nrm)(?:[._]|$)/i.test([item.path,...preferredNames].join(' '))) {
+    if (nativeNormal && bc5) {
       for (let i=0;i<decoded.data.length;i+=4) {
         const x=decoded.data[i]/127.5-1, y=decoded.data[i+1]/127.5-1;
         decoded.data[i+2]=Math.round((Math.sqrt(Math.max(0,1-x*x-y*y))+1)*127.5);
       }
+    }
+    // Trinity RGBA normals pack Z in alpha; blue is a separate material
+    // channel. BC5 has no stored Z and uses the reconstruction above.
+    if (nativeNormal && !bc5 && !decoded.compressed) {
+      for (let i = 0; i < decoded.data.length; i += 4) decoded.data[i + 2] = decoded.data[i + 3];
     }
     let texture;
     if (decoded.compressed) {
@@ -88,6 +94,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
       texture.flipY = false;
     }
     texture.name = decoded.name || item.path;
+    if (nativeNormal && !bc5 && decoded.compressed) texture.userData.nativeNormalChannels = 'rga';
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     texture.needsUpdate = true;

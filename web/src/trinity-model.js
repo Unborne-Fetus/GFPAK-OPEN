@@ -124,7 +124,8 @@ export function createMaterials(materials) {
       mat.depthWrite = !mat.transparent;
       if (shader?.flags?.EnableAlphaTest === 'True') mat.alphaTest = info.scalars?.DiscardValue || 0.5;
       lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
-        colors: info.colors, scalars: info.scalars });
+        colors: info.colors, scalars: info.scalars, integers: info.integers,
+        flags: shader?.flags || {} });
     }
   }
   return lookup;
@@ -132,13 +133,13 @@ export function createMaterials(materials) {
 
 export async function applyDecodedTextures(project, lookup, modelPath, report, created) {
   const channels = [
-    { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
+    { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true, flag:'EnableBaseColorMap' },
     { names: /^layermaskmap$/i, property: 'layerMaskMap', srgb: false },
-    { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false },
-    { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false },
-    { names: /^metallicmap\d*$/i, property: 'metalnessMap', srgb: false },
-    { names: /^aomap$/i, property: 'aoMap', srgb: false },
-    { names: /^(emissivemap|emissionmap)$/i, property: 'emissiveMap', srgb: true },
+    { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false, flag:'EnableNormalMap' },
+    { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false, flag:'EnableRoughnessMap' },
+    { names: /^metallicmap\d*$/i, property: 'metalnessMap', srgb: false, flag:'EnableMetallicMap' },
+    { names: /^aomap$/i, property: 'aoMap', srgb: false, flag:'EnableAOMap' },
+    { names: /^(emissivemap|emissionmap|emissioncolormap)$/i, property: 'emissiveMap', srgb: true, flag:'EnableEmissionColorMap' },
     { names: /^highlightmaskmap$/i, property: 'emissiveMap', srgb: false, highlight:true },
   ];
   const textureCache = new Map();
@@ -146,6 +147,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
     const textures = definition.textures ?? [];
     if (!textures.length) continue;
     for (const channel of channels) {
+      if (channel.flag && definition.flags[channel.flag] === 'False') continue;
       const reference = textures.find(t => channel.names.test(t.name));
       const selected = reference || (channel.property === 'map' && textures.length === 1 &&
         !/(normal|mask|rough|metal|occlusion|ao|emissive|emission)/i.test(textures[0].name) &&
@@ -161,6 +163,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
         const uv = definition.colors?.[channel.property === 'normalMap'
           ? 'UVScaleOffsetNormal' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
         const cacheKey = textureItem.path + '|' + (uv?.join(',') || '') + '|' + channel.srgb +
+          '|' + textureUvChannel(definition, channel.property, selected) +
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
         if (!texture) {
@@ -169,10 +172,13 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
           created.push(texture);
         }
         texture.name = selected.file || selected.name || channel.property;
+        texture.channel = textureUvChannel(definition, channel.property, selected);
         if (uv?.length === 4 && uv.every(Number.isFinite) &&
-            texture.image.width !== texture.image.height) {
+            !(channel.property === 'layerMaskMap' && definition.flags.EnableLayerMaskUVTransform === 'False')) {
           texture.repeat.set(uv[0], uv[1]);
-          texture.offset.set(uv[2], uv[3]);
+          // Conjugate the authored transform by our V-origin reflection:
+          // 1 - (scaleV * (1 - v) + offsetV).
+          texture.offset.set(uv[2], 1 - uv[1] - uv[3]);
           if (uv[0] > 1) texture.wrapS = THREE.MirroredRepeatWrapping;
           texture.updateMatrix();
         }
@@ -194,8 +200,31 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
   }
   for (const definition of lookup.values()) {
     applyLayerColors(definition, created, report);
+    const material = definition.material;
+    if (material.normalMap?.userData.nativeNormalChannels === 'rga') {
+      const previous = material.onBeforeCompile;
+      material.onBeforeCompile = (shader, renderer) => {
+        previous.call(material, shader, renderer);
+        shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>',
+          THREE.ShaderChunk.normal_fragment_maps.replaceAll(
+            'texture2D( normalMap, vNormalMapUv ).xyz', 'texture2D( normalMap, vNormalMapUv ).rga'));
+      };
+      const previousKey = material.customProgramCacheKey.bind(material);
+      const key = previousKey();
+      material.customProgramCacheKey = () => key + '|native-rga-normal';
+      material.needsUpdate = true;
+    }
   }
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
+}
+
+export function textureUvChannel(definition, property, reference) {
+  const integers = definition.integers || {};
+  if (property === 'layerMaskMap') return integers.UVIndexLayerMask >= 0 ? 1 : 0;
+  if (property === 'emissiveMap' && integers.UVIndexLayer5 >= 0) return 1;
+  // UVIndexLayer1 indexes the material texture reference assigned to UV1.
+  const index = integers.UVIndexLayer1;
+  return index >= 0 && definition.textures?.[index] === reference ? 1 : 0;
 }
 
 async function applyMatchedLinkedTextures(project, root, report, created) {
@@ -301,13 +330,15 @@ export function makeMesh(part, material, skeletonInfo) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices.position, 3));
   if (vertices.normal) geometry.setAttribute('normal', new THREE.BufferAttribute(vertices.normal, 3));
-  if (vertices.uv) {
+  for (let channel = 0; channel <= 3; channel++) {
+    const source = vertices[channel ? 'uv' + channel : 'uv'];
+    if (!source) continue;
     // Native Trinity coordinates use the opposite V origin from the GL
     // sampling convention. Flip the coordinates once for every material map,
     // including BC7/ASTC blocks which cannot be flipped on texture upload.
-    const uv = vertices.uv.slice();
+    const uv = source.slice();
     for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.setAttribute(channel ? 'uv' + channel : 'uv', new THREE.BufferAttribute(uv, 2));
   }
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
@@ -315,6 +346,24 @@ export function makeMesh(part, material, skeletonInfo) {
   }
   geometry.setIndex(new THREE.BufferAttribute(part.indices, 1));
   if (!vertices.normal) geometry.computeVertexNormals();
+  if (vertices.tangent && geometry.getAttribute('normal')) {
+    const tangent = vertices.tangent.slice();
+    const normal = geometry.getAttribute('normal');
+    const n = new THREE.Vector3(), t = new THREE.Vector3(), b = new THREE.Vector3();
+    for (let i = 0; i < vertices.count; i++) {
+      n.fromBufferAttribute(normal, i);t.fromArray(tangent, i * 4);
+      const handedness = vertices.binormal
+        ? n.cross(t).dot(b.fromArray(vertices.binormal, i * 4)) < 0 ? -1 : 1
+        : tangent[i * 4 + 3] < 0 ? -1 : 1;
+      // Flipping native V also reverses the tangent basis handedness.
+      tangent[i * 4 + 3] = -handedness;
+    }
+    geometry.setAttribute('tangent', new THREE.BufferAttribute(tangent, 4));
+  }
+  if (material.side === THREE.FrontSide && hasOpenBoundary(vertices.position, part.indices)) {
+    material.side = THREE.DoubleSide;
+    material.needsUpdate = true;
+  }
   const skel = skeletonInfo?.rig;
   if (skel && vertices.joints && vertices.weights &&
       vertices.joints.length === vertices.count * 4 &&
@@ -357,6 +406,29 @@ export function makeMesh(part, material, skeletonInfo) {
   mesh.name = part.name + (part.material ? ':' + part.material : '');
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/** Weld positions only for topology inspection, keeping authored UV/normal
+ * seams and skin weights intact. An open sheet needs both faces in preview.
+ */
+export function hasOpenBoundary(positions, indices) {
+  const ids = new Map(), vertices = new Map(), edges = new Map();
+  const vertex = index => {
+    if (vertices.has(index)) return vertices.get(index);
+    const at = index * 3;
+    const key = positions[at] + ',' + positions[at + 1] + ',' + positions[at + 2];
+    if (!ids.has(key)) ids.set(key, ids.size);
+    const id = ids.get(key);vertices.set(index, id);return id;
+  };
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = vertex(indices[i]), b = vertex(indices[i + 1]), c = vertex(indices[i + 2]);
+    if (a === b || b === c || c === a) continue;
+    for (const [u, v] of [[a,b],[b,c],[c,a]]) {
+      const key = u < v ? u + ':' + v : v + ':' + u;
+      edges.set(key, (edges.get(key) || 0) + 1);
+    }
+  }
+  return [...edges.values()].some(count => count === 1);
 }
 
 function normalizeBoneName(name) {
