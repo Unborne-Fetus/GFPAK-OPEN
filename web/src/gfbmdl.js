@@ -236,7 +236,9 @@ export function decodeGfbmdl(bytes) {
   const materialNames = reader.strings(model, 5);
   const materials = reader.objects(model, 6).map((table, i) => {
     const maps = reader.objects(table, 11, 128).map(mapTable => ({
-      sampler: reader.string(mapTable, 0), textureIndex: reader.integer(mapTable, 1, -1)
+      // FlatBuffers omits the schema default (0). The first texture is
+      // therefore a valid reference even when the field is absent.
+      sampler: reader.string(mapTable, 0), textureIndex: reader.integer(mapTable, 1, 0)
     }));
     return {
       name: reader.string(table, 0) || materialNames[i] || 'Material ' + i,
