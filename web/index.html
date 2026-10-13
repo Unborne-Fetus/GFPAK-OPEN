@@ -102,6 +102,7 @@
           <div class="mode-tabs" role="tablist" aria-label="Workspace mode">
             <button id="tabViewer" type="button" class="mode-tab active" role="tab" aria-selected="true" aria-controls="viewerPanel">◈ &nbsp; 3D VIEWPORT</button>
             <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
+            <button id="tabWebGame" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="webGamePanel">▤ &nbsp; GAME FILE INSPECTOR</button>
             <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; BLENDER CONVERTER</button>
             <button id="tabAssets" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="assetBrowser" hidden>▤ &nbsp; GAME FILE EXPLORER</button>
           </div>
@@ -190,6 +191,39 @@
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
           <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
+        </section>
+
+        <section id="webGamePanel" role="tabpanel" aria-labelledby="tabWebGame" hidden class="archive-panel">
+          <div class="archive-header">
+            <span class="eyebrow">BROWSER / LOCAL GAME FILES</span>
+            <h2>Game File Inspector</h2>
+            <p>Open local game folders, ZIPs, NSPs, or XCI gamecard images and inspect their file indexes without installing software. Data never leaves your browser. Encrypted NCA files and unsupported compressed containers remain locked.</p>
+          </div>
+          <div class="archive-actions">
+            <button id="webGameOpen" class="button button-primary" type="button">OPEN PACKAGE / FILE</button>
+            <button id="webGameFolder" class="button button-secondary" type="button">OPEN GAME FOLDER</button>
+            <input type="file" id="webGameInput" accept=".nsp,.xci,.zip,.gfpak,.nca,.ncz,.nsz,.xcz" multiple hidden />
+            <input type="file" id="webGameFolderInput" webkitdirectory directory multiple hidden />
+          </div>
+          <p id="webGameStatus" class="helper-copy" role="status" aria-live="polite">Choose a local package or folder. ZIP, standard PFS0/NSP, HFS0/XCI indexes, and raw file preview are supported.</p>
+          <div class="archive-actions">
+            <input id="webGameSearch" class="field" type="search" placeholder="Search file paths..." aria-label="Search game files" />
+            <select id="webGameType" class="field" aria-label="Filter file types">
+              <option>All</option><option>Model</option><option>Texture</option><option>Animation</option>
+              <option>Skeleton</option><option>NCA</option><option>Archive</option><option>Other</option>
+            </select>
+          </div>
+          <p id="webGameCount" class="helper-copy">0 entries</p>
+          <div class="web-game-layout">
+            <div id="webGameList" class="web-game-list" aria-label="Indexed game files"></div>
+            <div class="web-game-details">
+              <h3>Selected file</h3>
+              <p id="webGameSelected">Select a file to inspect.</p>
+              <pre id="webGameHex" class="nsp-hexdump"></pre>
+              <button id="webGameSave" class="button button-secondary" type="button" disabled>↓ SAVE SELECTED FILE</button>
+            </div>
+          </div>
+          <p class="helper-copy">This is a first browser-native inspector: it reads outer package indexes, folder contents, and raw bytes. It does not decrypt NCA sections or unpack NSZ/NCZ, and a GFPAK can be explored further in the GFPAK Inspector tab.</p>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
@@ -443,5 +477,6 @@
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/desktop-integration.js"></script>
   <script type="module" src="/src/asset-browser.js"></script>
+  <script type="module" src="/src/browser-game-inspector.js"></script>
 </body>
 </html>
