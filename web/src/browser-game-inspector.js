@@ -42,7 +42,7 @@ function parsePfs(bytes, base, total, group, magic) {
   if (count > LIMIT || count * entrySize + namesSize + 16 > bytes.length)
     throw Error('Package index incomplete or too large');
   const namesStart = 16 + count * entrySize;
-  const dataStart = hfs ? 0x10 : namesStart + namesSize;
+  const dataStart = namesStart + namesSize;
   const nameTable = bytes.subarray(namesStart,namesStart + namesSize);
   const result = [];
   for (let i=0; i<count; i++) {
