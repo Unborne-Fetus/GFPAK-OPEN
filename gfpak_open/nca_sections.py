@@ -24,12 +24,33 @@ class LocalNCASections:
         self.title_keyset: Path | None = None
         self._keys = Keyset(None)
         self._readers: dict[tuple, NativeNCA] = {}
+        self._key_signature = None
+
+    @staticmethod
+    def _file_signature(path: Path | None):
+        if path is None:
+            return None
+        # Include file revision, not key contents. Refresh when a user replaces
+        # a keys file, but keep live RomFS indexes on ordinary window focus.
+        try:
+            info = path.stat()
+            return (str(path.resolve()), info.st_size, info.st_mtime_ns)
+        except OSError:
+            return (str(path), None, None)
 
     def configure(self, keyset: str | Path = "", title_keyset: str | Path = ""):
-        self.keyset = Path(keyset) if keyset else None
-        self.title_keyset = Path(title_keyset) if title_keyset else None
-        self._keys = Keyset(self.keyset, self.title_keyset)
+        key_path = Path(keyset) if keyset else None
+        title_path = Path(title_keyset) if title_keyset else None
+        signature = (self._file_signature(key_path), self._file_signature(title_path))
+        if signature == self._key_signature:
+            return False
+        keys = Keyset(key_path, title_path)
+        self.keyset = key_path
+        self.title_keyset = title_path
+        self._keys = keys
+        self._key_signature = signature
         self._readers.clear()
+        return True
 
     def available(self) -> bool:
         """The native reader is always available, including for plaintext NCAs."""
