@@ -361,6 +361,9 @@ async function refreshNCAReader() {
   if (!api?.browse_nca_settings) return;
   try {
     const state = await api.browse_refresh_keys();
+    // Preserve unlocked sections on ordinary window focus. Only key changes
+    // require discarding the old section views and retrying their headers.
+    if (state.changed) invalidateNCASections();
     const keyset = state.keyset || 'No production keys file selected';
     const titleStatus = state.title_keys ? ' · title.keys detected' : ' · title.keys not found';
     id('ncaReaderStatus').textContent =
@@ -1433,12 +1436,7 @@ function initialize() {
   id('assetAttachBaseNCA').addEventListener('click', nxAttachBaseNCA);
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
   window.addEventListener('focus', () => {
-    if (!id('assetBrowser').hidden) {
-      api.browse_refresh_keys().then(() => {
-        invalidateNCASections();
-        return refreshNCAReader();
-      }).catch(error => showNotice(String(error.message || error), true));
-    }
+    if (!id('assetBrowser').hidden) void refreshNCAReader();
   });
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   void restoreSource();
