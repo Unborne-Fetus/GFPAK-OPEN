@@ -151,6 +151,7 @@ export async function openGfpak(blob, dictionary=new Map()) {
       hash:res.pathHash,compression:res.compression,
       category:found?categoryOf(name):'unknown',
       kind:found?kindOf(name):'file',
+      loadPackedSource:()=>relativeSource(fromBlob(blob),res.offset,res.packedSize),
       async loadSource(packed=false) {
         if(packed) return relativeSource(fromBlob(blob),res.offset,res.packedSize);
         const content=await extractResourceAsync(archive,res);
