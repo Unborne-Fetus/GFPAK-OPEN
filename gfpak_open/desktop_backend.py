@@ -344,6 +344,7 @@ class DesktopAPI:
             return {
                 "label": manifest["label"], "selected": manifest["selected"],
                 "matched": manifest.get("matched", {}),
+                "related_model_archive": manifest.get("related_model_archive"),
                 "items": [{
                     "path": entry["path"], "size": entry["size"],
                     "url": "/__quick_asset/" + token + "/" + str(index),
