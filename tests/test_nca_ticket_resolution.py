@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from gfpak_open.nca_native import Keyset, NativeNCA, inspect_nca3_entry
+from gfpak_open.nca_native import Keyset, NativeNCA, inspect_nca3_entry, inspect_package_tickets
 from gfpak_open.nsp_explorer import NSPAnalyzer
 
 RIGHTS = bytes.fromhex("00112233445566778899aabbccddeeff")
@@ -109,6 +109,47 @@ class TicketResolutionTests(unittest.TestCase):
             report = inspect_nca3_entry(NSPAnalyzer(path), 0, Keyset(None))
             self.assertEqual(report["content_key_status"],
                              "titlekek-unavailable-revision-07")
+
+    def test_ticket_for_other_rights_id_is_not_misclassified_as_invalid(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "game.nsp"
+            package(path, [
+                ("program.nca", nca()),
+                ("different.tik", ticket(bytes.fromhex("22" * 16))),
+            ])
+            analyzer = NSPAnalyzer(path)
+            inspection = inspect_package_tickets(analyzer, RIGHTS)
+            self.assertEqual(inspection["parsed_tickets"], 1)
+            self.assertEqual(inspection["unreadable_or_unsupported_tickets"], 0)
+            self.assertEqual(inspection["other_rights_ids"], 1)
+            self.assertEqual(inspection["relation"], "ticket-for-different-rights-id")
+            self.assertNotIn(RIGHTS.hex(), json.dumps(inspection))
+
+    def test_invalid_ticket_is_reported_separately_from_rights_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "game.nsp"
+            package(path, [("program.nca", nca()), ("broken.tik", bytes(0x400))])
+            inspection = inspect_package_tickets(NSPAnalyzer(path), RIGHTS)
+            self.assertEqual(inspection["ticket_entries"], 1)
+            self.assertEqual(inspection["parsed_tickets"], 0)
+            self.assertEqual(inspection["unreadable_or_unsupported_tickets"], 1)
+            self.assertEqual(inspection["relation"],
+                             "ticket-present-but-unreadable-or-unsupported")
+
+    def test_generation_difference_is_reported_without_using_unmatched_ticket(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "game.nsp"
+            older = RIGHTS[:15] + bytes([RIGHTS[15] ^ 1])
+            package(path, [("program.nca", nca()), ("older.tik", ticket(older))])
+            analyzer = NSPAnalyzer(path)
+            inspection = inspect_package_tickets(analyzer, RIGHTS)
+            self.assertEqual(inspection["same_rights_prefix_different_generation"], 1)
+            self.assertEqual(inspection["exact_rights_matches"], 0)
+            self.assertEqual(inspection["relation"], "generation-byte-differs")
+            report = inspect_nca3_entry(analyzer, 0, Keyset(None))
+            self.assertEqual(report["content_key_source"], "none")
+            self.assertEqual(report["package_ticket_inspection"]["relation"],
+                             "generation-byte-differs")
 
     def test_no_matching_key_or_ticket_is_explicit(self):
         with tempfile.TemporaryDirectory() as temp:
