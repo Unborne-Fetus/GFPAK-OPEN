@@ -472,6 +472,38 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertFalse((root / "workspace" / "preview").exists(),
                              "Fast nested GFPAK previews must not stage files on disk")
 
+    def test_raw_nested_romfs_gfpak_zip_never_requires_3d_preview(self):
+        """A valid model archive can be exported even when geometry is unsupported."""
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "encrypted-model.nsp"
+            original = native_gfpak_fixture()
+            package(game, [("program.nca", plain_nca([
+                ("romfs", romfs_nested(original))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(game)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            mounted = next(row for row in catalog["assets"]
+                           if row["name"] == "pm0025_00_00.gfpak")
+            # Model conversion can fail if its geometry is not supported; the
+            # original files are nevertheless accessible and must be exportable.
+            with patch.object(browser, "fast_preview_items",
+                              side_effect=ValueError("Unsupported native 3D model")):
+                output = browser.export_pokemon(mounted["id"], root / "raw-assets.zip")
+            with zipfile.ZipFile(output) as zipped:
+                names = zipped.namelist()
+                self.assertIn("pm0025_00_00.trmdl", names)
+                self.assertIn("pm0025_00_00.trmsh", names)
+                self.assertIn("pm0025_00_00.bntx", names)
+                self.assertIn("pm0025_00_00.tranm", names)
+                self.assertNotIn("pokedex3d/regular.glb", names)
+                self.assertEqual(zipped.read("pm0025_00_00.trmdl"),
+                                 b"model descriptor")
+
     def test_native_nca_png_thumbnail_and_linked_folder_dont_hide_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
