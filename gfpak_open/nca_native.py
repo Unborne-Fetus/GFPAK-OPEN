@@ -1115,7 +1115,7 @@ class RomFS:
                 while child not in self._directories:
                     page = self.children_page(parent, cursor=cursor, limit=self.PAGE_SIZE)
                     cursor = page["next_cursor"]
-                    if cursor is None:
+                    if child not in self._directories and cursor is None:
                         raise NativeNCAError("Unknown RomFS folder.")
             parent = child
 
