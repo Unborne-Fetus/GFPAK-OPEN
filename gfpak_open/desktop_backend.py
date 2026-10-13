@@ -107,6 +107,7 @@ class DesktopAPI:
                 "keyset": keyset.name if keyset and keyset.is_file() else "",
                 "title_keys": bool(self._browser._nca_sections.title_keyset and
                                    self._browser._nca_sections.title_keyset.is_file()),
+                "title_key_count": self._browser._nca_sections._keys.title_key_count,
                 "ready": True,
                 "has_keys": self._browser._nca_sections.key_ready(),
                 "note": ("No external NCA reader executable required. "
