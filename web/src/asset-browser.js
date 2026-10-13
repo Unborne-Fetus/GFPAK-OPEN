@@ -361,9 +361,10 @@ async function refreshNCAReader() {
   if (!api?.browse_nca_settings) return;
   try {
     const state = await api.browse_refresh_keys();
-    const keyset = state.keyset || 'No keys file selected';
+    const keyset = state.keyset || 'No production keys file selected';
+    const titleStatus = state.title_keys ? ' · title.keys detected' : ' · title.keys not found';
     id('ncaReaderStatus').textContent =
-      '✓ Self-contained NCA / RomFS / ExeFS reader · ' + keyset +
+      '✓ Self-contained NCA / RomFS / ExeFS reader · ' + keyset + titleStatus +
       (state.has_keys ? ' · Encrypted NCA keys file selected.' :
                         ' · Encrypted NCA sections require a compatible local keys file.');
     id('ncaReaderStatus').classList.add('ready');
@@ -390,7 +391,7 @@ function invalidateNCASections() {
 async function selectNCASetting(kind) {
   try {
     await api.browse_open_keys_folder();
-    showNotice('Place your own prod.keys in the opened keys folder. GFPAK will detect it when you return.');
+    showNotice('Place your own prod.keys and title.keys in the opened keys folder. GFPAK will detect them when you return.');
     // Refresh when the desktop window regains focus after a file is dropped.
     await refreshNCAReader();
   } catch (error) { showNotice(error.message || String(error), true); }
