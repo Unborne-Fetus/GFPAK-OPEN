@@ -591,6 +591,22 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(length, len(source))
             self.assertEqual(b"".join(stream), source)
 
+            import zipfile
+            output = browser.export_pokemon(archive_node['id'], root / 'pokemon.zip')
+            with zipfile.ZipFile(output) as exported:
+                model = next(name for name in exported.namelist()
+                             if name.endswith('.gfbmdl'))
+                self.assertEqual(exported.read(model), source)
+
+    def test_swsh_shared_vtable_model_previews_and_exports_from_romfs(self):
+        from test_resource_discovery import gfbmdl_triangle
+        source = bytearray(gfbmdl_triangle())
+        source[368:378] = source[160:170]
+        struct.pack_into('<i', source, 192, 192 - 368)
+        with patch('test_resource_discovery.gfbmdl_triangle',
+                   return_value=bytes(source)):
+            self.test_swsh_model_inside_romfs_gfpak_previews_without_trinity_hashes()
+
     def test_model_diagnostics_explain_failed_oodle_resource_without_exposing_keys(self):
         """Unavailable compressed contents must not be mislabeled model data."""
         import json

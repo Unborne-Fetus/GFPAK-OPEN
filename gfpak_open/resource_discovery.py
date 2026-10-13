@@ -41,7 +41,9 @@ def _native_model_type(data):
         if at < 4 or at + 4 > len(data):
             raise ValueError("invalid table")
         vt = at - i32(at)
-        if vt < 4 or vt >= at:
+        # FlatBuffers deduplicates vtables. The signed offset may point
+        # forward to a shared vtable, especially in multi-mesh GFBMDLs.
+        if vt < 4 or vt == at or vt + 4 > len(data):
             raise ValueError("invalid vtable")
         length, obj = u16(vt), u16(vt + 2)
         if (length < 4 or length > 1024 or length & 1 or obj < 4 or
