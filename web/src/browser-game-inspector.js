@@ -233,7 +233,7 @@ async function go(node){
   }catch(e){notice((node.name+': '+(e.message||String(e))),true);select(node);}
 }
 function sourceRoot(file,kind){
-  const root=mk(file.name,{folder:true,kind,metadata:{bytes:file.size}});
+  const root=mk(file.name,{folder:true,kind,size:file.size,metadata:{bytes:file.size}});
   state.nodes=[root];state.files=[];state.root=root;state.folder=root;
   state.source=file;state.sourceName=file.name;
   state.treeExpanded=new Set([root.id]);
@@ -265,6 +265,7 @@ async function openInput(files,folder=false){
       }
     }else if(selectedFiles.length===1){
       root.source=fromBlob(selectedFiles[0]);
+      root.size=root.source.size;
       if(root.kind==='package'){
         const pack=/\.xci$/i.test(selectedFiles[0].name)?
           await openXci(root.source):await readPackage(root.source,0,'PFS0');
@@ -317,7 +318,7 @@ function rowsToShow(){
     });
 }
 function render(){
-  byId('assetBrowser').hidden=false;
+  // Scans can finish after the user switches tabs; never reopen the explorer automatically.
   byId('assetBack').disabled=!state.folder?.parent;
   byId('assetBreadcrumb').textContent=state.folder?
     state.folder.path.replaceAll('/','  /  '):'No game source selected';
@@ -656,10 +657,10 @@ async function scan(){
   state.busy=true;state.scanning=true;const revision=++state.scanRevision;
   byId('assetScan').textContent='◼ Stop scan';
   byId('assetScan').disabled=false;
-  const queue=[state.root];let seen=0,warnings=[];
+  const queue=[state.root];let head=0,seen=0,warnings=[];
   byId('assetScanSummary').textContent='Scanning reachable game files…';
-  while(queue.length&&seen<MAX_SCAN&&revision===state.scanRevision){
-    const node=queue.shift();seen++;
+  while(head<queue.length&&seen<MAX_SCAN&&revision===state.scanRevision){
+    const node=queue[head++];seen++;
     if(node.children!==null){
       try{await expand(node);}
       catch(e){warnings.push(node.name+': '+(e.message||String(e)));continue;}
