@@ -96,22 +96,10 @@ export class ModelStage {
     this.clear();
     this.root = root;
     this.animations = animations;
-    const textures = new Set();
-    const anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     root.traverse(obj => {
-      if (obj.isMesh) {
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-        for (const material of Array.isArray(obj.material) ? obj.material : [obj.material]) {
-          for (const value of Object.values(material)) {
-            if (value?.isTexture && !textures.has(value)) {
-              configureTextureSampling(value, anisotropy);
-              textures.add(value);
-            }
-          }
-        }
-      }
+      if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;}
     });
+    this.refreshTextures();
     this.scene.add(root);
     const bounds = new THREE.Box3().setFromObject(root);
     const center = bounds.getCenter(new THREE.Vector3());
@@ -124,6 +112,27 @@ export class ModelStage {
     this.setAnimations(animations);
     this.userAdjustedCamera = false;
     this.frame();
+  }
+
+  /** Native model textures arrive after geometry's first frame.
+   * Reapply the desktop viewer's max supported anisotropy and mipmapping when
+   * those BNTX/DDS images finish loading, without resetting camera/animation.
+   */
+  refreshTextures() {
+    if(!this.root)return;
+    const seen=new Set();
+    const max=this.renderer.capabilities.getMaxAnisotropy();
+    this.root.traverse(mesh=>{
+      if(!mesh.isMesh)return;
+      for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){
+        if(!material)return;
+        for(const value of Object.values(material)){
+          if(value?.isTexture&&!seen.has(value)){
+            seen.add(value);configureTextureSampling(value,max);
+          }
+        }
+      }
+    });
   }
 
   setAnimations(animations = []) {
