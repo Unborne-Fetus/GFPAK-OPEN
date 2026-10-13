@@ -5,6 +5,7 @@
  */
 import JSZip from 'jszip';
 import {parseGfpakFile, extractResourceAsync, resolvedName} from './gfpak.js';
+import {decodeNcaHeader,deriveNcaSectionKeys,makeNcaSectionSource} from './browser-nca-crypto.js';
 
 const utf8 = new TextDecoder('utf-8', {fatal:true});
 const MAX_ENTRIES = 150000;
@@ -161,38 +162,55 @@ export async function openGfpak(blob, dictionary=new Map()) {
     };
   });
 }
-export async function inspectNca(source) {
-  if(source.size<0xc00) throw Error('NCA header is incomplete');
-  const raw=await source.read(0,0xc00);
-  if(raw[0x200]!==78 || raw[0x201]!==67 || raw[0x202]!==65 || raw[0x203]!==51)
-    throw Error('Encrypted NCA header: browser mode cannot decode NCA header keys.');
+export async function inspectNca(source,keys=new Map(),ticketLookup=null) {
+  const {header:raw,tweakOrder,plaintext}=await decodeNcaHeader(source,keys);
   const v=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
   const sections=[];
+  let pendingKeys=null;
+  const resolveKeys=()=> {
+    if(!pendingKeys)pendingKeys=deriveNcaSectionKeys(raw,keys,ticketLookup).catch(error=>{
+      pendingKeys=null;throw error;
+    });
+    return pendingKeys;
+  };
   for(let i=0;i<4;i++) {
     const a=u32(v,0x240+i*16),b=u32(v,0x244+i*16);
-    if(!a&&!b) continue;
+    if(!a&&!b)continue;
     const start=a*0x200,stop=b*0x200;
-    if(start<0xc00 || stop<=start || stop>source.size)
-      throw Error('Invalid NCA section storage bounds');
-    const fs=raw.subarray(0x400+i*0x200,0x600+i*0x200);
+    if(start<0xc00||stop<=start||stop>source.size)
+      throw Error('Invalid NCA section '+i+' storage bounds');
+    const fs=raw.slice(0x400+i*0x200,0x600+i*0x200);
+    const fsView=new DataView(fs.buffer,fs.byteOffset,fs.byteLength);
     const encryption=fs[4],fsType=fs[2],hashType=fs[3];
-    sections.push({
+    const mapped=[0x108,0x128,0x150,0x180].some(at=>u64(fsView,at)>0);
+    const supported=[1,2,3].includes(encryption)&&!mapped&&
+      ((fs[0]===2&&fs[1]===0)||(fs[0]===0&&fs[1]===0));
+    const section={
       name:'Section '+i,size:stop-start,number:i,encryption,fsType,hashType,
-      source:relativeSource(source,start,stop-start),header:fs,
-      category:'folder',kind:'nca_section',
-      supported:encryption===1 && ![
-        0x108,0x128,0x150,0x180
-      ].some(at=>u64(new DataView(fs.buffer,fs.byteOffset,fs.byteLength),at)>0)
-    });
+      header:fs,category:'folder',kind:'nca_section',supported,
+      headerPlaintext:plaintext,
+      async getSource(){
+        if(!supported)throw Error(mapped?
+          'This sparse, compressed or patch NCA section cannot be mapped in web mode.':
+          'Unsupported NCA section encryption or filesystem header version.');
+        let contentKey=null;
+        if(encryption!==1) {
+          const resolved=await resolveKeys();
+          if(!resolved.keys)throw Error('Missing content key for encrypted NCA filesystem section');
+          contentKey=encryption===3?resolved.keys[2]:
+            Uint8Array.from([...resolved.keys[0],...resolved.keys[1]]);
+        }
+        return makeNcaSectionSource(source,start,stop-start,fs,encryption,contentKey,tweakOrder);
+      }
+    };
+    sections.push(section);
   }
   return sections;
 }
 export async function openNcaSection(section) {
   if(!section.supported)
-    throw Error(section.encryption===1 ?
-      'Sparse, compressed or patch NCA storage requires desktop decoding.' :
-      'Encrypted NCA section requires native decryption; no files were fabricated.');
-  const source=section.source;
+    throw Error('NCA section is locked or uses an unsupported patch/compressed storage mapping.');
+  const source=await section.getSource();
   const fs=new DataView(section.header.buffer,section.header.byteOffset,section.header.byteLength);
   if([1,2].includes(section.fsType)&&[0,1,2,5].includes(section.hashType)){
     const begin=[2,5].includes(section.hashType)?u64(fs,0x40):0;
@@ -202,7 +220,7 @@ export async function openNcaSection(section) {
     if(decodeName(section.header.subarray(8,12))!=='IVFC')
       throw Error('This RomFS IVFC layout is unsupported');
     const levels=u32(fs,0x14);
-    if(levels<2||levels>7) throw Error('Invalid IVFC level count');
+    if(levels<2||levels>7)throw Error('Invalid IVFC level count');
     const offset=0x18+(levels-2)*0x18;
     if(offset+0x18>0xa8)throw Error('RomFS level descriptor is outside header');
     const romOffset=u64(fs,offset),length=u64(fs,offset+8);
@@ -210,14 +228,14 @@ export async function openNcaSection(section) {
     const rom=relativeSource(source,romOffset,length);
     const header=await rom.read(0,0x50);
     const h=new DataView(header.buffer,header.byteOffset,header.byteLength);
-    if(u64(h,0)!==0x50)throw Error('Decrypted RomFS header is invalid');
+    if(u64(h,0)!==0x50)throw Error('Decrypted RomFS header is invalid: check matching content key');
     const directory={start:u64(h,0x18),size:u64(h,0x20)};
     const fileTable={start:u64(h,0x38),size:u64(h,0x40)};
     const fileData=u64(h,0x48);
     assertRange(rom.size,directory.start,directory.size,'RomFS directory metadata');
     assertRange(rom.size,fileTable.start,fileTable.size,'RomFS file metadata');
     assertRange(rom.size,fileData,0,'RomFS data');
-    return {type:'romfs', rom, directory,fileTable,fileData};
+    return {type:'romfs',rom,directory,fileTable,fileData};
   }
   throw Error('Unsupported NCA filesystem format');
 }
