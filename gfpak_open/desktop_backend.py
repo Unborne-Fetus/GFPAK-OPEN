@@ -554,6 +554,35 @@ class DesktopAPI:
         with self._lock:
             return self._browser._public(self._browser.node(node_id))
 
+    def browse_nca_diagnostics(self, node_id: str):
+        """Return small, key-safe diagnostic text without extracting NCA content."""
+        with self._lock:
+            node = self._browser.node(node_id)
+            if node["kind"] == "nca_locked":
+                parent = self._browser.node(node["inner"])
+            else:
+                parent = node
+            if parent["kind"] != "nspfile" or not parent["name"].lower().endswith((".nca", ".ncz")):
+                raise ValueError("Select an NCA or its locked section to copy diagnostics")
+            report = [
+                "GFPAK OPEN — NCA diagnostics",
+                "Archive: " + parent["name"],
+                "Archive size: " + str(parent.get("size", "unknown")) + " bytes",
+                "Production keys recognized: " + str(self._browser._nca_sections.key_ready()),
+                "Title key entries loaded: " + str(self._browser._nca_sections._keys.title_key_count),
+            ]
+            try:
+                result = self._browser._nca_children(parent)
+                report.append("Section scan: " + str(result.get("note", "no details")))
+                for child in result.get("entries", []):
+                    if child["kind"] == "nca_section":
+                        report.append(child["name"] + ": " +
+                                      json.dumps(child.get("capabilities", {}), sort_keys=True))
+            except (OSError, RuntimeError, ValueError) as error:
+                report.append("Section scan error: " + str(error))
+            report.append("No raw game content, keys, or secret values included.")
+            return "\\n".join(report)
+
     def browse_item_details(self, node_id: str):
         with self._lock:
             return self._browser.item_details(node_id)
