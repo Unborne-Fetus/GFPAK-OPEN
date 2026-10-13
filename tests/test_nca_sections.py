@@ -472,6 +472,46 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertFalse((root / "workspace" / "preview").exists(),
                              "Fast nested GFPAK previews must not stage files on disk")
 
+    def test_swsh_model_inside_romfs_gfpak_previews_without_trinity_hashes(self):
+        """Sword/Shield GFBMDL has geometry in one resource, not a Trinity trio."""
+        from test_resource_discovery import gfbmdl_triangle
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = gfbmdl_triangle()
+            packed = bytearray(112 + len(source))
+            packed[:8] = b"GFLXPACK"
+            struct.pack_into("<4I", packed, 8, 0x1000, 0, 1, 1)
+            struct.pack_into("<QQQ", packed, 24, 88, 48, 56)
+            # Deliberately unrecognized hash values: format evidence is the
+            # only way to find the native GFBMDL model here.
+            struct.pack_into("<Q", packed, 48, 0x123456789)
+            struct.pack_into("<QII", packed, 56, 0xAA, 1, 0)
+            struct.pack_into("<QII", packed, 72, 0x123456789, 0, 0)
+            struct.pack_into("<HHIIIII", packed, 88,
+                             0, 0, len(source), len(source), 0, 112, 0)
+            packed[112:] = source
+            game = root / "swsh.nsp"
+            package(game, [("program.nca", plain_nca([
+                ("romfs", romfs_nested(bytes(packed)))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            opened = browser.open(game)
+            nca = browser.children(opened["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            archive_node = next(row for row in catalog["assets"]
+                                if row["name"] == "pm0025_00_00.gfpak")
+            _, resolved = browser._mounted_gfpak(archive_node["id"])
+            self.assertEqual(len(resolved), 1)
+            self.assertTrue(resolved[0].endswith(".gfbmdl"))
+            manifest = browser.fast_preview_items(archive_node["id"])
+            self.assertTrue(manifest["selected"].endswith(".gfbmdl"))
+            self.assertEqual(len(manifest["items"]), 1)
+            length, stream = browser.stream_fast_preview_item(
+                manifest["items"][0]["source"])
+            self.assertEqual(length, len(source))
+            self.assertEqual(b"".join(stream), source)
+
     def test_raw_nested_romfs_gfpak_zip_never_requires_3d_preview(self):
         """A valid model archive can be exported even when geometry is unsupported."""
         import zipfile
