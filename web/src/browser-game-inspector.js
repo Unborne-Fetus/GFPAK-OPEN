@@ -480,7 +480,11 @@ function select(node){
     let compatible=!!node && node.children===null && COMPATIBLE_MODEL_SUFFIXES.test(node.name);
     if(compatible) {
       try{modelIdentityFromPath(node.path.slice(state.root.path.length+1));}
-      catch{compatible=false;}
+      catch{
+        // A standalone pm####.gfpak may contain members named body.trmdl:
+        // keep the archive's genuine Pokémon ID in the final ZIP paths.
+        try{modelIdentityFromPath(node.path);}catch{compatible=false;}
+      }
     }
     state.pokedexButton.disabled=!compatible||state.zipExporting;
     state.pokedexButton.title=compatible?
@@ -700,8 +704,21 @@ async function exportPokedex3dPack(node){
     const matches=matchingAssets(node);
     if(!matches.length||matches[0]!==node)throw Error('Selected model no longer exists.');
     const prefix=startRoot.path+'/';
+    const relativeSelected=node.path.slice(prefix.length);
+    let includeSourceFolder=false;
+    try{modelIdentityFromPath(relativeSelected);}
+    catch{
+      // Preserve a genuine pm#### from the standalone package's filename.
+      modelIdentityFromPath(node.path);
+      includeSourceFolder=true;
+    }
+    const zipPath=asset=>{
+      if(!asset.path.startsWith(prefix))throw Error('An asset is outside the selected game root.');
+      const relative=asset.path.slice(prefix.length);
+      return includeSourceFolder?startRoot.name+'/'+relative:relative;
+    };
     const entries=matches.map(asset=>{
-      const path=asset.path.startsWith(prefix)?asset.path.slice(prefix.length):asset.path;
+      const path=zipPath(asset);
       return {
         path,size:asset.size,
         linkedKind:asset.category,
@@ -720,7 +737,7 @@ async function exportPokedex3dPack(node){
         }
       };
     });
-    const selected=node.path.slice(prefix.length);
+    const selected=zipPath(node);
     const project={
       label:state.sourceName||startRoot.name,
       items:entries,
