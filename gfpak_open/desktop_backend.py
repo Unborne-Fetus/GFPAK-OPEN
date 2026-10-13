@@ -608,6 +608,25 @@ class DesktopAPI:
                 metadata = inspect_nca3_entry(
                     analyzer, index, self._browser._nca_sections._keys)
                 report.append("Header inspection: " + json.dumps(metadata, sort_keys=True))
+                if metadata.get("content_key_source") == "package-ticket":
+                    ticket_revision = metadata.get("ticket_master_key_revision")
+                    nca_revision = metadata.get("nca_master_key_revision")
+                    selected_revision = metadata.get("selected_master_key_revision")
+                    if ticket_revision is not None and ticket_revision != nca_revision:
+                        report.append(
+                            "Key revision check: ticket revision " + str(ticket_revision) +
+                            " differs from NCA master-key revision " + str(nca_revision) +
+                            ". Reader selected revision " + str(selected_revision) +
+                            " using bounded filesystem-header verification."
+                        )
+                validation = metadata.get("content_key_validation")
+                if validation == "verified-by-filesystem-header":
+                    report.append("Content key verdict: at least one encrypted filesystem header validated.")
+                elif validation == "no-valid-filesystem-header":
+                    report.append(
+                        "Content key verdict: no encrypted filesystem header validated. "
+                        "A matching package ticket alone does not prove the key is correct."
+                    )
                 probes = metadata.get("filesystem_header_probes", ())
                 invalid = [str(item["section"]) for item in probes
                            if item["status"].startswith("invalid-decoded-")]
