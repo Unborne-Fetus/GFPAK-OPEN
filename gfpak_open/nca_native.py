@@ -188,6 +188,7 @@ def inspect_nca3_entry(analyzer: NSPAnalyzer, index: int, keys: Keyset) -> dict:
         details["content_key_source"] = source
         details["content_key_status"] = status
         details["package_ticket_entries"] = tickets
+        details["package_ticket_inspection"] = inspect_package_tickets(analyzer, rights)
     return details
 
 
@@ -237,6 +238,65 @@ def _matching_package_ticket(analyzer: NSPAnalyzer, rights: bytes) -> tuple[dict
             if ticket is not None and ticket["rights_id"] == rights:
                 return ticket, len(ticket_entries)
     return None, len(ticket_entries)
+
+
+
+def inspect_package_tickets(analyzer: NSPAnalyzer, rights: bytes) -> dict:
+    """Explain ticket mismatch using bounded metadata reads, never key bytes or IDs.
+
+    A package containing a .tik file is not necessarily licensed for every NCA
+    inside it. A parse failure must not be mislabeled as a rights-ID mismatch.
+    """
+    entries = [e for e in getattr(analyzer, "entries", ())
+               if e.name.lower().endswith(".tik")]
+    result = {
+        "ticket_entries": len(entries),
+        "tickets_checked": 0,
+        "parsed_tickets": 0,
+        "unreadable_or_unsupported_tickets": 0,
+        "exact_rights_matches": 0,
+        "same_rights_prefix_different_generation": 0,
+        "other_rights_ids": 0,
+        "matching_ticket_type": "none",
+        "matching_ticket_revision": None,
+        "relation": "no-ticket",
+    }
+    if not entries:
+        return result
+    with analyzer.path.open("rb") as source:
+        for entry in entries[:4096]:
+            result["tickets_checked"] += 1
+            if not 0x1B0 <= entry.size <= 1024 * 1024:
+                result["unreadable_or_unsupported_tickets"] += 1
+                continue
+            source.seek(entry.offset)
+            ticket = _parse_common_ticket(source.read(min(entry.size, 0x500)))
+            if ticket is None:
+                result["unreadable_or_unsupported_tickets"] += 1
+                continue
+            result["parsed_tickets"] += 1
+            if ticket["rights_id"] == rights:
+                result["exact_rights_matches"] += 1
+                result["matching_ticket_type"] = (
+                    "common" if ticket["key_type"] == 0 else "personalized"
+                )
+                result["matching_ticket_revision"] = ticket["generation"]
+            elif ticket["rights_id"][:15] == rights[:15]:
+                # Only a diagnostic hint: never decrypt with a nonmatching ID.
+                result["same_rights_prefix_different_generation"] += 1
+            else:
+                result["other_rights_ids"] += 1
+    if result["exact_rights_matches"]:
+        result["relation"] = "exact-match"
+    elif result["same_rights_prefix_different_generation"]:
+        result["relation"] = "generation-byte-differs"
+    elif result["parsed_tickets"]:
+        result["relation"] = "ticket-for-different-rights-id"
+    else:
+        result["relation"] = "ticket-present-but-unreadable-or-unsupported"
+    if len(entries) > 4096:
+        result["scan_limit_reached"] = True
+    return result
 
 
 def resolve_title_content_key(analyzer: NSPAnalyzer, rights: bytes, revision: int,
