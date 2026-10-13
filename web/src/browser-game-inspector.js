@@ -782,12 +782,14 @@ function install(){
     event.target.value='';
     if(!chosen.length)return;
     try{
-      let loaded=new Map(state.keys);
+      let loaded=new Map(state.keys), recognized=0;
       for(const file of chosen){
         if(file.size>1024*1024)throw Error('Key files must be under 1 MiB each.');
-        loaded=parseNcaKeys(await file.text(),loaded);
+        const parsed=parseNcaKeys(await file.text());
+        recognized+=parsed.size;
+        for(const [name,value] of parsed)loaded.set(name,value);
       }
-      if(loaded.size===state.keys.size)throw Error('No additional valid key entries found in the selected files.');
+      if(!recognized)throw Error('No valid key entries found in the selected files.');
       state.keys=loaded;
       updateKeyStatus();
       notice('Local key file accepted. Reopening selected game source to retry encrypted NCA sections.');
