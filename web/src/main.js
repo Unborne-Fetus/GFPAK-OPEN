@@ -870,7 +870,8 @@ async function openFastDesktopPreview(detail) {
     finished(true);
     completeFastPreview(result);
   } catch (error) {
-    log('Fast preview: ' + (error.message || String(error)) + '. Trying compatible fallback.', 'info');
+    log('Native 3D preview failed: ' + (error.message || String(error)) +
+      '. The source assets may still be exported without rendering.', 'info');
     finished(false, error.message || String(error));
   } finally {
     busy(false);
