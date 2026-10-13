@@ -1301,6 +1301,124 @@ class AssetBrowser:
             "label": selected["name"], "selected": selected_name, "items": entries
         }
 
+    @staticmethod
+    def _same_pokemon_form_key(name: str) -> str:
+        """Only an exact pm####_##_ format token qualifies for model fallback."""
+        match = re.match(r"(?i)^(pm\\d{4}_\\d{2}_\\d{2})(?!\\d)", Path(name).name)
+        return match.group(1).casefold() if match else ""
+
+    def _related_mounted_model_preview(self, node: dict,
+                                       archive: VirtualGFPak,
+                                       names: dict[int, str]) -> dict | None:
+        """Locate a unique model in a neighboring archive of the same form.
+
+        Some game archives contain exclusively animations and textures; the
+        mesh is stored in a second GFPAK. Never fabricate a preview from those
+        companions and never associate distinct Pokémon forms. If multiple
+        model-bearing archives match, leave selection to the user.
+        """
+        if node["kind"] != "nca_file" or not node["name"].lower().endswith(".gfpak"):
+            return None
+        family_key = self._same_pokemon_form_key(node["name"])
+        if not family_key:
+            return None
+        reader, index, section, full_name = self._nca_virtual_file(node)
+        parent = full_name.rpartition("/")[0]
+        fs = self._nca_sections.filesystem(reader, index, section)
+        # The directory listing is backed by existing 250-entry cursor pages.
+        # Checking matching candidates does not stage entire NCAs or traverse
+        # unrelated folders, even when the game has tens of thousands of files.
+        candidates = {}
+        cursor = None
+        for _ in range(64):
+            page = fs.children_page(parent, cursor=cursor, limit=250)
+            for item in page["entries"]:
+                if (item["type"] != "file" or item["path"] == full_name or
+                        item["size"] > 2 * 1024 * 1024 * 1024 or
+                        not item["name"].lower().endswith(
+                            (".gfpak", ".gfbmdl", ".trmdl")) or
+                        self._same_pokemon_form_key(item["name"]) != family_key):
+                    continue
+                candidates[item["path"]] = item
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+        # Game-wide indexing may already have located a matching model in a
+        # different directory. Consider it only inside the SAME NCA section.
+        for other in self._nodes.values():
+            if other["kind"] != "nca_file" or other["id"] == node["id"]:
+                continue
+            position = self._nca_virtual_nodes.get(other["id"])
+            if not position or position[:2] != (index, section):
+                continue
+            if self._nca_sources.get(other["id"]) is not reader:
+                continue
+            name = position[2]
+            if (self._same_pokemon_form_key(other["name"]) == family_key and
+                    other["name"].lower().endswith((".gfpak", ".gfbmdl", ".trmdl"))):
+                candidates.setdefault(name, {
+                    "path": name, "name": other["name"], "size": other["size"],
+                    "type": "file"})
+
+        verified = []
+        for path, item in sorted(candidates.items()):
+            model_node = self._node(
+                "nca_file", reader.path, inner=f"related:{index}:{section}:{path}",
+                name=item["name"], size=item["size"])
+            self._nca_virtual_nodes[model_node["id"]] = (index, section, path)
+            self._nca_sources[model_node["id"]] = reader
+            try:
+                if item["name"].lower().endswith(".gfpak"):
+                    candidate_archive, candidate_names = self._mounted_gfpak(model_node["id"])
+                    if not any(Path(value).suffix.lower() in {".trmdl", ".gfbmdl"}
+                               for value in candidate_names.values()):
+                        continue
+                    candidate = self._fast_mounted_gfpak_preview_items(model_node)
+                else:
+                    candidate = self.fast_preview_items(model_node["id"])
+                if not candidate.get("items"):
+                    continue
+                verified.append((item["name"], candidate))
+                if len(verified) > 1:
+                    break
+            except (OSError, ValueError, GFPakError):
+                continue
+        if len(verified) != 1:
+            if len(verified) > 1:
+                raise ValueError(
+                    "Several model-bearing GFPAKs match this Pokémon form. "
+                    "Choose the correct model GFPAK directly; refusing to "
+                    "combine ambiguous assets.")
+            return None
+
+        model_name, result = verified[0]
+        merged = [dict(item) for item in result["items"]]
+        used = {row["path"].casefold() for row in merged}
+        linked = Counter()
+        allowed = TEXTURE | ANIMATION | SKELETON | MATERIAL
+        for resource_index, name in sorted(names.items()):
+            kind = classify(name)
+            resource = archive.resources[resource_index]
+            if (Path(name).suffix.lower() not in allowed or
+                    resource.size < 0 or resource.size > 128 * 1024 * 1024 or
+                    name.casefold() in used):
+                continue
+            merged.append({
+                "path": name, "size": resource.size,
+                "source": ("nca_gfpak", node["id"], resource_index),
+                "linkedKind": kind, "matchConfidence": "probable",
+                "matchReason": "neighboring GFPAK shares exact Pokémon form ID"
+            })
+            used.add(name.casefold())
+            linked[kind] += 1
+            if len(merged) >= 400:
+                break
+        return {**result,
+                "label": result["label"] + " (related to " + node["name"] + ")",
+                "items": merged,
+                "matched": dict(linked),
+                "related_model_archive": model_name}
+
     def _fast_mounted_gfpak_preview_items(self, node: dict) -> dict:
         parent_id = node["id"] if node["kind"] == "nca_file" else (
             self._virtual_gfpak_nodes.get(node["id"]) or (None,))[0]
@@ -1319,6 +1437,10 @@ class AssetBrowser:
                     for name in names.values()):
                 raise ValueError("The selected GFPAK member is not a verified model. "
                                  "Select a .trmdl or .gfbmdl member instead.")
+            if node["kind"] == "nca_file":
+                related = self._related_mounted_model_preview(node, archive, names)
+                if related is not None:
+                    return related
             raise ValueError(self._model_discovery_failure(archive, names))
         selected_idx, selected_name = models[0]
         family = pokemon_id(selected_name)
