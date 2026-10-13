@@ -790,6 +790,10 @@ function select(row) {
   id('assetExportPokemon').disabled = !canPreview(row);
   const compatibleExport = id('assetExportPokedex3d');
   if (compatibleExport) compatibleExport.disabled = !canPreview(row);
+  const modelDiag = id('assetCopyModelDiagnostics');
+  if (modelDiag) modelDiag.disabled = !row ||
+    !(['gfpak', 'gfpak_resource', 'nca_gfpak_resource'].includes(row.kind) ||
+      (row.kind === 'nca_file' && /\.gfpak$/i.test(row.name)));
   id('assetCopyNcaDiagnostics').disabled = !row ||
     !((row.kind === 'nspfile' && /\.(nca|ncz)$/i.test(row.name)) ||
       ['nca_locked', 'nca_section', 'nca_dir', 'nca_file'].includes(row.kind));
@@ -1555,6 +1559,31 @@ function initialize() {
       showNotice('Pokédex 3D Max ZIP unavailable: ' + (error.message || String(error)), true);
     } finally {
       compatibleButton.disabled = !canPreview(selected);
+    }
+  });
+  // Accessible even when no model can be decoded: the user can share
+  // metadata-only counts so a failed preview can be diagnosed precisely.
+  const diag = id('assetCopyNcaDiagnostics').cloneNode(false);
+  diag.id = 'assetCopyModelDiagnostics';
+  diag.textContent = 'Copy Model Diagnostics';
+  diag.title = 'Copy key-safe GFPAK detection counts and compression status';
+  diag.disabled = true;
+  id('assetCopyNcaDiagnostics').after(diag);
+  diag.addEventListener('click', async () => {
+    if (!selected || !api.browse_model_diagnostics) return;
+    try {
+      const report = await api.browse_model_diagnostics(selected.id);
+      const summaryText = JSON.stringify(report, null, 2);
+      try {
+        await navigator.clipboard.writeText(summaryText);
+        showNotice('Model diagnostics copied. Paste the report into the chat for a precise fix.');
+      } catch (_) {
+        // Some desktop webviews deny clipboard access. Keep the report
+        // selectable in the native notice, without showing secret data.
+        showNotice(summaryText);
+      }
+    } catch (error) {
+      showNotice('Model diagnostics unavailable: ' + (error.message || error), true);
     }
   });
   id('assetCopyNcaDiagnostics').addEventListener('click', copyNcaDiagnostics);
