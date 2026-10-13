@@ -77,7 +77,7 @@ class NCAFilesystemProbeTests(unittest.TestCase):
                              "valid-romfs-header")
             report = inspect_nca3_entry(NSPAnalyzer(p), 0, keys)
             self.assertTrue(report["sections"][0]["section_header_sha256_valid"])
-            self.assertNotIn("filesystem_header_probes", report)  # rights-free
+            self.assertEqual(report["filesystem_header_probes"][0]["status"], "valid-romfs-header")
 
     def test_wrong_area_key_is_flagged_as_bad_decrypted_romfs(self):
         with tempfile.TemporaryDirectory() as temp:
