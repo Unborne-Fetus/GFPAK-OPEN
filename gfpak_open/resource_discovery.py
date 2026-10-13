@@ -121,9 +121,11 @@ def _native_model_type(data):
             return None
         # Large model resources may be examined through only a prefix.
         # Requiring an attribute table and polygon prevents data-only guesses.
-        if not any(field(attr, 0) is not None and
-                   field(attr, 1) is not None and field(attr, 2) is not None
-                   for attr in attributes):
+        # FlatBuffers omits values equal to schema defaults. POSITION (0)
+        # and FLOAT32 (0) can legitimately have absent slot 0/1 offsets.
+        # Vertex component counts are non-default and must be 1..16.
+        if not any(field(attr, 2) is not None and
+                   1 <= u32(field(attr, 2)) <= 16 for attr in attributes):
             return None
         return ".gfbmdl"
     except (ValueError, struct.error, UnicodeError):
