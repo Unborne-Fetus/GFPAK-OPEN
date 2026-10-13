@@ -245,22 +245,42 @@ def discover_resource_names(archive, initial):
     queue = deque(r.index for r in archive.resources if r.index in names and
                   Path(names[r.index]).suffix.lower() in DESCRIPTORS)
     visited = set()
+    # Safe aggregate diagnostics only: no asset payloads, filenames, content
+    # keys or proprietary hash values are included in this report.
+    diagnostics = {"inspected": 0, "decoded": 0, "unreadable": 0,
+                   "oodle_failures": 0, "other_failures": 0,
+                   "large_opaque": 0, "recognized_by_content": 0}
     def inspect(index):
         if index in visited:
             return
         visited.add(index)
+        diagnostics["inspected"] += 1
         resource = archive.resources[index]
         try:
             if resource.size <= MAX_DESCRIPTOR:
                 data = archive.read_resource(resource)
+            elif resource.compression == 0:
+                # Large stored FlatBuffers can keep their model/mesh tables
+                # beyond 4 KiB. Read only an 8 MiB bounded header window;
+                # never stage a huge model just to identify its type.
+                data = archive._range(resource.offset,
+                                      min(resource.size, 8 * 1024 * 1024))
             else:
-                data, decoded = archive.peek_resource(resource, 4096)
-                if not decoded:
-                    return
-        except (GFPakError, OSError, ImportError, ValueError):
+                # An Oodle/LZ4 stream needs full decompression. A prefix of
+                # packed data cannot be mistaken for decoded FlatBuffers.
+                diagnostics["large_opaque"] += 1
+                return
+        except (GFPakError, OSError, ImportError, ValueError) as error:
+            diagnostics["unreadable"] += 1
+            if resource.compression == 3:
+                diagnostics["oodle_failures"] += 1
+            else:
+                diagnostics["other_failures"] += 1
             return
+        diagnostics["decoded"] += 1
         extension = content_extension(data)
         if index not in names and extension:
+            diagnostics["recognized_by_content"] += 1
             names[index] = f'{family}resource_{index:04d}{extension}'
         for match in set(REFERENCE_RE.findall(data)):
             try:
@@ -286,4 +306,15 @@ def discover_resource_names(archive, initial):
             inspect(resource.index)
         while queue:
             inspect(queue.popleft())
+    diagnostics["recognized_models"] = sum(
+        Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}
+        for name in names.values())
+    diagnostics["recognized_textures"] = sum(
+        Path(name).suffix.lower() in {".bntx", ".dds", ".png", ".trtex"}
+        for name in names.values())
+    diagnostics["recognized_animations"] = sum(
+        Path(name).suffix.lower() in {".tranm", ".gfbanm"}
+        for name in names.values())
+    # A virtual GFPAK object is scoped to this one reader/game session.
+    archive.discovery_diagnostics = diagnostics
     return names
