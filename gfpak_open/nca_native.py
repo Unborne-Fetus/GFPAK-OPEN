@@ -201,6 +201,14 @@ def inspect_nca3_entry(analyzer: NSPAnalyzer, index: int, keys: Keyset) -> dict:
             reader.sections[number].probe_filesystem_header()
             for number in sorted(reader.sections)
         ]
+        if any(rights):
+            details["content_key_source"] = reader.content_key_source
+            details["content_key_status"] = reader.content_key_status
+            details["content_key_validation"] = reader.content_key_validation
+            details["nca_master_key_revision"] = reader.nca_master_key_revision
+            details["ticket_master_key_revision"] = reader.ticket_master_key_revision
+            details["selected_master_key_revision"] = reader.content_key_revision
+            details["content_key_revision_candidates"] = reader.content_key_revision_candidates
     except (OSError, RuntimeError, ValueError) as error:
         details["filesystem_header_probe_error"] = str(error)[:180]
     return details
@@ -698,6 +706,14 @@ class NativeNCA:
         self.plaintext = False
         self.header_tweak = "big"
         self.sections: dict[int, NativeSection] = {}
+        # Metadata only. Never expose key bytes, CTR values, or rights IDs.
+        self.content_key_source = "none"
+        self.content_key_status = "not-required"
+        self.content_key_validation = "not-checked"
+        self.content_key_revision = None
+        self.nca_master_key_revision = None
+        self.ticket_master_key_revision = None
+        self.content_key_revision_candidates = []
         self._parse()
 
     def attach_base(self, base: "NativeNCA") -> int:
@@ -718,6 +734,74 @@ class NativeNCA:
             raise NativeNCAError("The base NCA has no matching filesystem section numbers/types.")
         return added
 
+    def _verify_content_key(self, rights: bytes, nca_revision: int, initial_key: bytes):
+        """Validate bounded filesystem headers before trusting an alternate ticket KEK.
+
+        A matching rights ID and a completed AES operation do not authenticate a
+        content key. Only select the NCA revision as a fallback if it *improves*
+        recognizable filesystem-header probes over the ticket's stated revision.
+        Never scan arbitrary key generations or inspect game file contents.
+        """
+        encrypted = [
+            section for section in self.sections.values()
+            if section.encryption == 3
+            and not (section.patch_indirect_size or section.patch_crypto_size
+                     or section.sparse_table_size or section.compression_table_size)
+        ]
+        if not encrypted:
+            self.content_key_validation = "no-probeable-encrypted-sections"
+            return
+
+        def probe(candidate: bytes) -> int:
+            matched = 0
+            for section in encrypted:
+                section.key = candidate
+                if section.probe_filesystem_header()["status"].startswith("valid-"):
+                    matched += 1
+            return matched
+
+        selected = initial_key
+        verified = probe(initial_key)
+        initial_revision = self.content_key_revision
+        self.content_key_revision_candidates.append({
+            "revision": initial_revision,
+            "verified_sections": verified,
+            "probeable_sections": len(encrypted),
+        })
+        if self.content_key_source == "package-ticket":
+            ticket, _count = _matching_package_ticket(self.analyzer, rights)
+            if ticket is not None:
+                self.ticket_master_key_revision = ticket["generation"]
+                if ticket["generation"] != nca_revision:
+                    alternate_kek = self.keys.get(
+                        f"titlekek_{nca_revision:02x}",
+                        f"ticket_commonkey_{nca_revision:02x}",
+                    )
+                    if alternate_kek is not None and len(alternate_kek) == 16:
+                        alternate = _aes_ecb(alternate_kek, ticket["encrypted_key"])
+                        alternate_verified = probe(alternate)
+                        self.content_key_revision_candidates.append({
+                            "revision": nca_revision,
+                            "verified_sections": alternate_verified,
+                            "probeable_sections": len(encrypted),
+                        })
+                        if alternate_verified > verified and alternate_verified > 0:
+                            selected = alternate
+                            verified = alternate_verified
+                            self.content_key_revision = nca_revision
+        # Probe temporarily installs the candidate on each section. Always
+        # restore the selected key, including when all candidates failed.
+        for section in encrypted:
+            section.key = selected
+        self.content_key_validation = (
+            "verified-by-filesystem-header" if verified else
+            "no-valid-filesystem-header"
+        )
+        if self.content_key_source != "none":
+            self.content_key_status = (
+                "resolved-verified" if verified else "resolved-unverified"
+            )
+
     def read_raw(self, offset: int, size: int) -> bytes:
         if size < 0 or offset < 0 or offset > self.entry.size or size > self.entry.size - offset:
             raise NativeNCAError("NCA read outside package entry.")
@@ -737,6 +821,7 @@ class NativeNCA:
         old_generation, key_type = header[0x206], header[0x207]
         generation = max(old_generation, header[0x220])
         revision = max(0, generation - 1)
+        self.nca_master_key_revision = revision
         rights = header[0x230:0x240]
         area = header[0x300:0x340]
         content_keys = None
@@ -747,6 +832,14 @@ class NativeNCA:
                 content, key_source, key_status, ticket_count = resolve_title_content_key(
                     self.analyzer, rights, revision, self.keys
                 )
+                self.content_key_source = key_source
+                self.content_key_status = key_status
+                self.content_key_revision = revision
+                if key_source == "package-ticket":
+                    ticket, _count = _matching_package_ticket(self.analyzer, rights)
+                    if ticket is not None:
+                        self.content_key_revision = ticket["generation"]
+                        self.ticket_master_key_revision = ticket["generation"]
                 if content is not None:
                     content_keys = (content, content, content, content)
                 else:
@@ -797,6 +890,8 @@ class NativeNCA:
                                              fs, encryption, key)
         if not self.sections:
             raise NativeNCAError("NCA does not contain readable filesystem sections.")
+        if any(rights) and content_keys is not None:
+            self._verify_content_key(rights, revision, content_keys[2])
 
 
 class PartitionFS:
