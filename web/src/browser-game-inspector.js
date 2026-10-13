@@ -5,7 +5,7 @@
 import JSZip from 'jszip';
 import {detectGameFromNames,gameCapabilities} from './game-support.js';
 import {categoryOf,kindOf,fromBlob,openZip,openXci,readPackage,openGfpak,
-        inspectNca,openNcaSection,romChildren} from './browser-package-reader.js';
+        inspectNca,openNcaSection,romChildrenPage} from './browser-package-reader.js';
 import {parseHashDictionary} from './gfpak.js';
 import {parseNcaKeys,keyInfo,parseNcaTicket} from './browser-nca-crypto.js';
 import {buildPokedexZip,modelIdentityFromPath,POKEDEX_GAMES,COMPATIBLE_MODEL_SUFFIXES} from './pokedex3d-export.js';
@@ -37,7 +37,7 @@ const state={
   root:null,folder:null,selected:null,files:[],nodes:[],
   catalog:[],type:'all',dictionary:new Map(),source:null,
   busy:false,scanning:false,scanRevision:0,scanDone:false,selectedRevision:0,
-  treeExpanded:new Set(),listPage:0,thumbnailUrl:null,
+  treeExpanded:new Set(),treeLimits:new Map(),listPage:0,thumbnailUrl:null,
   packMeta:null,sourceName:'',keys:new Map(),lastSelection:null,zipExporting:false,
   pokedexButton:null,pokedexGameSelect:null,pokedexHint:null
 };
@@ -56,6 +56,7 @@ function mk(name,options={},parent=null) {
     size:options.size??0,category:options.category??categoryOf(name),
     kind:options.kind??kindOf(name),source:options.source||null,
     loader:options.loader||null,loaded:!options.loader,
+    nextCursor:null,pageLoader:null,loadingMore:null,romPaged:false,
     error:null, metadata:options.metadata||{},
     lazySource:options.loadSource||null,
     packedSource:options.loadPackedSource||null,
@@ -198,16 +199,18 @@ async function expandNca(node){
   }
   node.metadata.header='NCA3 (read with local keyset when required)';
 }
-async function populateRomfs(node,fs,at){
-  const entries=await romChildren(fs,at);
+async function populateRomfs(node,fs,at,cursor=null){
+  const page=await romChildrenPage(fs,at,cursor,250);
   if(!activeRoot(node))throw Error('Source changed during RomFS read');
-  for(const entry of entries){
-    if(state.nodes.length>=MAX_SCAN)throw Error('File index limit reached');
+  if(state.nodes.length+page.entries.length>MAX_SCAN)
+    throw Error('File index limit reached ('+MAX_SCAN.toLocaleString()+' entries)');
+  for(const entry of page.entries)
+    if(node.children.has(entry.name))throw Error('Duplicate RomFS filename: '+entry.name);
+  for(const entry of page.entries){
     if(entry.kind==='folder'){
       const folder=mk(entry.name,{folder:true,kind:'nca_dir',
         loader:child=>populateRomfs(child,fs,entry.at)},node);
-      node.children.set(entry.name,folder);
-      state.nodes.push(folder);
+      node.children.set(entry.name,folder);state.nodes.push(folder);
     }else{
       const file=mk(entry.name,{source:entry.source,size:entry.size,
         category:entry.category,kind:entry.kind},node);
@@ -215,6 +218,19 @@ async function populateRomfs(node,fs,at){
       state.nodes.push(file);state.files.push(file);
     }
   }
+  node.romPaged=true;
+  node.nextCursor=page.nextCursor;
+  node.pageLoader=page.nextCursor?()=>populateRomfs(node,fs,at,node.nextCursor):null;
+}
+async function loadMore(node){
+  if(!node?.nextCursor||!node.pageLoader)return;
+  if(node.loadingMore)return node.loadingMore;
+  const before=node.nextCursor;
+  node.loadingMore=(async()=>{
+    await node.pageLoader();
+    if(node.nextCursor===before)throw Error('RomFS directory cursor did not advance');
+  })();
+  try{await node.loadingMore;}finally{node.loadingMore=null;}
 }
 async function expand(node){
   if(node.children===null)return;
@@ -254,7 +270,7 @@ function sourceRoot(file,kind){
   const root=mk(file.name,{folder:true,kind,size:file.size,metadata:{bytes:file.size}});
   state.nodes=[root];state.files=[];state.root=root;state.folder=root;
   state.source=file;state.sourceName=file.name;
-  state.treeExpanded=new Set([root.id]);
+  state.treeExpanded=new Set([root.id]);state.treeLimits=new Map();
   state.packMeta=null;state.scanDone=false;state.type='all';
   byId('assetSearch').value='';byId('assetCategory').value='all';
   return root;
@@ -843,8 +859,13 @@ async function scan(){
   while(head<queue.length&&seen<MAX_SCAN&&revision===state.scanRevision){
     const node=queue[head++];seen++;
     if(node.children!==null){
-      try{await expand(node);}
-      catch(e){warnings.push(node.name+': '+(e.message||String(e)));continue;}
+      try{
+        await expand(node);
+        while(node.nextCursor&&revision===state.scanRevision&&state.nodes.length<MAX_SCAN){
+          await loadMore(node);
+          await new Promise(resolve=>setTimeout(resolve,0));
+        }
+      }catch(e){warnings.push(node.name+': '+(e.message||String(e)));continue;}
       queue.push(...node.children.values());
     }
     if(seen%75===0){
