@@ -75,6 +75,14 @@ class Keyset:
         return None
 
     @property
+    def title_key_count(self):
+        """Count rights-ID indexed keys without revealing values."""
+        return sum(1 for name, value in self._keys.items()
+                   if len(value) == 16 and
+                   (re.fullmatch(r"[0-9a-f]{32}", name) or
+                    re.fullmatch(r"titlekey_[0-9a-f]{32}", name)))
+
+    @property
     def has_header(self):
         key = self.get("nca_header_key", "header_key")
         return key is not None and len(key) == 32
@@ -452,8 +460,9 @@ class NativeNCA:
                     content_keys = (content, content, content, content)
                 else:
                     raise NativeNCAError(
-                        "Rights-managed NCA: its matching title content key is missing. "
-                        "prod.keys alone may not contain this game's rights-managed title key."
+                        "Rights-managed NCA: no matching title key for this NCA's rights ID. "
+                        f"Loaded {self.keys.title_key_count} rights-ID indexed title keys. "
+                        "Check whether title.keys contains the matching entry. Key values are never displayed."
                     )
             else:
                 suffix = ("application", "ocean", "system")
