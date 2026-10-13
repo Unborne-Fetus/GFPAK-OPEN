@@ -275,23 +275,69 @@ async function romFile(fs,at) {
     source:relativeSource(fs.rom,fs.fileData+begin,size),
     category:categoryOf(name),kind:kindOf(name)};
 }
-export async function romChildren(fs,dirAt=0,max=10000) {
-  const parent=await romDirectory(fs,dirAt);
-  const entries=[];
-  for(const [field,fn] of [['childDir',romDirectory],['childFile',romFile]]) {
-    const seen=new Set();
-    let at=parent[field];
-    while(at!==END) {
-      if(seen.has(at))throw Error('RomFS sibling pointer cycle detected');
-      if(entries.length>=max)throw Error('RomFS folder exceeds 10,000 entries');
-      seen.add(at);
-      const item=await fn(fs,at);
-      if(!nameSafe(item.name))throw Error('Invalid RomFS filename');
-      entries.push({...item,at,kind:field==='childDir'?'folder':item.kind,
-        category:field==='childDir'?'folder':item.category});
-      at=item.sibling;
-    }
+// Large RomFS folders must be traversed in pages. Sword/Shield can have far
+// more than 10,000 siblings; a single eager read used to reject those folders.
+export async function romChildrenPage(fs,dirAt=0,cursor=null,limit=250) {
+  if(!Number.isInteger(limit)||limit<1||limit>500)
+    throw Error('Invalid RomFS directory page size');
+  if(!Number.isSafeInteger(dirAt)||dirAt<0)
+    throw Error('Invalid RomFS directory offset');
+  fs.pageStates ||= new Map();
+  let state=fs.pageStates.get(dirAt);
+  if(!state) {
+    state={issued:new Set(),cache:new Map(),seen:{d:new Set(),f:new Set()}};
+    fs.pageStates.set(dirAt,state);
   }
+  if(cursor!==null && (!state.issued.has(cursor)||!/^([df]):[0-9a-f]{8}$/.test(cursor)))
+    throw Error('Invalid or expired RomFS directory cursor');
+  const key=cursor??'';
+  if(state.cache.has(key)) {
+    const cached=state.cache.get(key);
+    return {entries:[...cached.entries],nextCursor:cached.nextCursor};
+  }
+  const parent=await romDirectory(fs,dirAt);
+  let phase,at;
+  if(cursor===null) {
+    phase=parent.childDir!==END?'d':'f';
+    at=phase==='d'?parent.childDir:parent.childFile;
+  } else {
+    phase=cursor[0];at=Number.parseInt(cursor.slice(2),16);
+  }
+  const entries=[],visited={d:new Set(),f:new Set()};
+  while(entries.length<limit) {
+    if(phase==='d'&&at===END) {phase='f';at=parent.childFile;}
+    if(at===END)break;
+    if(state.seen[phase].has(at)||visited[phase].has(at))
+      throw Error('RomFS sibling pointer cycle or repeated entry detected');
+    visited[phase].add(at);
+    const item=await (phase==='d'?romDirectory(fs,at):romFile(fs,at));
+    if(!nameSafe(item.name))throw Error('Invalid RomFS filename');
+    entries.push({...item,at,kind:phase==='d'?'folder':item.kind,
+      category:phase==='d'?'folder':item.category});
+    at=item.sibling;
+  }
+  if(phase==='d'&&at===END) {phase='f';at=parent.childFile;}
+  const nextCursor=at===END?null:phase+':'+at.toString(16).padStart(8,'0');
+  for(const phase of ['d','f'])
+    for(const offset of visited[phase])state.seen[phase].add(offset);
+  if(nextCursor)state.issued.add(nextCursor);
+  const result={entries,nextCursor};
+  state.cache.set(key,result);
+  return {entries:[...entries],nextCursor};
+}
+
+// Compatibility API for small-folder callers. The game-file browser uses
+// romChildrenPage so neither inspection nor navigation has a 10,000-file cap.
+export async function romChildren(fs,dirAt=0,max=10000) {
+  const entries=[];
+  let cursor=null;
+  do {
+    const page=await romChildrenPage(fs,dirAt,cursor,Math.min(250,Math.max(1,max-entries.length)));
+    entries.push(...page.entries);
+    cursor=page.nextCursor;
+    if(cursor&&entries.length>=max)
+      throw Error('RomFS folder exceeds '+max.toLocaleString()+' entries');
+  } while(cursor);
   return entries;
 }
 export {relativeSource, assertRange};
