@@ -56,7 +56,8 @@ function mk(name,options={},parent=null) {
     lazySource:options.loadSource||null,
     path:parent?(parent.path+'/'+name):name
   };
-  if(node.children!==null) node.category='folder';
+  if(node.children!==null && ['directory','nca_dir','nca_section'].includes(node.kind))
+    node.category='folder';
   return node;
 }
 function ensureFolder(parent,name){
@@ -82,7 +83,8 @@ function attachPath(parent,raw,options={}){
   const node=mk(label,options,cursor);
   cursor.children.set(label,node);
   state.nodes.push(node);
-  if(node.children===null)state.files.push(node);
+  if(node.children===null || ['nca','gfpak','zip','package'].includes(node.kind))
+    state.files.push(node);
   return node;
 }
 function recordOption(entry,source){
