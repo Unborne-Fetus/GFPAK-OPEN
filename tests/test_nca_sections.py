@@ -62,6 +62,23 @@ def native_gfpak_fixture():
     return bytes(result)
 
 
+def companion_texture_gfpak():
+    """One content-verified texture with no embedded renderable mesh."""
+    payload = b"BNTX demo companion texture"
+    raw = bytearray(112 + len(payload))
+    raw[:8] = b"GFLXPACK"
+    struct.pack_into("<4I", raw, 8, 0x1000, 0, 1, 1)
+    struct.pack_into("<QQQ", raw, 24, 88, 48, 56)
+    struct.pack_into("<Q", raw, 48, 0x123456789)
+    struct.pack_into("<QII", raw, 56, 0xAA, 1, 0)
+    struct.pack_into("<QII", raw, 72, 0x123456789, 0, 0)
+    struct.pack_into("<HHIIIII", raw, 88,
+                     0, 0, len(payload), len(payload), 0, 112, 0)
+    raw[112:] = payload
+    return bytes(raw)
+
+
+
 def romfs_nested(content: bytes | None = None):
     """Construct a real RomFS table with bin/archive/pokemon nested directories."""
     names = ("", "bin", "archive", "pokemon")
@@ -434,6 +451,68 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertTrue(catalog["unresolved"])
             self.assertEqual(catalog["counts"], {})
             self.assertTrue(catalog["warnings"])
+
+    def test_companion_gfpak_previews_unique_verified_neighbor_model(self):
+        """A texture-only archive uses the unique same-form model, not a fake mesh."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = [
+                ("pm0025_00_00_texture.gfpak", companion_texture_gfpak()),
+                ("pm0025_00_00_model.gfpak", native_gfpak_fixture())
+            ]
+            game = root / "swsh.nsp"
+            package(game, [("program.nca", plain_nca([
+                ("pfs", pfs0_files(files))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            opened = browser.open(game)
+            nca = browser.children(opened["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            rows = browser.children(section["id"])["entries"]
+            companion = next(row for row in rows if "_texture.gfpak" in row["name"])
+            report = browser.model_diagnostics(companion["id"])
+            self.assertEqual(report["recognized_models"], 0)
+            preview = browser.fast_preview_items(companion["id"])
+            self.assertEqual(preview["selected"], "pm0025_00_00.trmdl")
+            self.assertEqual(preview["related_model_archive"],
+                             "pm0025_00_00_model.gfpak")
+            self.assertTrue(any(row["path"].endswith(".trmbf")
+                                for row in preview["items"]))
+            linked = [row for row in preview["items"]
+                      if row.get("linkedKind") == "texture" and
+                      row["source"][1] == companion["id"]]
+            self.assertEqual(len(linked), 1)
+            self.assertEqual(linked[0]["matchConfidence"], "probable")
+            length, chunks = browser.stream_fast_preview_item(linked[0]["source"])
+            self.assertEqual(b"".join(chunks), b"BNTX demo companion texture")
+            self.assertEqual(length, len(b"BNTX demo companion texture"))
+
+    def test_companion_gfpak_never_uses_other_form_or_ambiguous_model(self):
+        """No false cross-form preview and no arbitrary model among candidates."""
+        def check(files, expected):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                game = root / "swsh.nsp"
+                package(game, [("program.nca", plain_nca([
+                    ("pfs", pfs0_files(files))
+                ]))])
+                browser = AssetBrowser(nca_workspace=root / "cache")
+                opened = browser.open(game)
+                nca = browser.children(opened["id"])["entries"][0]
+                section = browser.children(nca["id"])["entries"][0]
+                rows = browser.children(section["id"])["entries"]
+                companion = next(row for row in rows if "_texture.gfpak" in row["name"])
+                with self.assertRaisesRegex(ValueError, expected):
+                    browser.fast_preview_items(companion["id"])
+        check([
+            ("pm0025_00_00_texture.gfpak", companion_texture_gfpak()),
+            ("pm0025_01_00_model.gfpak", native_gfpak_fixture())
+        ], "No verified TRMDL/GFBMDL")
+        check([
+            ("pm0025_00_00_texture.gfpak", companion_texture_gfpak()),
+            ("pm0025_00_00_model_a.gfpak", native_gfpak_fixture()),
+            ("pm0025_00_00_model_b.gfpak", native_gfpak_fixture())
+        ], "Several model-bearing GFPAKs")
 
     def test_nested_romfs_gfpak_native_assets_browse_and_stream_without_staging(self):
         """Prove direct discovery/preview of all three classes within an NCA GFPAK."""
