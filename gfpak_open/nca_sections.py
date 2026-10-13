@@ -21,12 +21,14 @@ class LocalNCASections:
         self.workspace = Path(workspace)
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.keyset: Path | None = None
+        self.title_keyset: Path | None = None
         self._keys = Keyset(None)
         self._readers: dict[tuple, NativeNCA] = {}
 
-    def configure(self, keyset: str | Path = ""):
+    def configure(self, keyset: str | Path = "", title_keyset: str | Path = ""):
         self.keyset = Path(keyset) if keyset else None
-        self._keys = Keyset(self.keyset)
+        self.title_keyset = Path(title_keyset) if title_keyset else None
+        self._keys = Keyset(self.keyset, self.title_keyset)
         self._readers.clear()
 
     def available(self) -> bool:
