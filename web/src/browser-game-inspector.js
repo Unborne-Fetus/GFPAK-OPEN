@@ -7,6 +7,7 @@ import {detectGameFromNames,gameCapabilities} from './game-support.js';
 import {categoryOf,kindOf,fromBlob,openZip,openXci,readPackage,openGfpak,
         inspectNca,openNcaSection,romChildren} from './browser-package-reader.js';
 import {parseHashDictionary} from './gfpak.js';
+import {parseNcaKeys,keyInfo,parseNcaTicket} from './browser-nca-crypto.js';
 
 const byId=id=>document.getElementById(id);
 const classSets={
@@ -35,7 +36,7 @@ const state={
   catalog:[],type:'all',dictionary:new Map(),source:null,
   busy:false,scanning:false,scanRevision:0,scanDone:false,selectedRevision:0,
   treeExpanded:new Set(),listPage:0,thumbnailUrl:null,
-  packMeta:null,sourceName:''
+  packMeta:null,sourceName:'',keys:new Map(),lastSelection:null
 };
 const MAX_SCAN=150000;
 const MAX_EXPORT=300*1024*1024;
@@ -161,8 +162,21 @@ async function expandGfpak(node){
   await addRows(node,await openGfpak(blob,state.dictionary));
   node.metadata.format='GFLXPACK';
 }
+async function lookupLocalPackageTicket(identifier) {
+  const tickets=state.files.filter(file=>/\\.tik$/i.test(file.name)&&
+    file.size>=0x1b0&&file.size<=1024*1024).slice(0,256);
+  for(const node of tickets){
+    try{
+      const src=await ensureSource(node);
+      const raw=await src.read(0,Math.min(node.size,0x500));
+      const ticket=parseNcaTicket(raw);
+      if(ticket?.rights===identifier)return ticket;
+    }catch{ /* An inaccessible ticket never proves the NCA is readable. */ }
+  }
+  return null;
+}
 async function expandNca(node){
-  const sections=await inspectNca(node.source);
+  const sections=await inspectNca(node.source,state.keys,lookupLocalPackageTicket);
   if(!activeRoot(node))throw Error('Source changed during NCA read');
   if(!sections.length)throw Error('NCA contains no readable filesystem sections');
   for(const section of sections){
@@ -179,6 +193,7 @@ async function expandNca(node){
     node.children.set(child.name,child);
     state.nodes.push(child);
   }
+  node.metadata.header='NCA3 (read with local keyset when required)';
 }
 async function populateRomfs(node,fs,at){
   const entries=await romChildren(fs,at);
@@ -246,6 +261,7 @@ async function openInput(files,folder=false){
   if(state.busy)return;
   const selectedFiles=Array.from(files||[]);
   if(!selectedFiles.length)return;
+  state.lastSelection={files:selectedFiles,folder};
   state.busy=true;
   state.scanRevision++;
   try{
@@ -742,7 +758,49 @@ function install(){
     });
   }
   // Use exactly the desktop explorer's panel: no competing second inspector UI.
-  byId('ncaReaderBar').textContent='WEB MODE · Read-only package exploration. No key uploads; encrypted NCA and unsupported compression remain locked.';
+  const readerBar=byId('ncaReaderBar');
+  const label=document.createElement('span');
+  label.className='nca-reader-label';label.textContent='LOCAL NCA READER';
+  const selectKey=byId('ncaSelectKeyset');
+  selectKey.textContent='📁 Load prod.keys / title.keys';
+  const keyStatus=byId('ncaReaderStatus');
+  const clearKey=document.createElement('button');clearKey.type='button';
+  clearKey.className='button button-secondary';clearKey.textContent='Clear keys';
+  const keyInput=document.createElement('input');
+  keyInput.type='file';keyInput.multiple=true;keyInput.accept='.keys,.txt';
+  keyInput.hidden=true;
+  readerBar.replaceChildren(label,selectKey,clearKey,keyStatus,keyInput);
+  const updateKeyStatus=()=>{
+    const info=keyInfo(state.keys);
+    keyStatus.textContent=(info.header?'✓ NCA header key loaded':'No NCA header key')+
+      ' · '+info.entries+' key entries · '+info.titleCount+' title keys · locally held in this tab only.';
+  };
+  updateKeyStatus();
+  selectKey.addEventListener('click',()=>keyInput.click());
+  keyInput.addEventListener('change',async event=>{
+    const chosen=Array.from(event.target.files||[]);
+    event.target.value='';
+    if(!chosen.length)return;
+    try{
+      let loaded=new Map(state.keys);
+      for(const file of chosen){
+        if(file.size>1024*1024)throw Error('Key files must be under 1 MiB each.');
+        loaded=parseNcaKeys(await file.text(),loaded);
+      }
+      if(loaded.size===state.keys.size)throw Error('No additional valid key entries found in the selected files.');
+      state.keys=loaded;
+      updateKeyStatus();
+      notice('Local key file accepted. Reopening selected game source to retry encrypted NCA sections.');
+      if(state.lastSelection)await openInput(state.lastSelection.files,state.lastSelection.folder);
+    }catch(e){notice('Could not load keys: '+(e.message||String(e)),true);}
+  });
+  clearKey.addEventListener('click',async()=>{
+    for(const bytes of state.keys.values())bytes.fill(0);
+    state.keys=new Map();
+    updateKeyStatus();
+    notice('Local keys cleared.');
+    if(state.lastSelection)await openInput(state.lastSelection.files,state.lastSelection.folder);
+  });
   byId('assetAttach').hidden=true;byId('assetAttachNCA').hidden=true;byId('assetAttachBaseNCA').hidden=true;
   byId('assetCopyNcaDiagnostics').hidden=true;byId('assetSavePacked').hidden=true;
   byId('nspAudit').hidden=true;byId('nxMenuHash').hidden=true;
@@ -839,7 +897,8 @@ function install(){
   const guidance=byId('assetBrowser').querySelector('.asset-guidance');
   if(guidance)guidance.textContent=
     'Browser-native file tree: view nested ZIP/GFPAK, NSP/XCI indexes and plaintext NCA ExeFS/RomFS. '+
-    'Encrypted NCA/NCZ and advanced patch mappings are not decoded. Files stay on your device.';
+    'Compatible encrypted NCA headers and AES-CTR/XTS sections use locally supplied keys in Web Crypto. '+
+    'NCZ and advanced patch, sparse and compressed mappings remain unsupported. Keys and files stay in this browser tab.';
   byId('assetClassHint').textContent='Select a package or folder, then Locate assets to index its readable children.';
 }
 install();
