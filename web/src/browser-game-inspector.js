@@ -53,6 +53,7 @@ function mk(name,options={},parent=null) {
     kind:options.kind??kindOf(name),source:options.source||null,
     loader:options.loader||null,loaded:!options.loader,
     error:null, metadata:options.metadata||{},
+    lazySource:options.loadSource||null,
     path:parent?(parent.path+'/'+name):name
   };
   if(node.children!==null) node.category='folder';
@@ -88,16 +89,13 @@ function recordOption(entry,source){
   const kind=entry.kind||kindOf(entry.name);
   return {
     size:entry.size,category:entry.category||categoryOf(entry.name),kind,
-    source:source||entry.source||null,
+    source:source||entry.source||null,loadSource:entry.loadSource||null,
     metadata:{offset:entry.offset,hash:entry.hash,
       compression:entry.compression,packedSize:entry.packedSize},
     folder:['nca','gfpak','zip','package'].includes(kind) ||
       (kind==='file' && ['secure','normal','update','logo'].includes(entry.name)),
     loader:async node=>{
-      let src=source||entry.source;
-      if(!src && entry.loadSource)src=await entry.loadSource();
-      if(!src && src!==null)throw Error('File source is not available');
-      node.source=src;
+      const src=await ensureSource(node);
       if(kind==='nca')await expandNca(node);
       else if(kind==='gfpak')await expandGfpak(node);
       else if(kind==='zip')await expandZip(node);
@@ -111,6 +109,14 @@ function recordOption(entry,source){
       }
     }
   };
+}
+async function ensureSource(node){
+  if(!node?.source&&node?.lazySource){
+    node.pendingSource ||= node.lazySource();
+    node.source=await node.pendingSource;
+  }
+  if(!node?.source)throw Error('This file has no readable source');
+  return node.source;
 }
 async function addRows(parent,entries){
   for(const entry of entries){
@@ -430,7 +436,7 @@ function select(node){
   byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture';
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
   byId('assetExportPokemon').disabled=!canPreview(node);
-  byId('assetSaveFile').disabled=!node||node.children!==null&&!node.source;
+  byId('assetSaveFile').disabled=!node||(!node.source&&!node.lazySource);
   byId('assetSavePacked').hidden=true;
   byId('assetCopyNcaDiagnostics').disabled=!node||!['nca','nca_section'].includes(node.kind);
   byId('assetThumbnail').hidden=true;
@@ -438,7 +444,7 @@ function select(node){
   byId('assetFamily').hidden=true;
   byId('assetNcaAutoReport').hidden=true;
   byId('assetFileMetadata').replaceChildren();
-  byId('nspSelection').hidden=!node||node.children!==null||!node.source;
+  byId('nspSelection').hidden=!node||node.children!==null||(!node.source&&!node.lazySource);
   renderRows();
   if(node)void details(node,state.selectedRevision);
 }
@@ -455,16 +461,17 @@ async function details(node,revision){
     host.append(dt,dd);
   }
   byId('assetSignature').textContent=node.error||'';
-  if(!node.source)return;
+  if(!node.source&&!node.lazySource)return;
   try{
-    const bytes=await node.source.read(0,Math.min(256,node.size));
+    const source=await ensureSource(node);
+    const bytes=await source.read(0,Math.min(256,node.size));
     if(revision!==state.selectedRevision)return;
     byId('assetGeneralHex').textContent=hexDump(bytes,0);
     byId('assetGeneralHex').hidden=false;
     byId('assetSignature').textContent=node.error||
       ('Signature: '+Array.from(bytes.subarray(0,8),b=>String.fromCharCode(b>=32&&b<127?b:46)).join(''));
     if(node.category==='texture'&&/\.(png|jpg|jpeg|webp)$/i.test(node.name)&&node.size<=16*1024*1024){
-      const raw=await node.source.read(0,node.size);
+      const raw=await source.read(0,node.size);
       if(revision!==state.selectedRevision)return;
       const url=URL.createObjectURL(new Blob([raw]));
       state.thumbnailUrl=url;byId('assetThumbnail').src=url;byId('assetThumbnail').hidden=false;
@@ -510,8 +517,9 @@ function matchingAssets(model){
   return [model,...companions];
 }
 async function preview(node){
-  if(!node || !node.source)return;
+  if(!node)return;
   if(node.category!=='model'&&node.category!=='texture')return;
+  await ensureSource(node);
   try{
     if(node.category==='texture'){
       if(node.size>MAX_EXPORT)throw Error('Texture exceeds preview memory cap');
@@ -616,7 +624,8 @@ async function exportManifest(){
   setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
 function install(){
-  if(window.pywebview?.api)return;
+  // Vite sets base '/' for desktop builds; do not initialize in an EXE.
+  if(import.meta.env.BASE_URL==='/' || window.pywebview?.api)return;
   byId('tabAssets').hidden=false;
   byId('tabAssets').textContent='▤  GAME FILE EXPLORER';
   byId('tabAssets').addEventListener('click',()=>{
