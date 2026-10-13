@@ -1304,7 +1304,7 @@ class AssetBrowser:
     @staticmethod
     def _same_pokemon_form_key(name: str) -> str:
         """Only an exact pm####_##_ format token qualifies for model fallback."""
-        match = re.match(r"(?i)^(pm\\d{4}_\\d{2}_\\d{2})(?!\\d)", Path(name).name)
+        match = re.match(r"(?i)^(pm\d{4}_\d{2}_\d{2})(?!\d)", Path(name).name)
         return match.group(1).casefold() if match else ""
 
     def _related_mounted_model_preview(self, node: dict,
