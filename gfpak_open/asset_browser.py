@@ -666,8 +666,8 @@ class AssetBrowser:
         def read_at(offset: int, size: int):
             return fs.section.read(metadata.offset + offset, size)
         archive = VirtualGFPak(metadata.size, read_at, name)
-        # Avoid misrepresenting arbitrary hash values as asset types. A native
-        # model family requires matching TRMDL/TRMSH/TRMBF suffixes.
+        # Identify resources by verified hash families, followed by decoded
+        # structural evidence (including standalone native GFBMDL).
         names = infer_model_resources(archive.resources, Path(name).stem)
         names = discover_resource_names(archive, names)
         self._virtual_gfpaks[node_id] = archive, names
@@ -1178,6 +1178,40 @@ class AssetBrowser:
             raise ValueError("Texture exceeds the 256 MiB safe preview limit")
         return {"path": name, "size": size, "source": descriptor}
 
+    @staticmethod
+    def _model_discovery_failure(archive: GFPak, names: dict[int, str]) -> str:
+        """Explain absent models without inventing names or leaking game data."""
+        d = getattr(archive, "discovery_diagnostics", {})
+        count = len(archive.resources)
+        oodle = sum(item.compression == 3 for item in archive.resources)
+        decoded = d.get("decoded", 0)
+        unreadable = d.get("unreadable", 0)
+        textures = d.get("recognized_textures", 0)
+        animations = d.get("recognized_animations", 0)
+        base = (f"No verified TRMDL/GFBMDL model in this GFPAK "
+                f"({count} resources; {decoded} inspected as decoded data; "
+                f"{len(names)} identified by format or verified hashes).")
+        if d.get("oodle_failures"):
+            return (base + f" {d['oodle_failures']} Oodle-compressed resources "
+                    "could not be decoded. The local Oodle/pyooz decoder must "
+                    "successfully decode members before their model types can "
+                    "be identified; loading Switch keys alone is insufficient.")
+        if d.get("large_opaque"):
+            return (base + f" {d['large_opaque']} large compressed resources "
+                    "were not inspected because full decompression would exceed "
+                    "the safe discovery budget.")
+        if textures or animations:
+            return (base + f" Recognized {textures} texture and {animations} "
+                    "animation assets but no model. This may be a companion-only "
+                    "archive; select the related GFPAK containing the model.")
+        if oodle and not decoded:
+            return (base + f" All {oodle} detected Oodle members remained "
+                    "unidentified; check the packaged decoder.")
+        if unreadable:
+            return base + f" {unreadable} resources could not be inspected."
+        return (base + " This archive might not contain a model, or its model "
+                "format is not yet recognized. Export its raw files for analysis.")
+
     def _fast_gfpak_preview_items(self, selected: dict) -> dict:
         """Expose resolved GFPAK resources as lazy native assets, without Blender.
 
@@ -1194,9 +1228,7 @@ class AssetBrowser:
         if selected["kind"] == "gfpak_resource":
             models = [row for row in models if row[0] == selected["index"]]
         if not models:
-            raise ValueError(
-                "No resolved native GFBMDL/TRMDL resource was found. "
-                "The original converter can still attempt this GFPAK.")
+            raise ValueError(self._model_discovery_failure(archive, known))
         selected_index, selected_name = models[0]
         from .pokemon_assets import pokemon_id
         family = pokemon_id(selected_name)
@@ -1246,7 +1278,12 @@ class AssetBrowser:
         if node["kind"] == "nca_gfpak_resource":
             models = [pair for pair in models if pair[0] == node["index"]]
         if not models:
-            raise ValueError("No verified native model family was found in this GFPAK")
+            if node["kind"] == "nca_gfpak_resource" and any(
+                    Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}
+                    for name in names.values()):
+                raise ValueError("The selected GFPAK member is not a verified model. "
+                                 "Select a .trmdl or .gfbmdl member instead.")
+            raise ValueError(self._model_discovery_failure(archive, names))
         selected_idx, selected_name = models[0]
         family = pokemon_id(selected_name)
         allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL
