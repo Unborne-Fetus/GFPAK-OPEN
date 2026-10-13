@@ -450,7 +450,7 @@ function select(node){
     'Select a file to inspect its details.';
   byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture';
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
-  byId('assetExportPokemon').disabled=!canPreview(node);
+  byId('assetExportPokemon').disabled=!node || node.children!==null || node.category!=='model';
   byId('assetSaveFile').disabled=!node||(!node.source&&!node.lazySource);
   byId('assetSavePacked').hidden=!node?.packedSource;
   byId('assetSavePacked').disabled=!node?.packedSource;
@@ -579,7 +579,7 @@ async function preview(node){
   }catch(e){notice('Preview could not start: '+(e.message||String(e)),true);}
 }
 async function exportAssetPack(node){
-  if(!canPreview(node))return;
+  if(!node || node.children!==null || node.category!=='model')return;
   try{
     const matches=matchingAssets(node);
     const total=matches.reduce((n,item)=>n+item.size,0);
