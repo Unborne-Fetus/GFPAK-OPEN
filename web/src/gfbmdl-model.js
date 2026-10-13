@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { decodeGfbmdl } from './gfbmdl.js';
 import { parseNativeAnimation } from './trinity-animation.js';
 import { animationTracks } from './trinity-model.js';
+import { parseBntx } from './bntx.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -38,6 +39,13 @@ function nearbyTextures(project, modelPath) {
 export function findLegacyTexture(name, options) {
   const target = baseName(name);
   if (!target) return null;
+  // GFPAK aliases do not preserve texture filenames. BNTX retains the
+  // actual surface names: match those exactly, including normal/shiny names.
+  const internal = options.filter(row => row.internalNames?.includes(target));
+  const localInternal = internal.filter(row => row.score >= 10 ||
+    row.item.linkedKind === 'texture');
+  if (localInternal.length) return localInternal.length === 1 ? localInternal[0].item : null;
+  if (internal.length) return internal.length === 1 ? internal[0].item : null;
   // Prefer an exact referenced file in the source model directory.
   // Several identical textures in different game folders must not be
   // silently combined into the same model.
@@ -68,7 +76,7 @@ export function findLegacyTexture(name, options) {
   return packed.length === 1 ? packed[0].item : null;
 }
 
-function chooseMap(textureNames, material) {
+export function chooseMap(textureNames, material) {
   const maps = material.maps || [];
   // GFBMDL's material structure exposes each texture index and sampler name.
   // A source may have many shader maps, so do not guess arbitrary colors.
@@ -76,7 +84,8 @@ function chooseMap(textureNames, material) {
     entry.textureIndex >= 0 && entry.textureIndex < textureNames.length
   );
   const colorNames = /color|diff|base|albedo|col|c0/i;
-  return candidates.find(entry => colorNames.test(entry.sampler || '')) ||
+  return candidates.find(entry => /^(?:Col0Tex|BaseColorTex|AlbedoTex|DiffuseTex)$/i.test(entry.sampler || '')) ||
+    candidates.find(entry => colorNames.test(entry.sampler || '')) ||
     (candidates.length === 1 ? candidates[0] : null);
 }
 
@@ -245,6 +254,18 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
     if (disposed) return Promise.resolve([]);
     if (!extrasPromise) {
       extrasPromise = (async () => {
+        // Index metadata once. Keep the bytes for the selected surfaces so
+        // matching does not fetch/decode every texture a second time.
+        for (const row of known) {
+          if (getExtension(row.item.path) !== '.bntx') continue;
+          try {
+            const bytes = await row.item.getBytes();
+            row.internalNames = parseBntx(bytes).textures.map(tex => baseName(tex.name));
+            row.item = { ...row.item, getBytes: async () => bytes };
+          } catch (error) {
+            report('Could not inspect texture ' + row.item.path + ': ' + error.message);
+          }
+        }
         const renderTextures = async () => {
       for (let i = 0; i < model.materials.length; i++) {
         const match = chooseMap(model.textureNames, model.materials[i]);
