@@ -10,6 +10,31 @@ echo  Output: %CD%\dist\GFPAK-OPEN.exe
 echo  No installer is created. The EXE runs directly.
 echo.
 
+rem Prefer the ready-to-run binary; no npm/Python build on this PC.
+rem --build-only deliberately skips this block for the GitHub Actions builder.
+if /I "%~1"=="--build-only" goto :build_from_source
+if exist "dist\GFPAK-OPEN.exe" (
+    echo [READY] Found prebuilt dist\GFPAK-OPEN.exe
+    echo No npm, esbuild, Python, or compilation required.
+    start "" "%CD%\dist\GFPAK-OPEN.exe"
+    exit /b 0
+)
+echo.
+echo No prebuilt desktop executable was found.
+echo To avoid the esbuild build failure on this computer:
+echo   1. Open the repository's GitHub Actions tab.
+echo   2. Run "Build Windows Model Converter" on gfpak-development.
+echo   3. Download and extract the GFPAK-OPEN-Windows artifact.
+echo   4. Place GFPAK-OPEN.exe in this folder's dist directory.
+echo   5. Run this batch file again.
+echo.
+echo To compile from source on a development computer, run:
+echo   run.bat --build-only
+echo.
+pause
+exit /b 1
+
+:build_from_source
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (
     set "PYTHON=py -3"
