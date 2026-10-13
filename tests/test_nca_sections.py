@@ -93,12 +93,15 @@ def romfs_nested():
 
 
 def plain_nca(sources: list[tuple[str, bytes]], encrypted=False, headerkey=None,
-              areakey=None, contentkey=None):
+              areakey=None, contentkey=None, rights_id=None, key_generation=1):
     header = bytearray(0xC00)
     header[0x200:0x204] = b"NCA3"
     if encrypted:
-        header[0x206] = 1
-        header[0x220] = 1
+        header[0x206] = min(key_generation, 2)
+        header[0x220] = key_generation
+        if rights_id is not None:
+            assert len(rights_id) == 16
+            header[0x230:0x240] = rights_id
         assert len(headerkey) == 32 and len(areakey) == len(contentkey) == 16
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         slots = b"\0"*32 + contentkey + b"\0"*16
@@ -466,6 +469,69 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(fs.children()[0]["name"], "main")
             self.assertEqual(native.sections[0].read(fs.file("main").offset, 23),
                              b"Test executable payload")
+
+    def test_ticket_revision_mismatch_requires_valid_filesystem_header(self):
+        """A fake/common ticket's revision must not silently override a valid NCA key."""
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rights = bytes.fromhex("0102030405060708090a0b0c0d0e0f08")
+            header_key = bytes(range(32))
+            actual_content_key = bytes(range(0x40, 0x50))
+            # Header generation 8 means master-key revision 7. A ticket with a
+            # revision field of 0 would previously always pick titlekek_00.
+            encrypted_nca = plain_nca(
+                [("pfs", pfs0_files([("main", b"validated-content")]))],
+                encrypted=True, headerkey=header_key,
+                areakey=bytes(range(0x20, 0x30)),
+                contentkey=actual_content_key,
+                rights_id=rights, key_generation=8,
+            )
+            real_kek = bytes(range(0x60, 0x70))
+            wrong_kek = bytes(range(0x70, 0x80))
+            cipher = Cipher(algorithms.AES(real_kek), modes.ECB()).encryptor()
+            encrypted_title_key = (
+                cipher.update(actual_content_key) + cipher.finalize()
+            )
+            ticket = bytearray(0x400)
+            # Common ticket, signature type 0x010004, little-endian producer.
+            ticket[:4] = (0x010004).to_bytes(4, "little")
+            body = 0x140
+            ticket[body + 0x40:body + 0x50] = encrypted_title_key
+            ticket[body + 0x145] = 0
+            ticket[body + 0x160:body + 0x170] = rights
+            nsp = root / "revision-mismatch.nsp"
+            package(nsp, [("program.nca", encrypted_nca),
+                          ("content.tik", bytes(ticket))])
+            keys_path = root / "fixture.keys"
+            keys_path.write_text(
+                "nca_header_key = " + header_key.hex() + "\n" +
+                "ticket_commonkey_00 = " + wrong_kek.hex() + "\n" +
+                "ticket_commonkey_07 = " + real_kek.hex() + "\n"
+            )
+            native = NativeNCA(NSPAnalyzer(nsp), 0, Keyset(keys_path))
+            self.assertEqual(native.content_key_source, "package-ticket")
+            self.assertEqual(native.ticket_master_key_revision, 0)
+            self.assertEqual(native.nca_master_key_revision, 7)
+            self.assertEqual(native.content_key_revision, 7)
+            self.assertEqual(native.content_key_validation,
+                             "verified-by-filesystem-header")
+            self.assertEqual(len(native.content_key_revision_candidates), 2)
+            fs = native.sections[0].filesystem()
+            info = fs.file("main")
+            self.assertEqual(native.sections[0].read(info.offset, info.size),
+                             b"validated-content")
+            # Correctly mark a ticket as unverified if no candidate passes.
+            keys_path.write_text(
+                "nca_header_key = " + header_key.hex() + "\n" +
+                "ticket_commonkey_00 = " + wrong_kek.hex() + "\n"
+            )
+            bad = NativeNCA(NSPAnalyzer(nsp), 0, Keyset(keys_path))
+            self.assertEqual(bad.content_key_revision, 0)
+            self.assertEqual(bad.content_key_validation,
+                             "no-valid-filesystem-header")
+            self.assertEqual(bad.sections[0].probe_filesystem_header()["status"],
+                             "invalid-decoded-partitionfs-header")
 
     def test_decrypted_header_does_not_mistake_encrypted_sections_for_plaintext(self):
         """A locally decoded NCA header may still have encrypted AES-CTR data."""
