@@ -722,6 +722,9 @@ function install(){
   byId('tabAssets').hidden=false;
   byId('tabAssets').textContent='▤  GAME FILE EXPLORER';
   byId('tabAssets').addEventListener('click',()=>{
+    // The original desktop NX-style CSS is scoped under .desktop-app.
+    // Activate it only for this web panel; the Python bridge stays disabled.
+    document.body.classList.add('desktop-app');
     for(const panel of ['viewerPanel','archivePanel','desktopTools'])
       byId(panel).hidden=true;
     byId('assetBrowser').hidden=false;
@@ -732,6 +735,7 @@ function install(){
   });
   for(const id of ['tabViewer','tabArchive']){
     byId(id).addEventListener('click',()=>{
+      document.body.classList.remove('desktop-app');
       byId('assetBrowser').hidden=true;
       byId('tabAssets').classList.remove('active');
       byId('tabAssets').setAttribute('aria-selected','false');
