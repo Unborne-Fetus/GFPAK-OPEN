@@ -371,6 +371,24 @@ class DesktopAPI:
         shutil.copy2(output, dest)
         return str(dest)
 
+    def browse_restore(self):
+        """Reopen the last explicitly selected game source on desktop startup."""
+        with self._lock:
+            old = self.settings.get("last_game_source", "")
+            if not isinstance(old, str) or not old:
+                return None
+            source = Path(old)
+            if not source.exists() or not (source.is_dir() or source.is_file()):
+                return {"missing": True, "message": "Previously opened game source is no longer available."}
+            try:
+                self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
+                self._configure_nca_browser()
+                root = self._browser.open(source)
+                return {"root": root, "directory": str(self._browser.root_path),
+                        "children": self._browser.children(root["id"])}
+            except (OSError, ValueError, RuntimeError) as error:
+                return {"missing": True, "message": "Could not reopen saved game source: " + str(error)}
+
     def browse_choose(self, mode="folder"):
         if mode not in {"folder", "file"}:
             raise ValueError("Unknown browser source mode")
@@ -389,6 +407,8 @@ class DesktopAPI:
             self._configure_nca_browser()
             self._scan_job = {"running": False, "error": "", "result": None}
             root = self._browser.open(paths[0])
+            self.settings["last_game_source"] = str(self._browser.root_path)
+            self._save()
             return {"root": root, "directory": str(self._browser.root_path),
                     "children": self._browser.children(root["id"])}
 
