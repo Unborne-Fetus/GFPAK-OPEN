@@ -100,6 +100,25 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIsNone(content_extension(data))
         self.assertIsNone(content_extension(gfbmdl_triangle()[:80]))
 
+    def test_gfbmdl_discovery_accepts_forward_shared_vtables(self):
+        data = bytearray(gfbmdl_triangle())
+        # Move the mesh vtable after its object, as a builder can do when
+        # reusing an already emitted vtable. Geometry remains unchanged.
+        data[368:378] = data[160:170]
+        struct.pack_into('<i', data, 192, 192 - 368)
+        self.assertEqual(content_extension(data), '.gfbmdl')
+        archive = Archive([('unknown_mesh', bytes(data)),
+                           ('unknown_texture', b'BNTX texture'),
+                           ('unknown_clip', animation())])
+        names = discover_resource_names(archive, {})
+        self.assertEqual(names[0], 'resource_0000.gfbmdl')
+        self.assertEqual(archive.discovery_diagnostics['recognized_models'], 1)
+
+    def test_gfbmdl_discovery_rejects_out_of_bounds_shared_vtables(self):
+        data = bytearray(gfbmdl_triangle())
+        struct.pack_into('<i', data, 192, 192 - len(data))
+        self.assertIsNone(content_extension(data))
+
     def test_reference_chain_restores_material_and_texture_names(self):
         archive = Archive([
             ('pm0025.trmdl', b'body.trmmt\0'),
