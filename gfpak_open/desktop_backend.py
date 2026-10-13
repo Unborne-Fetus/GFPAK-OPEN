@@ -558,16 +558,27 @@ class DesktopAPI:
         """Return small, key-safe diagnostic text without extracting NCA content."""
         with self._lock:
             node = self._browser.node(node_id)
-            if node["kind"] == "nca_locked":
-                parent = self._browser.node(node["inner"])
-            else:
-                parent = node
+            parent = node
+            selected_section = None
+            # Diagnostics belong to the enclosing NCA, not just its leaf.
+            # NCA directories and files encode their immediate parent ID
+            # before the first colon, while sections hold that ID directly.
+            for _depth in range(24):
+                if parent["kind"] == "nspfile":
+                    break
+                if parent["kind"] not in ("nca_locked", "nca_section", "nca_dir", "nca_file"):
+                    raise ValueError("Select an NCA, section, or file within an NCA")
+                if parent["kind"] == "nca_section":
+                    selected_section = parent["index"]
+                parent_id = parent["inner"].split(":", 1)[0]
+                parent = self._browser.node(parent_id)
             if parent["kind"] != "nspfile" or not parent["name"].lower().endswith((".nca", ".ncz")):
-                raise ValueError("Select an NCA or its locked section to copy diagnostics")
+                raise ValueError("Could not identify the containing NCA for diagnostics")
             report = [
                 "GFPAK OPEN — NCA diagnostics",
                 "Archive: " + parent["name"],
                 "Archive size: " + str(parent.get("size", "unknown")) + " bytes",
+                "Selected section: " + (str(selected_section) if selected_section is not None else "entire NCA"),
                 "Production keys recognized: " + str(self._browser._nca_sections.key_ready()),
                 "Title key entries loaded: " + str(self._browser._nca_sections._keys.title_key_count),
             ]
