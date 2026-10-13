@@ -581,7 +581,7 @@ class DesktopAPI:
             except (OSError, RuntimeError, ValueError) as error:
                 report.append("Section scan error: " + str(error))
             report.append("No raw game content, keys, or secret values included.")
-            return "\\n".join(report)
+            return "\n".join(report)
 
     def browse_item_details(self, node_id: str):
         with self._lock:
