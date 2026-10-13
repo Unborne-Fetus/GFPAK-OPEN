@@ -447,6 +447,11 @@ class NativeNCA:
                 content = self.keys.get("titlekey_" + name, name)
                 if content and len(content) == 16:
                     content_keys = (content, content, content, content)
+                else:
+                    raise NativeNCAError(
+                        "Rights-managed NCA: its matching title content key is missing. "
+                        "prod.keys alone may not contain this game's rights-managed title key."
+                    )
             else:
                 suffix = ("application", "ocean", "system")
                 if key_type > 2:
@@ -475,9 +480,9 @@ class NativeNCA:
                 )
             if encryption in (2, 3) and content_keys is None:
                 raise NativeNCAError(
-                    "NCA filesystem content key is unavailable. Choose a compatible "
-                    "locally supplied keys file. Rights-managed titles may also need "
-                    "a matching title content key."
+                    "NCA key-area key unavailable for this title's key generation "
+                    f"(revision {revision:02x}, area type {key_type}). "
+                    "The supplied keys file may be missing this revision's key-area key."
                 )
             key = None
             if encryption == 3:
