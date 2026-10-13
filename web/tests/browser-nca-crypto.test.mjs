@@ -33,7 +33,7 @@ function fixture(encryption=3,rightsManaged=false){
   const h=new DataView(header.buffer);
   h.setUint32(0x240,6,true);h.setUint32(0x244,8,true);
   header[0x400]=2;header[0x402]=1;header[0x403]=0;header[0x404]=encryption;
-  header[0x540]=1;header[0x543]=2;
+  // AES-CTR section counter prefix is zero in this synthetic fixture.
   header.set(encrypt('aes-128-ecb',keyAreaKey,null,areaPlain),0x300);
   const keys=new Map([['nca_key_area_key_application_00',new Uint8Array(keyAreaKey)]]);
   if(rightsManaged){
