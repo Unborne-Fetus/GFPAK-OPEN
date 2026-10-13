@@ -1094,11 +1094,35 @@ class RomFS:
             raise NativeNCAError("RomFS file extends beyond NCA section.")
         return name, sibling, self.file_data_off + begin, size
 
+    def _ensure_directory(self, folder: str) -> None:
+        """Reconstruct an indexed path after a key refresh or a lazy scan.
+
+        A browser entry can outlive the filesystem object's directory cache.
+        Resolve only validated directory names from the RomFS metadata, walking
+        bounded pages instead of trusting a caller-provided table offset.
+        """
+        if folder in self._directories:
+            return
+        if (not isinstance(folder, str) or folder.startswith("/") or
+                "\\" in folder or any(part in ("", ".", "..")
+                                     for part in folder.split("/"))):
+            raise NativeNCAError("Unknown RomFS folder.")
+        parent = ""
+        for part in folder.split("/"):
+            child = part if not parent else parent + "/" + part
+            if child not in self._directories:
+                cursor = None
+                while child not in self._directories:
+                    page = self.children_page(parent, cursor=cursor, limit=self.PAGE_SIZE)
+                    cursor = page["next_cursor"]
+                    if cursor is None:
+                        raise NativeNCAError("Unknown RomFS folder.")
+            parent = child
+
     def children_page(self, folder: str = "", cursor: str | None = None,
                       limit: int = PAGE_SIZE) -> dict:
         """Return one bounded page and an opaque continuation cursor, if any."""
-        if folder not in self._directories:
-            raise NativeNCAError("Unknown RomFS folder.")
+        self._ensure_directory(folder)
         if not isinstance(limit, int) or not 1 <= limit <= self.MAX_PAGE_SIZE:
             raise NativeNCAError("Invalid RomFS page size.")
         if cursor is not None and (
