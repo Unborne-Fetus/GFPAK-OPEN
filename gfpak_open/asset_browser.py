@@ -8,6 +8,7 @@ them. The original assets are never modified.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shutil
@@ -803,7 +804,6 @@ class AssetBrowser:
         if converted_glb is not None:
             # Validate the bridge before writing or replacing an export ZIP.
             import struct
-            import json
             if (len(converted_glb) < 20 or len(converted_glb) > 256 * 1024 * 1024 or
                     struct.unpack_from('<4sII', converted_glb) !=
                     (b'glTF', 2, len(converted_glb)) or
@@ -864,6 +864,7 @@ class AssetBrowser:
         fd, temporary = tempfile.mkstemp(prefix='.pokemon-export-', suffix='.zip', dir=destination.parent)
         os.close(fd)
         used = set()
+        packed_members = []
         try:
             with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zipped:
                 for entry in entries:
@@ -871,10 +872,48 @@ class AssetBrowser:
                     if converted_glb is not None and name.lower() in {
                             'pokedex3d/regular.glb', 'gfpak-pokemon-export.json'}:
                         continue
+                    descriptor = entry['source']
+                    decoded = None
+                    packed = None
+                    # In a raw ZIP, preserve any compressed GFPAK members that
+                    # the available Oodle/LZ4 backend cannot decode. Do NOT do
+                    # this for a GLB export, where claiming converted resources
+                    # would be misleading. The suffix and manifest distinguish
+                    # stored bytes from the original decoded asset.
+                    if converted_glb is None and descriptor[0] in ('gfpak', 'nca_gfpak'):
+                        archive_for_member = (
+                            self._archive(Path(descriptor[1])) if descriptor[0] == 'gfpak'
+                            else self._mounted_gfpak(descriptor[1])[0]
+                        )
+                        resource = archive_for_member.resources[descriptor[2]]
+                        if resource.compression:
+                            try:
+                                decoded = archive_for_member.read_resource(resource)
+                            except GFPakError:
+                                packed = (archive_for_member, resource)
+                                packed_members.append({
+                                    'originalPath': name,
+                                    'storedPath': name + '.packed',
+                                    'compression': resource.compression,
+                                    'decodedSize': resource.size,
+                                    'storedSize': resource.packed_size,
+                                })
+                                name += '.packed'
                     if name.lower() in used:
                         continue
                     used.add(name.lower())
-                    size, chunks = self.stream_fast_preview_item(entry['source'])
+                    if decoded is not None:
+                        size = len(decoded)
+                        chunks = (decoded[pos:pos + 1024 * 1024]
+                                  for pos in range(0, size, 1024 * 1024))
+                    elif packed is not None:
+                        store, resource = packed
+                        size = resource.packed_size
+                        chunks = (store._range(resource.offset + pos,
+                                               min(1024 * 1024, size - pos))
+                                  for pos in range(0, size, 1024 * 1024))
+                    else:
+                        size, chunks = self.stream_fast_preview_item(descriptor)
                     written = 0
                     with zipped.open(name, 'w', force_zip64=True) as output:
                         for chunk in chunks:
@@ -882,6 +921,14 @@ class AssetBrowser:
                             written += len(chunk)
                     if written != size:
                         raise ValueError('Asset changed during export: ' + name)
+                if packed_members:
+                    zipped.writestr('raw-assets-manifest.json', json.dumps({
+                        'format': 'gfpak-raw-assets-v1',
+                        'note': ('These .packed members are the exact original stored '
+                                 'bytes. They require their native compression decoder '
+                                 'before being used as models, textures, or animations.'),
+                        'packedMembers': packed_members,
+                    }, indent=2))
                 if converted_glb is not None:
                     zipped.writestr('pokedex3d/regular.glb', converted_glb)
                     zipped.writestr('gfpak-pokemon-export.json', json.dumps(metadata, indent=2))
