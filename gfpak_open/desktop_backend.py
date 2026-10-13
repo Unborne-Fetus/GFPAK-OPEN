@@ -549,6 +549,11 @@ class DesktopAPI:
         return str(browser.export_pokemon(node_id, Path(selected[0]),
                                          converted_glb=converted, metadata=metadata))
 
+    def browse_model_diagnostics(self, node_id: str):
+        """Report only safe GFPAK discovery counts; no keys or raw content."""
+        with self._lock:
+            return self._browser.model_diagnostics(node_id)
+
     def browse_asset_family(self, node_id: str):
         with self._lock:
             return self._browser.asset_family(node_id)
