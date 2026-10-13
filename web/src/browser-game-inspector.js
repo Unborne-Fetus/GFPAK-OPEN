@@ -655,7 +655,7 @@ function install(){
   byId('tabAssets').hidden=false;
   byId('tabAssets').textContent='▤  GAME FILE EXPLORER';
   byId('tabAssets').addEventListener('click',()=>{
-    for(const panel of ['viewerPanel','archivePanel','desktopTools','webGamePanel'])
+    for(const panel of ['viewerPanel','archivePanel','desktopTools'])
       byId(panel).hidden=true;
     byId('assetBrowser').hidden=false;
     for(const id of ['tabViewer','tabArchive','tabAssets']){
@@ -676,6 +676,7 @@ function install(){
   byId('assetCopyNcaDiagnostics').hidden=true;byId('assetSavePacked').hidden=true;
   byId('nspAudit').hidden=true;byId('nxMenuHash').hidden=true;
   byId('nxMenuLinkFolder').hidden=true;byId('assetExportPokemon').hidden=false;
+  byId('assetExportPokemon').textContent='↓ EXPORT RAW ASSET ZIP';
   const input=document.createElement('input');input.type='file';input.multiple=true;input.hidden=true;
   input.accept='.nsp,.xci,.zip,.gfpak,.nca,.glb,.gltf,.trmdl,.gfbmdl,.bntx';
   const folderInput=document.createElement('input');folderInput.type='file';
