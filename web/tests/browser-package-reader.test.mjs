@@ -76,6 +76,8 @@ test('asset detection does not pretend that unknown files are models',()=>{
   assert.equal(categoryOf('body.tranm'),'animation');
   assert.equal(categoryOf('unknown.bin'),'other');
   assert.equal(kindOf('body.gfpak'),'gfpak');
+  assert.equal(kindOf('package.nsz'),'package');
+  assert.equal(kindOf('game.xcz'),'package');
 });
 
 test('plaintext RomFS directory and file payload are read by bounded slices',async()=>{
