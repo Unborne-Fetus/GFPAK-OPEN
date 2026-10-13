@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
 import { parseBntx, decodeBntxTexture } from './bntx.js';
+import { configureTextureSampling } from './texture-quality.js';
 
 function suffix(path) {
   const p = String(path).toLowerCase();
@@ -37,7 +38,7 @@ export function decodeDDSTexture(bytes, srgb = true) {
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   texture.needsUpdate = true;
-  return texture;
+  return configureTextureSampling(texture);
 }
 
 function normalizeTextureName(name) {
@@ -90,7 +91,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     texture.needsUpdate = true;
-    return texture;
+    return configureTextureSampling(texture);
   }
   if (format === '.trtex')
     throw new Error('TRTEX texture needs its game-specific layout; no texture was guessed');
@@ -108,7 +109,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [])
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   texture.needsUpdate = true;
-  return texture;
+  return configureTextureSampling(texture);
 }
 
 /** Pick only a demonstrably related base-color image for a native material.

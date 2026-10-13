@@ -1,6 +1,7 @@
 /** Three.js model stage: real-time 3D preview, geometry stats, and clip playback. */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { configureTextureSampling } from './texture-quality.js';
 
 export class ModelStage {
   constructor(container) {
@@ -31,7 +32,7 @@ export class ModelStage {
     this.userAdjustedCamera = false;
     this.controls.addEventListener('start', () => { this.userAdjustedCamera = true; });
 
-    this.scene.add(new THREE.HemisphereLight(0xc2e8ff, 0x2d4959, 2.2));
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x858585, 2.2));
     const key = new THREE.DirectionalLight(0xfff6e7, 3.5);
     key.position.set(6, 12, 7);
     key.castShadow = true;
@@ -40,7 +41,7 @@ export class ModelStage {
     key.shadow.camera.right = key.shadow.camera.top = 20;
     key.shadow.bias = -0.0003;
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x58ecca, 1.5);
+    const fill = new THREE.DirectionalLight(0xffffff, 1.5);
     fill.position.set(-6, 6, -5);
     this.scene.add(fill);
 
@@ -95,10 +96,20 @@ export class ModelStage {
     this.clear();
     this.root = root;
     this.animations = animations;
+    const textures = new Set();
+    const anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     root.traverse(obj => {
       if (obj.isMesh) {
         obj.castShadow = true;
         obj.receiveShadow = true;
+        for (const material of Array.isArray(obj.material) ? obj.material : [obj.material]) {
+          for (const value of Object.values(material)) {
+            if (value?.isTexture && !textures.has(value)) {
+              configureTextureSampling(value, anisotropy);
+              textures.add(value);
+            }
+          }
+        }
       }
     });
     this.scene.add(root);

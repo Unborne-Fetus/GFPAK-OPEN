@@ -35,6 +35,15 @@ test('decodes Tegra block-linear BC1 texture',()=>{
  assert.deepEqual(Array.from(image.data.slice(0,4)),[255,0,0,255]);
  assert.equal(image.data.length,64);
 });
+test('decoded Nintendo textures use smooth filtering at their original resolution',async()=>{
+ const {bytes}=sampleBntx();
+ const texture=await loadDecodedTexture({path:'body.bntx',getBytes:async()=>bytes});
+ assert.deepEqual([texture.image.width,texture.image.height],[2,2]);
+ assert.equal(texture.magFilter,THREE.LinearFilter);
+ assert.equal(texture.minFilter,THREE.LinearMipmapLinearFilter);
+ assert.equal(texture.generateMipmaps,true);
+ texture.dispose();
+});
 test('rejects unknown formats and corrupted pointers',()=>{
  const {bytes,v}=sampleBntx({format:0x9901});
  assert.throws(()=>decodeBntxTexture(parseBntx(bytes)),/Unsupported BNTX texture format/);

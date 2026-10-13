@@ -2,6 +2,7 @@
  * Bake these colors to an ordinary map so preview and GLB retain the skin.
  */
 import * as THREE from 'three';
+import { configureTextureSampling } from './texture-quality.js';
 
 export function layerPalette(colors = {}) {
   const palette = [1, 2, 3, 4].map(i => colors['BaseColorLayer' + i]);
@@ -78,7 +79,7 @@ export function applyLayerColors(definition, created, report = () => {}) {
     baked.colorSpace = THREE.SRGBColorSpace;
     baked.wrapS = baked.wrapT = THREE.RepeatWrapping;
     // UV transforms were sampled into this map; applying them again distorts it.
-    baked.minFilter = baked.magFilter = THREE.LinearFilter;
+    configureTextureSampling(baked);
     baked.needsUpdate = true; created.push(baked);
     material.map = baked; material.needsUpdate = true;
     report('Applied original layer colors to ' + material.name + '.');
