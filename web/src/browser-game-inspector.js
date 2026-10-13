@@ -33,7 +33,7 @@ const sizeOf=n=>{
 const state={
   root:null,folder:null,selected:null,files:[],nodes:[],
   catalog:[],type:'all',dictionary:new Map(),source:null,
-  busy:false,scanRevision:0,scanDone:false,selectedRevision:0,
+  busy:false,scanning:false,scanRevision:0,scanDone:false,selectedRevision:0,
   treeExpanded:new Set(),listPage:0,thumbnailUrl:null,
   packMeta:null,sourceName:''
 };
@@ -234,6 +234,7 @@ function sourceRoot(file,kind){
   return root;
 }
 async function openInput(files,folder=false){
+  if(state.scanning){state.scanRevision++;state.scanning=false;state.busy=false;}
   if(state.busy)return;
   const selectedFiles=Array.from(files||[]);
   if(!selectedFiles.length)return;
@@ -312,7 +313,7 @@ function render(){
   byId('assetBack').disabled=!state.folder?.parent;
   byId('assetBreadcrumb').textContent=state.folder?
     state.folder.path.replaceAll('/','  /  '):'No game source selected';
-  byId('assetScan').disabled=!state.root||state.busy;
+  byId('assetScan').disabled=!state.root||(state.busy&&!state.scanning);
   renderTree();renderRows();renderCounts();
 }
 function renderTree(){
@@ -503,7 +504,8 @@ function hexDump(bytes,offset){
   return lines.join('\n')||'(empty)';
 }
 function canPreview(node){
-  return !!node&&node.children===null&&node.category==='model';
+  return !!node&&(node.kind==='gfpak'||
+    (node.children===null&&node.category==='model'));
 }
 function matchingAssets(model){
   const family=model.name.match(/pm\d{3,5}(?:_\d{2})?/i)?.[0]?.toLowerCase();
@@ -525,9 +527,17 @@ function matchingAssets(model){
 }
 async function preview(node){
   if(!node)return;
-  if(node.category!=='model'&&node.category!=='texture')return;
+  if(node.kind!=='gfpak'&&node.category!=='model'&&node.category!=='texture')return;
   try{
     await ensureSource(node);
+    if(node.kind==='gfpak'){
+      if(node.size>MAX_EXPORT)throw Error('This GFPAK exceeds browser preview memory cap');
+      const source=await node.source.read(0,node.size);
+      const file=new File([source],node.name);
+      window.dispatchEvent(new CustomEvent('gfpak-native-model',{detail:file}));
+      byId('tabArchive').click();
+      notice('Opening GFPAK in the existing archive inspector.');return;
+    }
     if(node.category==='texture'){
       if(node.size>MAX_EXPORT)throw Error('Texture exceeds preview memory cap');
       const bytes=await node.source.read(0,node.size);
@@ -635,7 +645,9 @@ async function save(node){
 }
 async function scan(){
   if(!state.root||state.busy)return;
-  state.busy=true;const revision=++state.scanRevision;
+  state.busy=true;state.scanning=true;const revision=++state.scanRevision;
+  byId('assetScan').textContent='◼ Stop scan';
+  byId('assetScan').disabled=false;
   const queue=[state.root];let seen=0,warnings=[];
   byId('assetScanSummary').textContent='Scanning reachable game files…';
   while(queue.length&&seen<MAX_SCAN&&revision===state.scanRevision){
@@ -651,7 +663,9 @@ async function scan(){
       await new Promise(resolve=>setTimeout(resolve,0));
     }
   }
-  state.busy=false;state.scanDone=true;
+  if(revision!==state.scanRevision)return;
+  state.busy=false;state.scanning=false;state.scanDone=true;
+  byId('assetScan').textContent='⌕ Locate assets';
   byId('assetScanSummary').textContent=
     'Scanned '+seen.toLocaleString()+' entries; found '+state.files.length.toLocaleString()+
     ' files. '+warnings.length+' locked/unsupported areas'+
@@ -748,7 +762,15 @@ function install(){
       renderRows();
     });
   }
-  byId('assetScan').addEventListener('click',()=>void scan());
+  byId('assetScan').addEventListener('click',()=>{
+    if(state.scanning){
+      state.scanRevision++;state.scanning=false;state.busy=false;
+      byId('assetScan').textContent='⌕ Locate assets';
+      byId('assetScanSummary').textContent='Scan stopped. Discovered entries remain available.';
+      notice('Scanning stopped; indexed results are retained.');return;
+    }
+    void scan();
+  });
   byId('assetPreview').addEventListener('click',()=>void preview(state.selected));
   byId('assetExportPokemon').addEventListener('click',()=>void exportAssetPack(state.selected));
   byId('assetSaveFile').addEventListener('click',()=>void save(state.selected));
