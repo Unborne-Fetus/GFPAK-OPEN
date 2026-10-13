@@ -139,8 +139,12 @@ def inspect_nca3_header(raw: bytes, keys: Keyset) -> dict:
         if start == 0 and end == 0:
             continue
         fs_header = header[0x400 + i * 0x200:0x600 + i * 0x200]
+        expected_hash = header[0x280 + 0x20 * i:0x2A0 + 0x20 * i]
         sections.append({"section": i, "encryption_mode": fs_header[4],
-                         "fs_header_revision": fs_header[:2].hex()})
+                         "fs_header_revision": fs_header[:2].hex(),
+                         "section_header_sha256_valid": (
+                             hashlib.sha256(fs_header).digest() == expected_hash
+                         )})
     if not any(rights):
         match = "not-rights-managed"
         fingerprint = "none"
@@ -189,6 +193,16 @@ def inspect_nca3_entry(analyzer: NSPAnalyzer, index: int, keys: Keyset) -> dict:
         details["content_key_status"] = status
         details["package_ticket_entries"] = tickets
         details["package_ticket_inspection"] = inspect_package_tickets(analyzer, rights)
+    # Header-only probes on the same readonly reader used by the actual app.
+    # A readable ticket never means a filesystem has decrypted successfully.
+    try:
+        reader = NativeNCA(analyzer, index, keys)
+        details["filesystem_header_probes"] = [
+            reader.sections[number].probe_filesystem_header()
+            for number in sorted(reader.sections)
+        ]
+    except (OSError, RuntimeError, ValueError) as error:
+        details["filesystem_header_probe_error"] = str(error)[:180]
     return details
 
 
@@ -509,6 +523,50 @@ class NativeSection:
             "This section uses patch, sparse or newer encryption which the native reader "
             "cannot interpret safely."
         )
+
+    def probe_filesystem_header(self) -> dict:
+        """Check only the first 16-80 decoded filesystem bytes.
+
+        A title-key match alone cannot establish that section decryption worked.
+        No decrypted data, keys, counters, or unbounded file reads are returned.
+        """
+        result = {
+            "section": self.number,
+            "encryption_mode": self.encryption,
+            "filesystem": "RomFS" if self.fs_type in (0, 3) else
+                          "PartitionFS" if self.fs_type in (1, 2) else "unknown",
+            "status": "unsupported",
+        }
+        if (self.patch_indirect_size or self.patch_crypto_size or
+                self.sparse_table_size or self.compression_table_size or
+                self.encryption not in (1, 2, 3)):
+            result["status"] = "storage-mapping-requires-separate-validation"
+            return result
+        try:
+            if self.fs_type in (0, 3) or self.hash_type in (3, 6):
+                offset, length = _ivfc_data_region(self.fs_header)
+                if offset > self.size or length > self.size - offset or length < 0x50:
+                    result["status"] = "ivfc-data-bounds-invalid"
+                    return result
+                decoded = self._read_regular(offset, 0x50)
+                result["status"] = (
+                    "valid-romfs-header" if len(decoded) == 0x50 and
+                    _u64(decoded, 0) == 0x50 else "invalid-decoded-romfs-header"
+                )
+            elif self.fs_type in (1, 2) and self.hash_type in (0, 1, 2, 5):
+                offset = _u64(self.fs_header, 0x40) if self.hash_type in (2, 5) else 0
+                if offset > self.size or self.size - offset < 0x10:
+                    result["status"] = "partitionfs-data-bounds-invalid"
+                    return result
+                decoded = self._read_regular(offset, 0x10)
+                result["status"] = (
+                    "valid-partitionfs-header" if decoded[:4] == b"PFS0" else
+                    "invalid-decoded-partitionfs-header"
+                )
+        except (ValueError, OSError, RuntimeError) as error:
+            result["status"] = "probe-failed"
+            result["reason"] = str(error)[:180]
+        return result
 
     def compatibility(self) -> dict:
         """Describe NCA storage features without pretending they are decoded."""
@@ -881,7 +939,12 @@ class RomFS:
          file_hash_off, file_hash_size, file_table_off, file_table_size, data_off) = (
             struct.unpack("<10Q", header))
         if header_size != 0x50:
-            raise NativeNCAError("RomFS header does not have the expected 0x50-byte structure.")
+            raise NativeNCAError(
+                "Decrypted RomFS header is invalid (expected a 0x50-byte header). "
+                "The NCA header and ticket can be readable while the section's "
+                "AES-CTR data is still incorrect. Use Copy NCA Diagnostics to "
+                "check this section's filesystem header before attempting extraction."
+            )
         if offset < 0 or offset > getattr(section, "logical_size", section.size):
             raise NativeNCAError("RomFS image begins outside the NCA section.")
         remaining = getattr(section, "logical_size", section.size) - offset
