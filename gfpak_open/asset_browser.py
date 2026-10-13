@@ -599,7 +599,6 @@ class AssetBrowser:
                                 name="Sections unavailable")
             locked["category"] = "locked"
             locked["error"] = message
-            locked["name"] = "Sections unavailable — " + message[:120]
             entries.append(locked)
         return {"root": self._public(node),
                 "entries": [self._public(entry) for entry in entries],
