@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fromBlob,readPackage,openXci,inspectNca,openNcaSection,
-  categoryOf,kindOf,romChildren} from '../src/browser-package-reader.js';
+  categoryOf,kindOf,romChildren,romChildrenPage} from '../src/browser-package-reader.js';
 
 const text=new TextEncoder();
 function pack(magic,rows){
@@ -115,4 +115,58 @@ test('plaintext RomFS directory and file payload are read by bounded slices',asy
   assert.equal(entries.length,1);
   assert.equal(entries[0].name,'demo.bin');
   assert.deepEqual(Array.from(await entries[0].source.read(0,2)),[21,22]);
+});
+
+function fakeLargeRomfs(count,{cycle=false}={}){
+  const recordSize=40, fileStart=0x100, fileTableBytes=count*recordSize;
+  const raw=new Uint8Array(fileStart+fileTableBytes+16),view=new DataView(raw.buffer);
+  // RomFS root directory has no child dirs and points to first file.
+  view.setUint32(8,0xffffffff,true);
+  view.setUint32(12,0,true);
+  for(let i=0;i<count;i++){
+    const pos=fileStart+i*recordSize;
+    view.setUint32(pos,0,true);
+    view.setUint32(pos+4,i+1<count?(i+1)*recordSize:
+      (cycle?0:0xffffffff),true);
+    view.setBigUint64(pos+8,0n,true);
+    view.setBigUint64(pos+16,0n,true);
+    view.setUint32(pos+28,7,true);
+    raw.set(text.encode('f'+String(i).padStart(6,'0')),pos+32);
+  }
+  return {directory:{start:0,size:24},fileTable:{start:fileStart,size:fileTableBytes},
+    fileData:raw.length,rom:{size:raw.length,async read(offset,length){
+      return raw.slice(offset,offset+length);
+    }}};
+}
+
+test('browser RomFS loads every page in Sword/Shield-sized folders',async()=>{
+  const fs=fakeLargeRomfs(10501);
+  const visited=[],cursors=new Set();
+  let cursor=null,first=null,pages=0;
+  do{
+    const page=await romChildrenPage(fs,0,cursor,250);
+    if(!first)first=page;
+    visited.push(...page.entries.map(entry=>entry.name));
+    cursor=page.nextCursor;
+    if(cursor){
+      assert.ok(!cursors.has(cursor),'cursor must advance');
+      cursors.add(cursor);
+    }
+    pages++;
+  }while(cursor);
+  assert.equal(visited.length,10501);
+  assert.equal(new Set(visited).size,10501);
+  assert.equal(pages,43);
+  assert.equal(visited.at(-1),'f010500');
+  assert.deepEqual((await romChildrenPage(fs,0)).entries.map(row=>row.name),
+    first.entries.map(row=>row.name),'cached first page remains stable');
+});
+
+test('browser RomFS rejects fabricated cursors and cycles between pages',async()=>{
+  const fs=fakeLargeRomfs(270,{cycle:true});
+  await assert.rejects(romChildrenPage(fs,0,'f:ffffffff'),/cursor/i);
+  const first=await romChildrenPage(fs,0);
+  const second=await romChildrenPage(fs,0,first.nextCursor);
+  assert.equal(second.entries.length,20);
+  await assert.rejects(romChildrenPage(fs,0,second.nextCursor),/cycle|repeated/i);
 });
