@@ -32,9 +32,9 @@ def nca():
     return bytes(raw)
 
 
-def ticket(rights=RIGHTS, key_type=0, revision=7):
+def ticket(rights=RIGHTS, key_type=0, revision=7, byte_order="big"):
     raw = bytearray(0x400)
-    raw[:4] = (0x010004).to_bytes(4, "big")
+    raw[:4] = (0x010004).to_bytes(4, byte_order)
     raw[0x140+0x140] = 2
     raw[0x140+0x141] = key_type
     raw[0x140+0x145] = revision
@@ -80,6 +80,32 @@ class TicketResolutionTests(unittest.TestCase):
             self.assertNotIn(RIGHTS.hex(), serialized)
             self.assertNotIn(CONTENT.hex(), serialized)
             self.assertNotIn(TITLEKEK.hex(), serialized)
+
+    def test_little_endian_ticket_signature_is_parsed_and_matched(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            path = folder / "game.nsp"
+            package(path, [("program.nca", nca()), ("match.tik", ticket(byte_order="little"))])
+            prod = folder / "prod.keys"
+            prod.write_text("titlekek_07 = " + TITLEKEK.hex() + "\\n")
+            analyzer = NSPAnalyzer(path)
+            reader = NativeNCA(analyzer, 0, Keyset(prod))
+            self.assertEqual(reader.sections[0].key, CONTENT)
+            report = inspect_nca3_entry(analyzer, 0, Keyset(prod))
+            self.assertEqual(report["package_ticket_inspection"]["relation"], "exact-match")
+            self.assertEqual(report["package_ticket_inspection"]["signature_byte_orders"]["little"], 1)
+            self.assertNotIn(RIGHTS.hex(), json.dumps(report))
+
+    def test_unknown_signature_has_specific_safe_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "game.nsp"
+            malformed = bytearray(ticket())
+            malformed[:4] = b"ABCD"
+            package(path, [("program.nca", nca()), ("unknown.tik", bytes(malformed))])
+            report = inspect_package_tickets(NSPAnalyzer(path), RIGHTS)
+            self.assertEqual(report["parse_failure_reasons"],
+                             {"unrecognized-signature-type": 1})
+            self.assertEqual(report["unreadable_or_unsupported_tickets"], 1)
 
     def test_titlekeys_are_decrypted_with_revision_titlekek(self):
         with tempfile.TemporaryDirectory() as temp:
