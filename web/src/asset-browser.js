@@ -614,6 +614,7 @@ async function nxToggleTree(row, force = null) {
       if (listing.note) showNotice(listing.note);
     } catch (error) {
       view.toggle.textContent = '▸';
+      await nxShowNcaFailure(row, error);
       throw error;
     }
   }
@@ -627,7 +628,13 @@ async function nxNavigateTree(row) {
   const lineage = nxTreePaths.get(row.id) || [row];
   const stack = [];
   for (const node of lineage) {
-    const listing = nxTreeListings.get(node.id) || await api.browse_children(node.id);
+    let listing;
+    try {
+      listing = nxTreeListings.get(node.id) || await api.browse_children(node.id);
+    } catch (error) {
+      await nxShowNcaFailure(node, error);
+      throw error;
+    }
     nxTreeListings.set(node.id, listing);
     stack.push({root: node, listing});
   }
@@ -759,6 +766,12 @@ async function nxLoadDetails(row) {
 
 function select(row) {
   selected = row;
+  const diagnosticPanel = id('assetNcaAutoReport');
+  if (diagnosticPanel) {
+    diagnosticPanel.hidden = true;
+    diagnosticPanel.open = false;
+    id('assetNcaAutoReportText').textContent = '';
+  }
   id('assetSelected').textContent = row?.name || 'Nothing selected';
   const type = categories[row?.category] || row?.category || 'Select an asset';
   id('assetSelectedInfo').textContent = row
@@ -772,7 +785,8 @@ function select(row) {
     canInspectTexture(row) ? '▧ View texture' : 'Preview unavailable for this resource';
   id('assetExportPokemon').disabled = !canPreview(row);
   id('assetCopyNcaDiagnostics').disabled = !row ||
-    !((row.kind === 'nspfile' && /\\.(nca|ncz)$/i.test(row.name)) || row.kind === 'nca_locked');
+    !((row.kind === 'nspfile' && /\.(nca|ncz)$/i.test(row.name)) ||
+      ['nca_locked', 'nca_section', 'nca_dir', 'nca_file'].includes(row.kind));
   id('assetSaveFile').disabled = !row || !['file', 'zipfile',
     'gfpak_resource', 'nca_gfpak_resource', 'nspfile', 'nca_file'].includes(row.kind);
   const isPackedResource = ['gfpak_resource', 'nca_gfpak_resource'].includes(row?.kind);
@@ -1086,6 +1100,25 @@ async function restoreSource() {
       showNotice('Restored the last game source and saved keys-file selection.');
     }
   } catch (error) { showNotice('Could not restore previous game source: ' + error.message, true); }
+}
+
+// Display diagnostics automatically on a failed RomFS expansion, without
+// requiring the user to enable or click a separate button.
+async function nxShowNcaFailure(row, error) {
+  if (!row || !['nca_section', 'nca_dir', 'nca_file'].includes(row.kind)) return;
+  try {
+    const report = await api.browse_nca_diagnostics(row.id);
+    if (selected?.id !== row.id) select(row);
+    const panel = id('assetNcaAutoReport');
+    id('assetNcaAutoReportText').textContent =
+      'Filesystem open error: ' + (error.message || String(error)) + '\n\n' + report;
+    panel.hidden = false;
+    panel.open = true;
+  } catch (diagnosticError) {
+    // The original error is still displayed by the calling tree handler.
+    showNotice('Additional NCA diagnosis unavailable: ' +
+      (diagnosticError.message || String(diagnosticError)), true);
+  }
 }
 
 async function copyNcaDiagnostics() {
