@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fromBlob,readPackage,openXci,inspectNca,openNcaSection,
-  categoryOf,kindOf} from '../src/browser-package-reader.js';
+  categoryOf,kindOf,romChildren} from '../src/browser-package-reader.js';
 
 const text=new TextEncoder();
 function pack(magic,rows){
@@ -76,4 +76,41 @@ test('asset detection does not pretend that unknown files are models',()=>{
   assert.equal(categoryOf('body.tranm'),'animation');
   assert.equal(categoryOf('unknown.bin'),'other');
   assert.equal(kindOf('body.gfpak'),'gfpak');
+});
+
+test('plaintext RomFS directory and file payload are read by bounded slices',async()=>{
+  const raw=new Uint8Array(0x2000),v=new DataView(raw.buffer);
+  raw.set(text.encode('NCA3'),0x200);
+  v.setUint32(0x240,6,true);v.setUint32(0x244,16,true);
+  raw[0x400]=2;raw[0x402]=0;raw[0x403]=3;raw[0x404]=1;
+  raw.set(text.encode('IVFC'),0x408);
+  v.setUint32(0x414,2,true);
+  v.setBigUint64(0x418,0n,true);
+  v.setBigUint64(0x420,0x600n,true);
+  const base=0xc00;
+  for(const [at,value] of [
+    [0,0x50],[8,0x50],[16,0x10],[24,0x60],[32,0x18],
+    [40,0x80],[48,0x10],[56,0x90],[64,0x30],[72,0xc0]
+  ])v.setBigUint64(base+at,BigInt(value),true);
+  // Root directory: one file and no subdirectories.
+  v.setUint32(base+0x60+0,0xffffffff,true);
+  v.setUint32(base+0x60+4,0xffffffff,true);
+  v.setUint32(base+0x60+8,0xffffffff,true);
+  v.setUint32(base+0x60+12,0,true);
+  v.setUint32(base+0x60+20,0,true);
+  // The file's data is relative to data_off.
+  v.setUint32(base+0x90,0,true);
+  v.setUint32(base+0x94,0xffffffff,true);
+  v.setBigUint64(base+0x98,0n,true);
+  v.setBigUint64(base+0xa0,2n,true);
+  v.setUint32(base+0xac,8,true);
+  raw.set(text.encode('demo.bin'),base+0xb0);
+  raw.set([21,22],base+0xc0);
+  const sections=await inspectNca(fromBlob(new Blob([raw])));
+  const fs=await openNcaSection(sections[0]);
+  assert.equal(fs.type,'romfs');
+  const entries=await romChildren(fs,0);
+  assert.equal(entries.length,1);
+  assert.equal(entries[0].name,'demo.bin');
+  assert.deepEqual(Array.from(await entries[0].source.read(0,2)),[21,22]);
 });
