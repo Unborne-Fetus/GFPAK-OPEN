@@ -89,6 +89,26 @@ export function chooseMap(textureNames, material) {
     (candidates.length === 1 ? candidates[0] : null);
 }
 
+export function legacyTextureTransform(source, prefix = 'Color') {
+  const values = source.scalars || {};
+  const value = (name, fallback) => Number.isFinite(values[prefix + name])
+    ? values[prefix + name] : fallback;
+  const u = value('UVScaleU', 1), v = value('UVScaleV', 1);
+  return [u, v, (value('BaseU', 0) + value('UVTranslateU', 0)) * u,
+    (value('BaseV', 0) + value('UVTranslateV', 0)) * v];
+}
+
+export function applyLegacyTextureTransform(texture, transform) {
+  const [u, v, x, y] = transform;
+  texture.repeat.set(u, v);
+  // Geometry uses flipped V, so convert the native transform as well.
+  texture.offset.set(x, 1 - v - y);
+  texture.wrapS = Math.abs(u) > 1 ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+  texture.wrapT = Math.abs(v) > 1 ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+  texture.updateMatrix();
+  return texture;
+}
+
 function threeMesh(geometrySource, materialArray, rig = null) {
   const attributes = geometrySource.properties;
   const geometry = new THREE.BufferGeometry();
@@ -208,6 +228,10 @@ async function readLegacyAnimations(project, selected, rig, report) {
       if (clip) clips.push(clip);
     } catch (error) { report('Animation ' + source.path + ' skipped: ' + error.message); }
   }
+  // Landing/attack clips can begin airborne or rotated. Start with the
+  // authored neutral wait loop when present, retaining every selectable clip.
+  clips.sort((a, b) => Number(!/(?:ba10_waita|idle|standby)/i.test(a.name)) -
+    Number(!/(?:ba10_waita|idle|standby)/i.test(b.name)));
   return clips;
 }
 
@@ -239,8 +263,8 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
     root.add(threeMesh(geometry, materials, rig));
   }
 
-  // The original importer orients GFBMDL at +90° X, from the model's native axes.
-  root.rotation.x = Math.PI / 2;
+  // GFBMDL is already Y-up like Three.js. The Blender importer applies
+  // +90° X only to convert to Blender's Z-up coordinate system.
 
   const known = nearbyTextures(project, selected);
   const textureObjects = [];
@@ -284,10 +308,13 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
           continue;
         }
         try {
-          const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '');
+          const transform = legacyTextureTransform(model.materials[i]);
+          const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '') +
+            '|' + transform.join(',');
           let texture = textureCache.get(key);
           if (!texture) {
             texture = await loadDecodedTexture(file, true, [referencedName]);
+            applyLegacyTextureTransform(texture, transform);
             textureCache.set(key, texture);
             textureObjects.push(texture);
           }
