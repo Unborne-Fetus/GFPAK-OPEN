@@ -39,3 +39,18 @@ test('omitted texture index uses FlatBuffers zero default', () => {
   assert.equal(result.materials[0].maps[0].textureIndex,0);
   assert.equal(result.materials[0].maps[0].sampler,'Col0Tex');
 });
+
+test('native UV scale and offset survive V-origin conversion', async () => {
+  const THREE=await import('three');
+  const {legacyTextureTransform,applyLegacyTextureTransform}=await import('../src/gfbmdl-model.js');
+  const transform=legacyTextureTransform({scalars:{ColorUVScaleU:2,ColorUVScaleV:4,
+    ColorBaseU:-0.5,ColorBaseV:0.25,ColorUVTranslateV:0.1}});
+  assert.deepEqual(transform,[2,4,-1,1.4]);
+  const texture=new THREE.Texture();
+  applyLegacyTextureTransform(texture,transform);
+  assert.deepEqual(texture.repeat.toArray(),[2,4]);
+  assert.equal(texture.wrapS,THREE.MirroredRepeatWrapping);
+  const uv=new THREE.Vector2(0.75,1-0.2).applyMatrix3(texture.matrix);
+  assert.ok(Math.abs(uv.x-0.5)<1e-6);
+  assert.ok(Math.abs(uv.y-(1-(0.2+0.25+0.1)*4))<1e-6);
+});
