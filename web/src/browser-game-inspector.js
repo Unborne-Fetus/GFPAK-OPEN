@@ -267,7 +267,7 @@ async function openInput(files,folder=false){
       root.source=fromBlob(selectedFiles[0]);
       root.size=root.source.size;
       if(root.kind==='package'){
-        const pack=/\.xci$/i.test(selectedFiles[0].name)?
+        const pack=/\.(xci|xcz)$/i.test(selectedFiles[0].name)?
           await openXci(root.source):await readPackage(root.source,0,'PFS0');
         await populatePackage(root,pack);
         state.packMeta={count:pack.entries.length,indexSize:pack.indexSize,bytes:selectedFiles[0].size};
@@ -745,7 +745,7 @@ function install(){
   byId('nxMenuLinkFolder').hidden=true;byId('assetExportPokemon').hidden=false;
   byId('assetExportPokemon').textContent='↓ EXPORT RAW ASSET ZIP';
   const input=document.createElement('input');input.type='file';input.multiple=true;input.hidden=true;
-  input.accept='.nsp,.xci,.zip,.gfpak,.nca,.glb,.gltf,.trmdl,.gfbmdl,.bntx';
+  input.accept='.nsp,.nsz,.xci,.xcz,.ncz,.zip,.gfpak,.nca,.glb,.gltf,.trmdl,.gfbmdl,.bntx';
   const folderInput=document.createElement('input');folderInput.type='file';
   folderInput.webkitdirectory=true;folderInput.multiple=true;folderInput.hidden=true;
   byId('assetBrowser').append(input,folderInput);
@@ -819,7 +819,7 @@ function install(){
   const hashesButton=document.createElement('button');hashesButton.type='button';
   hashesButton.className='button button-secondary';hashesButton.textContent='Load GFPAK hash dictionary';
   byId('assetOpenFile').after(hashesButton);
-  byId('assetOpenFile').textContent='Open GFPAK / ZIP / NSP / XCI / NCA';
+  byId('assetOpenFile').textContent='Open GFPAK / ZIP / NSP / XCI / NSZ / XCZ';
   hashesButton.addEventListener('click',()=>hashes.click());
   hashes.addEventListener('change',async event=>{
     const file=event.target.files?.[0];if(!file)return;
