@@ -28,9 +28,13 @@ echo [1/3] Preparing portable desktop build tools...
 if errorlevel 1 goto :failed
 
 echo [2/3] Building bundled offline 3D studio...
-if not exist "node_modules\vite" (
-    call npm install --no-audit --no-fund
-    if errorlevel 1 goto :failed
+rem Always synchronize JavaScript dependencies. Checking only for Vite misses
+rem newly added packages (for example ooz-wasm) in an older node_modules.
+call npm install --prefer-offline --no-audit --no-fund
+if errorlevel 1 goto :failed
+if not exist "node_modules\ooz-wasm\package.json" (
+    echo ERROR: The required ooz-wasm decoder was not installed.
+    goto :failed
 )
 set "GFPAK_DESKTOP=1"
 call npm run build
