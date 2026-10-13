@@ -1023,13 +1023,14 @@ function renderListing() {
 async function openNode(row) {
   if (!row.expandable) return select(row);
   try {
-    const listing = await api.browse_children(row.id);
+    // Reopening a folder must not replace previously loaded pages with page 1.
+    const listing = nxTreeListings.get(row.id) || await api.browse_children(row.id);
     scanListing = null;
     pathStack.push({root: row, listing});
     nxTreeListings.set(row.id, listing);
     if (nxTreeItems.has(row.id)) {
-      nxPopulateChildren(row, listing);
       const item = nxTreeItems.get(row.id);
+      if (!item.loaded) nxPopulateChildren(row, listing);
       item.expanded = true;
       item.children.hidden = false;
       item.toggle.textContent = '▾';
