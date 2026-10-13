@@ -122,7 +122,13 @@ async function ensureSource(node){
   if(!node?.source)throw Error('This file has no readable source');
   return node.source;
 }
+function activeRoot(node){
+  let current=node;
+  while(current?.parent)current=current.parent;
+  return current===state.root;
+}
 async function addRows(parent,entries){
+  if(!activeRoot(parent))throw Error('Source changed while reading package');
   for(const entry of entries){
     if(state.nodes.length>=MAX_SCAN)throw Error('Index limit reached ('+MAX_SCAN.toLocaleString()+' entries)');
     const options=recordOption(entry);
@@ -157,6 +163,7 @@ async function expandGfpak(node){
 }
 async function expandNca(node){
   const sections=await inspectNca(node.source);
+  if(!activeRoot(node))throw Error('Source changed during NCA read');
   if(!sections.length)throw Error('NCA contains no readable filesystem sections');
   for(const section of sections){
     const child=mk(section.name,{
@@ -175,6 +182,7 @@ async function expandNca(node){
 }
 async function populateRomfs(node,fs,at){
   const entries=await romChildren(fs,at);
+  if(!activeRoot(node))throw Error('Source changed during RomFS read');
   for(const entry of entries){
     if(state.nodes.length>=MAX_SCAN)throw Error('File index limit reached');
     if(entry.kind==='folder'){
