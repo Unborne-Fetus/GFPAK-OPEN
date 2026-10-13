@@ -512,6 +512,66 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             self.assertEqual(length, len(source))
             self.assertEqual(b"".join(stream), source)
 
+    def test_model_diagnostics_explain_failed_oodle_resource_without_exposing_keys(self):
+        """Unavailable compressed contents must not be mislabeled model data."""
+        import json
+        from gfpak_open.core import GFPakError
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = b"not-an-oodle-bitstream"
+            archive = bytearray(112 + len(payload))
+            archive[:8] = b"GFLXPACK"
+            struct.pack_into("<4I", archive, 8, 0x1000, 0, 1, 1)
+            struct.pack_into("<QQQ", archive, 24, 88, 48, 56)
+            struct.pack_into("<Q", archive, 48, 0x12345678)
+            struct.pack_into("<QII", archive, 56, 0x55, 1, 0)
+            struct.pack_into("<QII", archive, 72, 0x444444, 0, 0)
+            struct.pack_into("<HHIIIII", archive, 88,
+                             0, 3, 512, len(payload), 0, 112, 0)
+            archive[112:] = payload
+            game = root / "game.nsp"
+            package(game, [("program.nca", plain_nca([
+                ("romfs", romfs_nested(bytes(archive)))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(game)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            selected = next(row for row in catalog["assets"]
+                            if row["name"].endswith(".gfpak"))
+            with patch("gfpak_open.core.GFPak.read_resource",
+                       side_effect=GFPakError("Oodle decoder failed")):
+                diagnostic = browser.model_diagnostics(selected["id"])
+                with self.assertRaisesRegex(ValueError, "Oodle-compressed"):
+                    browser.fast_preview_items(selected["id"])
+            self.assertEqual(diagnostic["resources"], 1)
+            self.assertEqual(diagnostic["recognized_models"], 0)
+            self.assertEqual(diagnostic["compression_types"], {"3": 1})
+            self.assertEqual(diagnostic["discovery"]["oodle_failures"], 1)
+            self.assertNotIn("12345678", json.dumps(diagnostic))
+            self.assertNotIn(str(root), json.dumps(diagnostic))
+
+    def test_model_diagnostics_report_verified_hash_family(self):
+        """A real model hash triplet remains identifiable without decoding."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "game.nsp"
+            package(game, [("program.nca", plain_nca([
+                ("romfs", romfs_nested(native_gfpak_fixture()))
+            ]))])
+            browser = AssetBrowser(nca_workspace=root / "cache")
+            source = browser.open(game)
+            nca = browser.children(source["id"])["entries"][0]
+            section = browser.children(nca["id"])["entries"][0]
+            catalog = browser.scan_nca_assets(section["id"])
+            selected = next(row for row in catalog["assets"]
+                            if row["name"].endswith(".gfpak"))
+            diagnostic = browser.model_diagnostics(selected["id"])
+            self.assertGreaterEqual(diagnostic["recognized_models"], 1)
+            self.assertEqual(diagnostic["status"], "Native model identified")
+            self.assertEqual(diagnostic["compression_types"], {"0": 5})
+
     def test_raw_nested_romfs_gfpak_zip_never_requires_3d_preview(self):
         """A valid model archive can be exported even when geometry is unsupported."""
         import zipfile
