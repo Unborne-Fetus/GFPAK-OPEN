@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install web dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
       - name: Test GFLXPACK parser
         run: npm test
       - name: Build GitHub Pages static site
