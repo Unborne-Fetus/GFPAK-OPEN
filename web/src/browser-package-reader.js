@@ -74,12 +74,12 @@ function relativeSource(source, start, size) {
   };
 }
 export function categoryOf(name) {
-  if (/\.(gfbmdl|trmdl|trmsh|glb|gltf|fbx|obj|dae|ply|stl|3ds)$/i.test(name))
+  if (/\.(gfbmdl|trmdl|glb|gltf|fbx|obj|dae|ply|stl|3ds)$/i.test(name))
     return 'model';
   if (/\.(bntx|dds|trtex|png|jpeg|jpg|webp|tga|ktx2)$/i.test(name)) return 'texture';
-  if (/\.(tranm|gfbanm|gfbmot|gfanm)$/i.test(name)) return 'animation';
+  if (/\.(tranm|gfbanm|gfbmot|gfanm|tracn|tracp|tracr|tracs|tracm|traef|tracl|tralk|trslp)$/i.test(name)) return 'animation';
   if (/\.(trskl|gfskl)$/i.test(name)) return 'skeleton';
-  if (/\.(trmbf|gfmdlbuf)$/i.test(name)) return 'mesh';
+  if (/\.(trmsh|trmbf|gfmdlbuf)$/i.test(name)) return 'mesh';
   if (/\.(trmtr|gfmat)$/i.test(name)) return 'material';
   if (/\.(gfpak|zip)$/i.test(name)) return 'asset package';
   if (/\.nca$/i.test(name)) return 'encrypted container';
