@@ -23,7 +23,7 @@ export function browserModelAssetMatches(selected,all) {
   const models=all.filter(row=>row.category==='model'&&row.kind!=='gfpak');
   const modelScope=candidateScope(selected);
   const modelDir=parentName(selected),modelStem=stem(selected.name);
-  const modelFamily=token(selected.path);
+  const modelFamily=token(selected.name)||token(selected.path);
   const sameDirModels=models.filter(item=>parentName(item)===modelDir).length;
   const sameArchiveModels=models.filter(item=>
     nearestArchive(item)===nearestArchive(selected) &&
@@ -33,7 +33,7 @@ export function browserModelAssetMatches(selected,all) {
   for(const item of all){
     if(item===selected||item.children!==null||(!item.source&&!item.lazySource)||
        !TYPES.has(item.category))continue;
-    const candidateToken=token(item.path);
+    const candidateToken=token(item.name)||token(item.path);
     if(modelFamily && candidateToken && candidateToken!==modelFamily)continue;
     const itemDir=parentName(item),itemStem=stem(item.name);
     const sameDirectory=itemDir===modelDir;
