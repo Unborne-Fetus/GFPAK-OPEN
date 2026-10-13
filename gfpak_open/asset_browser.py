@@ -103,6 +103,7 @@ class AssetBrowser:
         self._keys: dict[tuple, str] = {}
         self._archives: dict[Path, GFPak] = {}
         self._zip_lists: dict[Path, tuple[list[str], dict[str, zipfile.ZipInfo]]] = {}
+        self._nested_packages: dict[tuple[str, str], Path] = {}
         self._inferred: dict[Path, dict[int, str]] = {}
         self._pfs: dict[Path, NSPAnalyzer] = {}
         self._xci_images: dict[Path, XCIImage] = {}
@@ -150,7 +151,7 @@ class AssetBrowser:
         # Switching between giant compressed packages must not retain
         # gigabytes of session-only restored NCZ files or model previews.
         # Only these two app-owned directories may be cleared; never the NSP.
-        for subfolder in ("ncz", "preview"):
+        for subfolder in ("ncz", "preview", "zip-packages"):
             staged = self._nca_sections.workspace / subfolder
             if staged.is_dir():
                 try:
@@ -167,6 +168,7 @@ class AssetBrowser:
         self._keys.clear()
         self._archives.clear()
         self._zip_lists.clear()
+        self._nested_packages.clear()
         self._inferred.clear()
         self._pfs.clear()
         self._xci_images.clear()
@@ -242,6 +244,54 @@ class AssetBrowser:
                         items[filename] = row
                 self._zip_lists[path] = (sorted(items), items)
         return self._zip_lists[path]
+
+    def _open_zipped_nsp(self, node: dict) -> dict:
+        """Open one NSP inside a ZIP using bounded-memory, session-local staging.
+
+        An NSP requires random-access reads, so streaming its bytes to a private
+        temporary file is necessary before the existing PFS0/NCA reader can
+        inspect it. Never write beside the source ZIP or follow member paths.
+        """
+        zip_path = Path(node["path"])
+        member = node["inner"]
+        key = (str(zip_path), member)
+        dest = self._nested_packages.get(key)
+        if dest is None or not dest.is_file():
+            _, entries = self._zip_data(zip_path)
+            info = entries.get(member)
+            if info is None or Path(member).suffix.lower() != ".nsp":
+                raise ValueError("Select an NSP contained in the ZIP")
+            if info.file_size > 64 * 1024**3:
+                raise ValueError("ZIP member exceeds the 64 GiB safety limit")
+            folder = self._nca_sections.workspace / "zip-packages"
+            folder.mkdir(parents=True, exist_ok=True)
+            import hashlib
+            dest = folder / (hashlib.sha256(
+                (str(zip_path) + "\\0" + member).encode("utf-8")).hexdigest() + ".nsp")
+            temporary = dest.with_suffix(".partial")
+            try:
+                with zipfile.ZipFile(zip_path) as archive, archive.open(info) as source, temporary.open("xb") as target:
+                    remaining = info.file_size
+                    while remaining:
+                        chunk = source.read(min(8 * 1024 * 1024, remaining))
+                        if not chunk:
+                            raise ValueError("Truncated ZIP member")
+                        target.write(chunk)
+                        remaining -= len(chunk)
+                temporary.replace(dest)
+                # Validate the PFS0 header before accepting a staged package.
+                reader = NSPAnalyzer(dest)
+                self._pfs[dest] = reader
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                dest.unlink(missing_ok=True)
+                raise
+            self._nested_packages[key] = dest
+        node["kind"] = "nsp"
+        node["path"] = str(dest)
+        node["size"] = dest.stat().st_size
+        node["expandable"] = True
+        return node
 
     def attach_extracted(self, path: str | Path) -> dict:
         """Attach a user-chosen, already-extracted directory under an NSP root.
@@ -419,6 +469,9 @@ class AssetBrowser:
         node = self.node(id_)
         kind = node["kind"]
         path = Path(node["path"])
+        if kind == "zipfile" and node["name"].lower().endswith(".nsp"):
+            self._open_zipped_nsp(node)
+            return self.nsp_page(id_)
         if kind == "nsp":
             return self.nsp_page(id_)
         if kind == "xci":
@@ -483,11 +536,14 @@ class AssetBrowser:
                 identifier = prefix + first + ("/" if isdir else "")
                 if identifier in names:
                     continue
-                names[identifier] = self._node(
+                child = self._node(
                     "zipdir" if isdir else "zipfile", path,
                     inner=identifier, name=first,
                     size=0 if isdir else meta[full].file_size
                 )
+                if not isdir and first.lower().endswith(".nsp"):
+                    child["expandable"] = True
+                names[identifier] = child
             sorted_nodes = sorted(names.values(),
                                   key=lambda item: (not item["expandable"], item["name"].lower()))
             start = self._archive_page_start(cursor, len(sorted_nodes))
