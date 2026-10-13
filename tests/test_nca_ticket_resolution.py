@@ -87,7 +87,7 @@ class TicketResolutionTests(unittest.TestCase):
             path = folder / "game.nsp"
             package(path, [("program.nca", nca()), ("match.tik", ticket(byte_order="little"))])
             prod = folder / "prod.keys"
-            prod.write_text("titlekek_07 = " + TITLEKEK.hex() + "\\n")
+            prod.write_text("titlekek_07 = " + TITLEKEK.hex() + "\n")
             analyzer = NSPAnalyzer(path)
             reader = NativeNCA(analyzer, 0, Keyset(prod))
             self.assertEqual(reader.sections[0].key, CONTENT)
