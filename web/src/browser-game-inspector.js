@@ -352,9 +352,12 @@ function rowsToShow(){
   const nodes=state.type==='all'?
     Array.from(state.folder?.children?.values()||[]):state.files.filter(n=>
       classSets[state.type]?.has(n.category));
-  return nodes.filter(n=>(!q || n.path.toLowerCase().includes(q) ||
+  const visible=nodes.filter(n=>(!q || n.path.toLowerCase().includes(q) ||
       (n.metadata.hash||'').includes(q)) &&
-    (category==='all'||n.category===category)).sort((a,b)=>{
+    (category==='all'||n.category===category));
+  // Preserve RomFS page order when more entries arrive: resorting shifts rows.
+  if(state.type==='all'&&state.folder?.romPaged)return visible;
+  return visible.sort((a,b)=>{
       const d=(b.children!==null)-(a.children!==null);
       return d||a.name.localeCompare(b.name,undefined,{numeric:true});
     });
@@ -401,10 +404,20 @@ function renderTree(){
       children.setAttribute('role','group');wrap.append(children);
       const folderChildren=Array.from(node.children.values()).sort((a,b)=>
         (b.children!==null)-(a.children!==null)||a.name.localeCompare(b.name));
-      for(const child of folderChildren.slice(0,250))visit(child,children,depth+1);
-      if(folderChildren.length>250){
-        const more=document.createElement('div');more.className='nx-tree-more';
-        more.textContent='+'+(folderChildren.length-250)+' more · open folder to browse all';
+      const show=state.treeLimits.get(node.id)||250;
+      for(const child of folderChildren.slice(0,show))visit(child,children,depth+1);
+      if(folderChildren.length>show||node.nextCursor){
+        const more=document.createElement('button');more.type='button';
+        more.className='nx-tree-more nx-load-more';
+        more.textContent='＋ Load next 250 entries…';
+        more.addEventListener('click',async event=>{
+          event.stopPropagation();more.disabled=true;more.textContent='Loading more entries…';
+          try{
+            if(folderChildren.length<=show&&node.nextCursor)await loadMore(node);
+            state.treeLimits.set(node.id,show+250);render();
+          }catch(e){more.disabled=false;more.textContent='＋ Retry loading entries';
+            notice(e.message||String(e),true);}
+        });
         children.append(more);
       }
     }
@@ -456,17 +469,29 @@ function renderRows(){
     td.textContent='No matching files in this location. Encrypted or unidentified resources are not guessed.';
     tr.append(td);host.append(tr);
   }
-  if(rows.length>pageSize){
+  const moreAvailable=state.type==='all'&&!!state.folder?.nextCursor;
+  if(rows.length>pageSize||moreAvailable){
     const tr=document.createElement('tr');const td=document.createElement('td');
     td.colSpan=4;td.className='nx-pagination-row';
     const previous=document.createElement('button');previous.className='button button-secondary';
     previous.textContent='← Previous';previous.disabled=state.listPage===0;
     previous.addEventListener('click',()=>{state.listPage--;renderRows();});
     const next=document.createElement('button');next.className='button button-secondary';
-    next.textContent='Next 250 →';next.disabled=start+pageSize>=rows.length;
-    next.addEventListener('click',()=>{state.listPage++;renderRows();});
-    td.append(previous,document.createTextNode('  '+(start+1)+'–'+Math.min(rows.length,start+pageSize)+
-      ' / '+rows.length+'  '),next);tr.append(td);host.append(tr);
+    next.textContent=start+pageSize>=rows.length?'＋ Load next 250 entries':'Next 250 →';
+    next.disabled=start+pageSize>=rows.length&&!moreAvailable;
+    next.addEventListener('click',async()=>{
+      next.disabled=true;
+      try{
+        if(start+pageSize>=rows.length&&state.folder?.nextCursor)
+          await loadMore(state.folder);
+        if(rowsToShow().length>start+pageSize)state.listPage++;
+        render();
+      }catch(e){render();notice(e.message||String(e),true);}
+    });
+    td.append(previous,document.createTextNode('  '+(rows.length?start+1:0)+'–'+
+      Math.min(rows.length,start+pageSize)+' / '+rows.length+
+      (moreAvailable?' loaded · more available':'')+'  '),next);
+    tr.append(td);host.append(tr);
   }
 }
 function renderCounts(){
