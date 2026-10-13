@@ -619,18 +619,41 @@ async function exportAssetPack(node){
   }catch(e){notice('Asset ZIP failed: '+(e.message||String(e)),true);}
 }
 
+async function saveSourceToDisk(node,source,fileName){
+  const chunkSize=4*1024*1024;
+  if(typeof window.showSaveFilePicker==='function'){
+    // A genuine click is required by browsers; ask before lengthy decoding.
+    const handle=await window.showSaveFilePicker({suggestedName:fileName});
+    const writable=await handle.createWritable();
+    try{
+      for(let offset=0;offset<source.size;offset+=chunkSize){
+        const length=Math.min(chunkSize,source.size-offset);
+        await writable.write(await source.read(offset,length));
+      }
+      await writable.close();
+    }catch(error){await writable.abort().catch(()=>{});throw error;}
+  }else{
+    if(source.size>512*1024*1024)
+      throw Error('Large file export needs a browser with streamed Save File support.');
+    const parts=[];
+    for(let offset=0;offset<source.size;offset+=chunkSize)
+      parts.push(await source.read(offset,Math.min(chunkSize,source.size-offset)));
+    const url=URL.createObjectURL(new Blob(parts)),a=document.createElement('a');
+    a.href=url;a.download=fileName;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  }
+}
 async function savePacked(node){
   if(!node?.packedSource)return;
   try{
+    // Collect user save permission while the click gesture is active.
     const source=await node.packedSource();
-    if(source.size>512*1024*1024)throw Error('Packed extraction limited to 512 MiB');
-    const bytes=await source.read(0,source.size);
-    const blob=new Blob([bytes]);
-    const url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=node.name.replace(/\.[^.]+$/,'')+'.packed';
-    a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
-    notice('Saved packed bytes. Compression was preserved; no decoded model was invented.');
-  }catch(e){notice('Packed extraction failed: '+(e.message||String(e)),true);}
+    await saveSourceToDisk(node,source,node.name.replace(/\\.[^.]+$/,'')+'.packed');
+    notice('Saved packed bytes. Compression preserved; no decoded model was invented.');
+  }catch(e){
+    if(e?.name==='AbortError')return;
+    notice('Packed extraction failed: '+(e.message||String(e)),true);
+  }
 }
 function renderFamily(model){
   const files=matchingAssets(model).slice(1);
@@ -658,15 +681,13 @@ function renderFamily(model){
 async function save(node){
   if(!node)return;
   try{
-    await ensureSource(node);
-    if(node.size>512*1024*1024)throw Error('Export capped at 512 MiB per file');
-    const bytes=await node.source.read(0,node.size);
-    const blob=new Blob([bytes]);
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=node.name;a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    const source=await ensureSource(node);
+    await saveSourceToDisk(node,source,node.name);
     notice('Saved '+node.name);
-  }catch(e){notice('Export failed: '+(e.message||String(e)),true);}
+  }catch(e){
+    if(e?.name==='AbortError')return;
+    notice('Export failed: '+(e.message||String(e)),true);
+  }
 }
 async function scan(){
   if(!state.root||state.busy)return;
