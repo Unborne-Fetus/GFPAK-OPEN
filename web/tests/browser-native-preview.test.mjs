@@ -34,7 +34,7 @@ test('exact hash-validated referenced textures recover actual names, not guesses
     {resources},names,async res=>{
       looked.push(res.index);
       return new TextEncoder().encode(res.index===0?
-        'object\\x00body_diffuse.bntx\\x00': 'other');
+        ('object'+String.fromCharCode(0)+'body_diffuse.bntx'+String.fromCharCode(0)): 'other');
     });
   assert.equal(result.get(3),'body_diffuse.bntx');
   assert.ok(looked.length>=1);
