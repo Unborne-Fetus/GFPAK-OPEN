@@ -91,13 +91,15 @@ class DesktopAPI:
         selected = str(folder_key) if folder_key.is_file() else (self.settings.get("nca_keyset") or "")
         title_selected = str(folder_title) if folder_title.is_file() else ""
         try:
-            self._browser.configure_nca_reader(selected, title_selected)
+            changed = self._browser.configure_nca_reader(selected, title_selected)
             if selected and self.settings.get("nca_keyset") != selected:
                 self.settings["nca_keyset"] = selected
                 self._save()
+            return changed
         except (OSError, ValueError):
-            self._browser.configure_nca_reader("")
+            changed = self._browser.configure_nca_reader("")
             self.settings.pop("nca_keyset", None)
+            return changed
 
     def browse_nca_settings(self):
         with self._lock:
@@ -130,8 +132,10 @@ class DesktopAPI:
 
     def browse_refresh_keys(self):
         with self._lock:
-            self._configure_nca_browser()
-            return self.browse_nca_settings()
+            changed = self._configure_nca_browser()
+            state = self.browse_nca_settings()
+            state["changed"] = bool(changed)
+            return state
 
     def browse_nca_select(self, option: str):
         if option != "keyset":
