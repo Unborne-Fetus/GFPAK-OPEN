@@ -88,7 +88,7 @@ export function categoryOf(name) {
 export function kindOf(name) {
   if(/\.gfpak$/i.test(name)) return 'gfpak';
   if(/\.nca$/i.test(name)) return 'nca';
-  if(/\.(nsp|xci)$/i.test(name)) return 'package';
+  if(/\.(nsp|xci|nsz|xcz)$/i.test(name)) return 'package';
   if(/\.zip$/i.test(name)) return 'zip';
   return 'file';
 }
@@ -164,7 +164,7 @@ export async function openGfpak(blob, dictionary=new Map()) {
 export async function inspectNca(source) {
   if(source.size<0xc00) throw Error('NCA header is incomplete');
   const raw=await source.read(0,0xc00);
-  if(decodeName(raw.subarray(0x200,0x204))!=='NCA3')
+  if(raw[0x200]!==78 || raw[0x201]!==67 || raw[0x202]!==65 || raw[0x203]!==51)
     throw Error('Encrypted NCA header: browser mode cannot decode NCA header keys.');
   const v=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
   const sections=[];
