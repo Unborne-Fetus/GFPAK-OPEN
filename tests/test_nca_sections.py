@@ -473,7 +473,7 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             report = browser.model_diagnostics(companion["id"])
             self.assertEqual(report["recognized_models"], 0)
             preview = browser.fast_preview_items(companion["id"])
-            self.assertEqual(preview["selected"], "pm0025_00_00.trmdl")
+            self.assertEqual(preview["selected"], "pm0025_00_00_model.trmdl")
             self.assertEqual(preview["related_model_archive"],
                              "pm0025_00_00_model.gfpak")
             self.assertTrue(any(row["path"].endswith(".trmbf")
