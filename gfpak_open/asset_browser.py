@@ -142,7 +142,7 @@ class AssetBrowser:
         return result
 
     def configure_nca_reader(self, keyset: str | Path = "", title_keyset: str | Path = ""):
-        self._nca_sections.configure(keyset, title_keyset)
+        return self._nca_sections.configure(keyset, title_keyset)
 
     def open(self, path: str | Path) -> dict:
         candidate = Path(path).expanduser().resolve(strict=True)
