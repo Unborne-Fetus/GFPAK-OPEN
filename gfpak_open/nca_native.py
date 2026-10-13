@@ -177,7 +177,97 @@ def inspect_nca3_entry(analyzer: NSPAnalyzer, index: int, keys: Keyset) -> dict:
     with analyzer.path.open("rb") as source:
         source.seek(entry.offset)
         raw = source.read(0xC00)
-    return inspect_nca3_header(raw, keys)
+    details = inspect_nca3_header(raw, keys)
+    rights = decode_nca3_header(raw, keys)[0][0x230:0x240]
+    if any(rights):
+        generation = details["key_generation"]
+        revision = max(0, generation - 1)
+        _content, source, status, tickets = resolve_title_content_key(
+            analyzer, rights, revision, keys
+        )
+        details["content_key_source"] = source
+        details["content_key_status"] = status
+        details["package_ticket_entries"] = tickets
+    return details
+
+
+# Only signature types documented for Switch tickets. The signature padding
+# is included in each body offset; no ticket bytes are returned to the UI.
+TICKET_BODY_OFFSETS = {
+    0x010000: 0x240, 0x010001: 0x140, 0x010002: 0x80,
+    0x010003: 0x240, 0x010004: 0x140, 0x010005: 0x80,
+    0x010006: 0x40,
+}
+
+
+def _parse_common_ticket(raw: bytes) -> dict | None:
+    """Inspect the bounded header of a ticket without exporting its secrets."""
+    if len(raw) < 4:
+        return None
+    body = TICKET_BODY_OFFSETS.get(int.from_bytes(raw[:4], "big"))
+    if body is None or len(raw) < body + 0x170:
+        return None
+    key_type = raw[body + 0x141]
+    if key_type not in (0, 1):
+        return None
+    rights = raw[body + 0x160:body + 0x170]
+    if not any(rights):
+        return None
+    return {
+        "rights_id": rights,
+        "key_type": key_type,
+        "generation": raw[body + 0x145],
+        "encrypted_key": raw[body + 0x40:body + 0x50] if key_type == 0 else None,
+    }
+
+
+def _matching_package_ticket(analyzer: NSPAnalyzer, rights: bytes) -> tuple[dict | None, int]:
+    """Search only indexed .tik entries, reading at most 1280 bytes per ticket."""
+    entries = getattr(analyzer, "entries", ())
+    ticket_entries = [e for e in entries if e.name.lower().endswith(".tik")]
+    if not ticket_entries:
+        return None, 0
+    # Cap per-package work even for deliberately pathological indexes.
+    with analyzer.path.open("rb") as source:
+        for entry in ticket_entries[:4096]:
+            if entry.size < 0x1B0 or entry.size > 1024 * 1024:
+                continue
+            source.seek(entry.offset)
+            ticket = _parse_common_ticket(source.read(min(entry.size, 0x500)))
+            if ticket is not None and ticket["rights_id"] == rights:
+                return ticket, len(ticket_entries)
+    return None, len(ticket_entries)
+
+
+def resolve_title_content_key(analyzer: NSPAnalyzer, rights: bytes, revision: int,
+                              keys: Keyset) -> tuple[bytes | None, str, str, int]:
+    """Resolve locally supplied encrypted title key or a matching common NSP ticket.
+
+    Returns key, source, status and ticket count. No secrets leave this module.
+    A personalized ticket cannot be decrypted by the common-ticket path.
+    """
+    name = rights.hex()
+    encrypted = keys.get("titlekey_" + name, name)
+    source = "title.keys" if encrypted is not None else "none"
+    ticket_count = 0
+    if encrypted is None:
+        ticket, ticket_count = _matching_package_ticket(analyzer, rights)
+        if ticket is None:
+            return None, source, "no-matching-titlekey-or-package-ticket", ticket_count
+        source = "package-ticket"
+        if ticket["key_type"] == 1:
+            return None, source, "personalized-ticket-unsupported", ticket_count
+        encrypted = ticket["encrypted_key"]
+        # Ticket revision is authoritative for its ticket-common key.
+        revision = ticket["generation"]
+    if len(encrypted) != 16:
+        return None, source, "invalid-encrypted-titlekey-length", ticket_count
+    titlekek = keys.get(
+        f"titlekek_{revision:02x}", f"ticket_commonkey_{revision:02x}"
+    )
+    if titlekek is None or len(titlekek) != 16:
+        return None, source, f"titlekek-unavailable-revision-{revision:02x}", ticket_count
+    return _aes_ecb(titlekek, encrypted), source, "resolved-unverified", ticket_count
 
 
 def _u32(data: bytes, offset: int) -> int:
@@ -508,15 +598,17 @@ class NativeNCA:
                for section_header in (header[0x400+i*0x200:0x600+i*0x200]
                                       for i in range(4))):
             if any(rights):
-                name = rights.hex()
-                content = self.keys.get("titlekey_" + name, name)
-                if content and len(content) == 16:
+                content, key_source, key_status, ticket_count = resolve_title_content_key(
+                    self.analyzer, rights, revision, self.keys
+                )
+                if content is not None:
                     content_keys = (content, content, content, content)
                 else:
                     raise NativeNCAError(
-                        "Rights-managed NCA: no matching title key for this NCA's rights ID. "
-                        f"Loaded {self.keys.title_key_count} rights-ID indexed title keys. "
-                        "Check whether title.keys contains the matching entry. Key values are never displayed."
+                        "Rights-managed NCA: content key unavailable "
+                        f"({key_status}). Loaded {self.keys.title_key_count} title keys "
+                        f"and found {ticket_count} ticket entries in this package. "
+                        "The app never displays key values."
                     )
             else:
                 suffix = ("application", "ocean", "system")
