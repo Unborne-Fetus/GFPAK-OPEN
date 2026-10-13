@@ -1,5 +1,5 @@
 import {
-  loadDecodedTexture, matchingLinkedDiffuseTexture, textureVariantForItem
+  loadDecodedTexture, matchingLinkedDiffuseTexture
 } from './texture-loader.js';
 import { associatedNativeAnimations } from './animation-association.js';
 /**
@@ -35,24 +35,18 @@ function nearbyTextures(project, modelPath) {
   }).sort((a, b) => b.score - a.score);
 }
 
-function rowHasVariant(row, variant) {
-  const type = textureVariantForItem(row.item);
-  return type === 'mixed' || type === variant || (variant === 'regular' && type !== 'shiny');
-}
-
-export function findLegacyTexture(name, options, variant = 'regular') {
+export function findLegacyTexture(name, options) {
   const target = baseName(name);
   if (!target) return null;
-  const rows = options.filter(row => rowHasVariant(row, variant));
   // Prefer an exact referenced file in the source model directory.
   // Several identical textures in different game folders must not be
   // silently combined into the same model.
-  const associated = rows.filter(row => row.item.linkedKind === 'texture');
+  const associated = options.filter(row => row.item.linkedKind === 'texture');
   const linkedNamed = associated.filter(row => row.base === target ||
     row.base.startsWith(target + '_') || target.startsWith(row.base + '_'));
   if (linkedNamed.length === 1) return linkedNamed[0].item;
   if (linkedNamed.length > 1) return null;
-  const matching = rows.filter(row => row.base === target ||
+  const matching = options.filter(row => row.base === target ||
     row.base.startsWith(target + '_') || target.startsWith(row.base + '_'));
   const local = matching.filter(row => row.score >= 10);
   if (local.length === 1) return local[0].item;
@@ -69,7 +63,7 @@ export function findLegacyTexture(name, options, variant = 'regular') {
   // Prefer that single explicit companion to an unrelated local BNTX. Actual
   // internal surface-name matching is still validated by loadDecodedTexture.
   if (associated.length === 1) return associated[0].item;
-  const packed = rows.filter(row => row.score >= 10 &&
+  const packed = options.filter(row => row.score >= 10 &&
     getExtension(row.item.path) === '.bntx');
   return packed.length === 1 ? packed[0].item : null;
 }
@@ -233,7 +227,6 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
   root.rotation.x = Math.PI / 2;
 
   const known = nearbyTextures(project, selected);
-  const variant = options.textureVariant || 'regular';
   const textureObjects = [];
   const textureCache = new Map();
   const animations = [];
@@ -257,7 +250,7 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
         const match = chooseMap(model.textureNames, model.materials[i]);
         if (!match) continue;
         const referencedName = model.textureNames[match.textureIndex];
-        const file = findLegacyTexture(referencedName, known, variant);
+        const file = findLegacyTexture(referencedName, known);
         if (!file) {
           report('Could not uniquely match texture ' + referencedName + ' to a local image or BNTX container.');
           continue;
@@ -266,7 +259,7 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
           const key = file.path + (getExtension(file.path) === '.bntx' ? '|' + referencedName : '');
           let texture = textureCache.get(key);
           if (!texture) {
-            texture = await loadDecodedTexture(file, true, [referencedName], {variant});
+            texture = await loadDecodedTexture(file, true, [referencedName]);
             textureCache.set(key, texture);
             textureObjects.push(texture);
           }
@@ -290,13 +283,13 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
           for (const material of visible) {
             if (material.map) continue;
             const item = matchingLinkedDiffuseTexture(
-              project.items, material.name, visible.size, variant);
+              project.items, material.name, visible.size);
             if (!item) continue;
             try {
               let texture = textureCache.get('linked|' + item.path);
               if (!texture) {
                 texture = await loadDecodedTexture(
-                  item, true, [material.name], {variant});
+                  item, true, [material.name]);
                 textureCache.set('linked|' + item.path, texture);
                 textureObjects.push(texture);
               }

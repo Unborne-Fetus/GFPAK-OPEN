@@ -1,10 +1,6 @@
 /** GFPAK Open Web — all user data remains inside the browser. */
 import './style.css';
 import {exportPokemonZip} from './pokemon-export.js';
-import {prepareGfpakModelPreview} from './native-gfpak-preview.js';
-import {textureVariantForItem} from './texture-loader.js';
-import {trinityMaterialVariant} from './trinity-model.js';
-import {previewDiagnostics} from './preview-diagnostics.js';
 import { ModelStage } from './stage.js';
 import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
@@ -26,15 +22,11 @@ const state = {
   project: null,
   exportProject: null,
   desktopSource: false,
-  desktopExport: null,
   archive: null,
   dictionary: new Map(),
   loaded: null,
-  loadedFormat: '',
-  loadedPackage: '',
   resource: null,
   busy: false,
-  textureVariant: 'regular',
   textureInfo: null,
   textureDispose: null,
   textureRevision: 0,
@@ -110,12 +102,9 @@ function busy(value, title = 'Processing assets', message = '') {
   el('busyMessage').textContent = message;
   el('exportButton').disabled = value || !state.loaded;
   el('exportPokemonButton').disabled = value || !state.loaded || (!state.exportProject && !state.desktopSource);
-  el('downloadPreviewDiagnostics').disabled = value || !state.loaded;
   el('loadSelected').disabled = value || !state.project?.models.length;
   el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
     isInspectableTexture(item.path));
-  if (el('textureVariantSelect')) el('textureVariantSelect').disabled =
-    value || el('textureVariantSelect').hidden;
 }
 
 function currentFile(text) {
@@ -130,9 +119,6 @@ function updateSource(text, isLoaded = true) {
 
 function showTab(which) {
   const archive = which === 'archive';
-  el('browserGamePanel').hidden = true;
-  el('tabBrowserGame').classList.remove('active');
-  el('tabBrowserGame').setAttribute('aria-selected', 'false');
   el('viewerPanel').hidden = archive;
   el('archivePanel').hidden = !archive;
   el('tabViewer').classList.toggle('active', !archive);
@@ -154,12 +140,8 @@ function resetInspector() {
   el('clipSelect').disabled = true;
   el('toggleAnimation').disabled = true;
   el('toggleAnimation').textContent = '▶ PLAY ANIMATION';
-  el('textureVariantLabel').hidden = true;
-  el('textureVariantSelect').hidden = true;
-  el('textureVariantSelect').disabled = true;
   el('exportButton').disabled = true;
   el('exportPokemonButton').disabled = true;
-  el('downloadPreviewDiagnostics').disabled = true;
   el('emptyState').hidden = false;
 }
 
@@ -169,11 +151,6 @@ function setModel(result, format, packageName) {
   state.stage.setModel(result.root, result.animations);
   previous?.disposeAssets?.();
   state.loaded = result;
-  state.loadedFormat = format;
-  state.loadedPackage = packageName;
-  // Native models populate textures/clips asynchronously. Never package a
-  // half-loaded preview as a ready-to-import Pokédex model.
-  result.companionsReady = !result.postLoad;
   const info = modelStats(result.root, result.animations);
   const mapping = [
     ['statMeshes', info.meshes], ['statVertices', info.vertices],
@@ -196,66 +173,13 @@ function setModel(result, format, packageName) {
   // silently create a GLB without those linked assets.
   el('exportButton').disabled = !!result.postLoad;
   el('exportPokemonButton').disabled = !state.exportProject && !state.desktopSource;
-  el('downloadPreviewDiagnostics').disabled = false;
   const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
   el('outputName').value = clean.slice(0, 130);
   currentFile(result.selected.split('/').pop());
   refreshAnimationControls(result);
-  refreshTextureVariantControls();
   log('Loaded ' + info.meshes + ' mesh(es)' +
     (result.postLoad ? '; companion textures and clips are loading in the background.' :
       ' and ' + info.clips + ' animation clip(s).'), 'success');
-}
-
-function projectHasVariantTextures() {
-  return (state.project?.items || []).some(item =>
-    item.linkedKind === 'texture' ||
-    /\.(bntx|dds|png|jpe?g|webp|trmtr)$/i.test(item.path || '') ||
-    (item.textureVariant === 'shiny' || item.textureVariant === 'mixed' ||
-      /(?:^|[_\-.])(shiny|rare|color[ _-]?1|col[ _-]?1|s1)(?:$|[_\-.])/i
-        .test(String(item.path || '') + ' ' + String(item.textureNames || ''))));
-}
-
-function refreshTextureVariantControls() {
-  const select = el('textureVariantSelect');
-  const items=state.project?.items||[];
-  const visible = ['TRMDL', 'GFBMDL'].includes(state.loaded?.sourceFormat) &&
-    projectHasVariantTextures();
-  const shinyAvailable=items.some(item=>
-    ((item.linkedKind==='texture'||/\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path||'')) &&
-      ['shiny','mixed'].includes(textureVariantForItem(item))) ||
-    (/\.trmtr$/i.test(item.path||'') && trinityMaterialVariant(item)==='shiny'));
-  // Do not offer a fake shiny switch for an archive which has no recognized
-  // shiny texture surface. The regular option stays the default.
-  const regular=new Option('Regular textures / material colors','regular');
-  const shiny=new Option(shinyAvailable?'Shiny textures / material colors':
-    'Shiny variant (not identified)','shiny');
-  shiny.disabled=!shinyAvailable;
-  select.replaceChildren(regular,shiny);
-  if(state.textureVariant==='shiny'&&!shinyAvailable)state.textureVariant='regular';
-  el('textureVariantLabel').hidden = !visible;
-  select.hidden = !visible;
-  select.disabled = !visible || state.busy;
-  select.value = state.textureVariant;
-}
-
-async function reloadTextureVariant() {
-  if (!state.project || !state.loaded || state.busy) return;
-  const selected = state.loaded.selected;
-  if (!selected || !state.project.items.some(item => item.path === selected)) return;
-  busy(true, 'Switching textures', 'Reloading native material maps…');
-  try {
-    const result = await loadModel(state.project, selected, message => log(message), {
-      fastPreview: true,
-      textureVariant: state.textureVariant
-    });
-    setModel(result, state.loadedFormat || extension(selected), state.loadedPackage || state.project.label);
-    completeFastPreview(result);
-  } catch (error) {
-    errorMessage(error);
-  } finally {
-    busy(false);
-  }
 }
 
 function refreshAnimationControls(result) {
@@ -263,17 +187,13 @@ function refreshAnimationControls(result) {
   clips.replaceChildren();
   result.animations.forEach((a, index) =>
     clips.add(new Option(a.name || 'Animation ' + (index + 1), String(index))));
-  const noRig=result.sourceFormat==='TRMDL' && result.sourceStats?.bones===0;
   if (!result.animations.length) clips.add(new Option(
-    noRig ? 'No linked skeleton — animations unavailable' :
-    result.postLoad && !result.companionsReady ?
-      'Animation clips loading…' : 'No compatible animations found', ''));
+    result.postLoad ? 'Animation clips loading…' : 'No animations available', ''));
   clips.disabled = !result.animations.length;
   el('toggleAnimation').disabled = !result.animations.length;
   el('toggleAnimation').textContent = result.animations.length ?
     'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
-  el('statClips').textContent = result.postLoad && !result.companionsReady &&
-    !result.animations.length && !noRig ? '…' : Number(result.animations.length).toLocaleString();
+  el('statClips').textContent = Number(result.animations.length).toLocaleString();
 }
 
 function completeFastPreview(result) {
@@ -285,57 +205,16 @@ function completeFastPreview(result) {
     result.postLoad().then(() => {
       if (state.loaded !== result) return;
       state.stage.setAnimations(result.animations);
-      result.companionsReady = true;
       refreshAnimationControls(result);
       el('inspectorState').textContent = 'LOADED';
       el('objectSubtitle').textContent =
         modelStats(result.root, result.animations).meshes +
         ' mesh(es) with decoded companion assets ready for GLB export';
       el('exportButton').disabled = false;
-      if (result.sourceFormat === 'TRMDL') {
-        const items=state.project?.items||[];
-        const hasRig=items.some(item=>/\.trskl$/i.test(item.path));
-        const hasClips=items.some(item=>/\.(tranm|gfbanm)$/i.test(item.path));
-        const hasMaps=items.some(item=>item.linkedKind==='texture');
-        let textured=0;
-        result.root.traverse(node=>{
-          if(!node.isMesh)return;
-          for(const mat of Array.isArray(node.material)?node.material:[node.material]){
-            if(mat?.map||mat?.normalMap||mat?.emissiveMap||
-              mat?.nativeDisplacementMap||mat?.layerMaskMap)textured++;
-          }
-        });
-        const problems=[];
-        const isPokemon=/pm\d{4}/i.test(
-          String(result.selected)+' '+String(state.project?.label||''));
-        if(isPokemon&&!hasRig)
-          problems.push('no TRSKL skeleton identified in the readable Pokémon archives');
-        if(isPokemon&&!hasClips)
-          problems.push('no compatible native animation resource identified');
-        if(isPokemon&&!hasMaps)
-          problems.push('no decodable image/BNTX texture resource identified');
-        if(hasRig&&!modelStats(result.root,result.animations).bones)
-          problems.push('TRSKL file found but no bones were bound');
-        if(hasClips&&!result.animations.length)
-          problems.push('animation data found but no compatible bone tracks were bound');
-        if(hasMaps&&!textured)
-          problems.push('texture resources found but none could be applied to model materials');
-        if(problems.length){
-          el('inspectorState').textContent='UNMATCHED ASSETS';
-          el('objectSubtitle').textContent=problems.join('; ');
-          log('Unmatched model assets: '+problems.join('; ')+
-            '. Check earlier scan/decoder messages for the specific resource.', 'info');
-        } else {
-          log('Verified model companions: '+textured+' textured surface(s), '+
-            modelStats(result.root,result.animations).bones+' bones, '+
-            result.animations.length+' animation clip(s).','success');
-        }
-      }
       log('Imported model textures and ' + result.animations.length +
         ' compatible animation clip(s). Select a clip to play it.', 'success');
     }).catch(error => {
       if (state.loaded === result) {
-        result.companionsReady = false;
         el('inspectorState').textContent = 'PARTIAL IMPORT';
         el('exportButton').disabled = false;
         log('Some companion resources could not be loaded: ' +
@@ -351,9 +230,7 @@ async function openModel() {
   if (!selected) return;
   busy(true, 'Loading model', 'Reading mesh and texture resources…');
   try {
-    const result = await loadModel(state.project, selected, message => log(message), {
-      textureVariant: state.textureVariant
-    });
+    const result = await loadModel(state.project, selected, message => log(message));
     state.exportProject = state.project; state.desktopSource=false;
     setModel(result, extension(selected), state.project.label);
     showTab('viewer');
@@ -487,10 +364,6 @@ async function chooseProject(files) {
   busy(true, 'Reading source package', 'Scanning files and supported model formats…');
   try {
     const only = files.length === 1 ? files[0] : null;
-    if (only && /\.(nsp|nsz|xci|xcz)$/i.test(only.name)) {
-      window.dispatchEvent(new CustomEvent('gfpak-web-open-game',{detail:{file:only}}));
-      return;
-    }
     if (only && extension(only.name) === '.gfpak') {
       await loadArchive(only);
       return;
@@ -564,7 +437,7 @@ async function loadArchive(file) {
   showTab('archive');
   log('Opened ' + file.name + ': ' + archive.count + ' entries in ' + archive.folderCount + ' folders.', 'success');
   if (archive.compressionTypes['3']) {
-    log('Found ' + archive.compressionTypes['3'] + ' Oodle resources. Browser WASM will decode supported Kraken/Mermaid/Selkie/Leviathan blocks on demand.', 'success');
+    log('Found ' + archive.compressionTypes['3'] + ' Oodle-compressed resources: browser extraction of those files is not supported.');
   }
 }
 
@@ -615,9 +488,6 @@ async function inspectArchiveTexture() {
   }
   const name = resolvedName(resource,state.dictionary) ||
     'resource_' + String(resource.index).padStart(4,'0') + '.bin';
-  // Bind the archive that owns this resource; a previous refactor left
-  // sourceArchive undefined and prevented anonymous BNTX inspection.
-  const sourceArchive = state.archive;
   await inspectSourceTexture({
     path:name,size:resource.size,
     getBytes:async()=>extractResourceAsync(sourceArchive,resource)
@@ -628,65 +498,60 @@ function updateArchiveModelButton() {
   const candidates = usableArchiveModels();
   const selected = state.resource;
   const preview = el('previewArchiveModel');
-  const recoverable=state.archive?.resources.some(row=>[0,2,3].includes(row.compression));
-  preview.disabled = !candidates.length && !recoverable;
+  preview.disabled = !candidates.length;
   preview.textContent = selected && candidates.includes(selected)
     ? '◈ PREVIEW SELECTED 3D MESH'
-    : candidates.length
-      ? '◈ PREVIEW NATIVE 3D MESH ('+candidates.length+')'
-      : '◈ AUTO-DETECT 3D MODEL';
+    : '◈ PREVIEW NATIVE 3D MESH (' + candidates.length + ')';
 }
 
 async function previewGfbmdlInArchive() {
   if (!state.archive || state.busy) return;
-  const archive=state.archive, dictionary=state.dictionary;
-  const models=usableArchiveModels();
-  const selectedResource=models.includes(state.resource)?state.resource:models[0];
-  busy(true, 'Decoding archive model', 'Finding Trinity meshes, buffers and companion files…');
+  const models = usableArchiveModels();
+  const selectedResource = models.includes(state.resource) ? state.resource : models[0];
+  if (!selectedResource) {
+    log('Load a matching hash dictionary identifying .gfbmdl or .trmdl resources inside the GFPAK.', 'error');
+    return;
+  }
+  const name = resolvedName(selectedResource, state.dictionary);
+  const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
+    '.tranm', '.gfbanm', '.tracm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
+  // Deferred extraction avoids decompressing unrelated resources. Every
+  // associated file is resolved by its original path/hash dictionary entry.
+  const resources = state.archive.resources
+    .map(resource => ({resource, name: resolvedName(resource, state.dictionary)}))
+    .filter(item => item.name && allowed.has(extension(item.name)));
+  const project = {
+    label: state.archive.filename,
+    items: resources.map(({resource, name: path}) => ({
+      path,
+      size: resource.size,
+      getBytes: async () => {
+        const raw = await extractResourceAsync(state.archive, resource);
+        return raw instanceof Blob
+          ? raw.arrayBuffer()
+          : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+      }
+    }))
+  };
+  busy(true, 'Decoding archive model', 'Resolving companion model resources locally…');
   try {
-    let project,name;
-    if(selectedResource){
-      name=resolvedName(selectedResource,dictionary);
-      const allowed=new Set(['.gfbmdl','.trmdl','.trmsh','.trmbf','.trskl','.trmtr',
-        '.tranm','.gfbanm','.tracm','.png','.jpg','.jpeg','.webp','.bntx','.dds']);
-      const resources=archive.resources
-        .map(resource=>({resource,name:resolvedName(resource,dictionary)}))
-        .filter(item=>item.name&&allowed.has(extension(item.name)));
-      project={label:archive.filename,items:resources.map(({resource,name:path})=>({
-        path,size:resource.size,
-        getBytes:async()=>{
-          const raw=await extractResourceAsync(archive,resource);
-          return raw instanceof Blob?raw.arrayBuffer():
-            raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength);
-        }
-      }))};
-    }else{
-      const prepared=await prepareGfpakModelPreview(
-        archive.file||new Blob([archive.buffer]),archive.filename,
-        info=>log(info),dictionary);
-      project=prepared.project;name=prepared.selected;
-    }
-    const result=await loadModel(project,name,message=>log(message),{
-      fastPreview:true, textureVariant:state.textureVariant
-    });
-    // Preserve original decoded archive members, including unknown files.
-    // The project used for preview may contain only the model companions.
-    state.exportProject={items:archive.resources.map(resource=>({
-      path:resolvedName(resource,dictionary)||resource.index+'_'+resource.pathHash+'.bin',
-      getBytes:async()=>extractResourceAsync(archive,resource)
-    }))};
-    state.desktopSource=false;
-    state.project=project;
-    setModel(result,extension(name),archive.filename);
+    const result = await loadModel(project, name, message => log(message));
+    const sourceArchive = state.archive, sourceDictionary = state.dictionary;
+    state.exportProject = {items:sourceArchive.resources.map(resource => ({
+      path:resolvedName(resource,sourceDictionary) || resource.index+'_'+resource.pathHash+'.bin',
+      getBytes:async()=>extractResourceAsync(sourceArchive,resource)
+    }))}; state.desktopSource=false;
+    setModel(result, extension(name), state.archive.filename);
     showTab('viewer');
-    completeFastPreview(result);
-    log(name+' decoded into real 3D meshes inside the browser.', 'success');
-  }catch(error){
+    log(name + ' decoded into real meshes inside this browser.', 'success');
+  } catch (error) {
     errorMessage(error);
-  }finally{busy(false);}
+  } finally {
+    busy(false);
+  }
 }
 
-function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle (WASM)' : 'Type ' + c; }
+function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle' : 'Type ' + c; }
 function formatBytes(n) {
   if (!Number.isFinite(n)) return '—';
   if (n < 1024) return n + ' B';
@@ -754,7 +619,7 @@ async function readHashFile(file) {
     log('Loaded filename dictionary ' + file.name + ' (' + state.dictionary.size + ' entries).', 'success');
     renderArchiveTable();
     const models = usableArchiveModels();
-    if (models.length) log('Identified ' + models.length + ' model resource(s). Preview accepts stored, LZ4 and supported Oodle blocks.', 'success');
+    if (models.length) log('Identified ' + models.length + ' GFBMDL model resource(s). Use PREVIEW 3D MESH to decode compatible uncompressed or LZ4 data.', 'success');
   } catch (err) { errorMessage(err); }
 }
 
@@ -861,47 +726,18 @@ function attachEvents() {
     },'image/png');
   });
   el('exportButton').addEventListener('click', exportModel);
-  el('downloadPreviewDiagnostics').addEventListener('click',()=>{
-    if(!state.loaded)return;
-    const activity=[...el('logBody').children].map(row=>row.textContent||'');
-    const report=previewDiagnostics(state.project,state.loaded,{
-      textureVariant:state.textureVariant,activity
-    });
-    const basename=String(state.loaded.selected||'pokemon').replaceAll('\\','/')
-      .split('/').at(-1).replace(/\.[^.]+$/,'').replace(/[^a-z0-9_-]/gi,'_');
-    downloadBlob((basename||'pokemon')+'-preview-diagnostics.json',
-      JSON.stringify(report,null,2),'application/json');
-    log('Saved preview diagnostics: '+report.warnings.length+' warning(s), '+
-      report.resources.length+' source resources. No game binaries were included.','success');
-  });
   el('exportPokemonButton').addEventListener('click', async () => {
     if (!state.loaded || state.busy) return;
-    if (!state.exportProject) {
-      if (state.desktopSource) {
-        window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail: state.desktopExport}));
-      }
+    if (state.desktopSource) {
+      window.dispatchEvent(new CustomEvent('gfpak-export-pokemon'));
       return;
     }
-    busy(true,'Exporting Pokémon','Packing original resources and a converted Pokédex model…');
+    busy(true,'Exporting Pokémon','Packing original model and companion files…');
     try {
-      let glb = null;
-      if (state.loaded.companionsReady) {
-        try {
-          glb = await exportGlb(state.loaded.root,state.loaded.animations);
-        } catch (error) {
-          log('GLB could not be included: ' + (error.message || error) +
-            '. Original assets are still being exported.', 'info');
-        }
-      } else {
-        log('Textures or animations have not finished importing. Exporting original assets only.', 'info');
-      }
-      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected,{
-        sourceGame:currentGame().id,glb
-      });
+      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected);
       const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
       downloadBlob(name,blob,'application/zip');
-      log('Exported ' + name + (glb ? ' with converted GLB and original companions.' :
-        ' with original assets only; a Pokédex-ready GLB is not yet available.'),'success');
+      log('Exported original Pokémon assets to '+name+'.','success');
     } catch(error) {errorMessage(error);}
     finally {busy(false);}
   });
@@ -921,10 +757,6 @@ function attachEvents() {
     if (!state.stage) return;
     const playing = state.stage.toggleAnimation(Number(el('clipSelect').value) || 0);
     el('toggleAnimation').textContent = playing ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
-  });
-  el('textureVariantSelect').addEventListener('change', event => {
-    state.textureVariant = event.target.value === 'shiny' ? 'shiny' : 'regular';
-    reloadTextureVariant();
   });
   el('archiveSearch').addEventListener('input', renderArchiveTable);
   el('previewArchiveModel').addEventListener('click', previewGfbmdlInArchive);
@@ -958,7 +790,7 @@ async function openFastDesktopPreview(detail) {
     const cached = new Map();
     const project = {
       label: manifest.label || 'Game File Explorer',
-      items: manifest.items.filter(item => manifest.animations !== false || !/\.(tranm|gfbanm|tracm)$/i.test(item.path)).map(item => {
+      items: manifest.items.map(item => {
         const getBytes = async () => {
           if (!cached.has(item.url)) {
             cached.set(item.url, (async () => {
@@ -974,7 +806,6 @@ async function openFastDesktopPreview(detail) {
         return {
           path:item.path, size:item.size, getBytes,
           linkedKind:item.linkedKind || null,
-          textureVariant:item.textureVariant || null,
           matchConfidence:item.matchConfidence || null,
           matchReason:item.matchReason || '',
           getText:async () => new TextDecoder().decode(await getBytes())
@@ -989,10 +820,8 @@ async function openFastDesktopPreview(detail) {
         '. Importing compatible textures and animations automatically.');
     }
     const result = await loadModel(project, manifest.selected,
-      message => log(message), {fastPreview:true, textureVariant:state.textureVariant});
+      message => log(message), {fastPreview:true});
     state.exportProject = project; state.desktopSource=true;
-    state.project = project;
-    state.desktopExport = {key: manifest.exportKey || null, nodeId: manifest.exportNodeId || null};
     setModel(result, extension(manifest.selected), project.label);
     // The desktop explorer is a separate tab; make the loaded 3D viewport
     // actually visible instead of leaving it obscured behind File Explorer.
@@ -1007,57 +836,14 @@ async function openFastDesktopPreview(detail) {
     finished(true);
     completeFastPreview(result);
   } catch (error) {
-    log('Fast preview: ' + (error.message || String(error)) + '. Built-in preview unavailable.', 'info');
+    log('Fast preview: ' + (error.message || String(error)) + '. Trying compatible fallback.', 'info');
     finished(false, error.message || String(error));
   } finally {
     busy(false);
   }
 }
 
-async function previewBrowserGameModel(detail) {
-  const finished=typeof detail?.finish==='function'?detail.finish:()=>{};
-  if(state.busy||!state.stage){
-    finished(false,'3D renderer is unavailable or busy');
-    return;
-  }
-  const {project,selected}=detail||{};
-  if(!selected||!project?.items?.some(item=>item.path===selected)){
-    const reason='Browser preview is missing the selected model resource';
-    log(reason,'error');
-    finished(false,reason);
-    return;
-  }
-  busy(true,'Opening game model','Matching meshes, textures and animation companions…');
-  try {
-    // A PLA game archive may have dozens of BNTX/TRANM resources. Render the
-    // geometry first, then decode companions while the viewport is responsive.
-    const result=await loadModel(project,selected,message=>log(message),{
-      fastPreview:true, textureVariant:state.textureVariant
-    });
-    state.exportProject=project;
-    state.project=project;
-    state.desktopSource=false;
-    state.archive=null;
-    suggestGame([project.label,selected]);
-    setModel(result,extension(selected),project.label);
-    showTab('viewer');
-    finished(true);
-    completeFastPreview(result);
-    log('Opened model directly from local game files without Blender.','success');
-  }catch(error){
-    errorMessage(error);
-    finished(false,error.message||String(error));
-  }finally{busy(false);}
-}
-
 function start() {
-  window.addEventListener('gfpak-web-open-file', event => {
-    const files=event.detail?.files;
-    if(files?.length) void chooseProject(files);
-  });
-  window.addEventListener('gfpak-web-preview-model', event => {
-    void previewBrowserGameModel(event.detail);
-  });
   window.gfpakFastPreviewAvailable = true;
   window.gfpakFastTextureAvailable = true;
   window.addEventListener('gfpak-fast-native-texture', event => {

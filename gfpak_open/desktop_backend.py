@@ -14,9 +14,11 @@ import threading
 import uuid
 from pathlib import Path
 
+from .addon_manager import find_addon, ensure_addon
 from .asset_browser import AssetBrowser
 from .asset_matching import match_model_assets
-from .converter import validate_glb
+from .blender_detection import find_blender, can_launch_blender
+from .converter import ConversionOptions, convert_model, validate_glb
 
 
 def settings_path():
@@ -32,7 +34,6 @@ class DesktopAPI:
         except (OSError, ValueError):
             self.settings = {}
         self.sources: list[Path] = []
-        self._source_models: dict[str, tuple[AssetBrowser, str]] = {}
         self._session = tempfile.TemporaryDirectory(prefix="GFPAK-OPEN-session-")
         self._cache = Path(self._session.name)
         self.export_paths: dict[str, Path] = {}
@@ -41,6 +42,7 @@ class DesktopAPI:
         self._closing = False
         self.setup = {"state": "checking", "error": ""}
         self._setup_started = False
+        self._checked_blender: str | None = None
         self._browser = AssetBrowser(nca_workspace=self._cache / 'nca' / uuid.uuid4().hex)
         self._configure_nca_browser()
         self._scan_job = {"running": False, "error": "", "result": None,
@@ -113,89 +115,51 @@ class DesktopAPI:
             self._configure_nca_browser()
         return self.browse_nca_settings()
 
+    def _get_blender(self):
+        blender = self.settings.get("blender", "")
+        if blender and blender == self._checked_blender:
+            return blender
+        if not can_launch_blender(blender):
+            blender = find_blender()
+            self.settings["blender"] = blender
+            self._save()
+        self._checked_blender = blender
+        return blender
+
     def setup_status(self):
         with self._lock:
-            return {"setup": {"state": "ready", "error": ""},
-                    "sources": [str(x) for x in self.sources],
-                    "settings": {key: self.settings.get(key, "") for key in ("hashes", "textures")},
+            if not self._setup_started:
+                self._setup_started = True
+                threading.Thread(target=self._install_addon, daemon=True).start()
+            blender = self._get_blender()
+            addon = find_addon(self.settings.get("addon"))
+            if addon:
+                self.settings["addon"] = addon
+            return {"blender": blender, "addon": addon,
+                    "setup": dict(self.setup), "sources": [str(x) for x in self.sources],
+                    "settings": {name: self.settings.get(name, "")
+                                 for name in ("hashes", "oodle", "textures")},
                     "animations": bool(self.settings.get("animations", True)),
-                    "cache": "Preview and export use the built-in 3D viewer"}
+                    "cache": "Temporary GLBs are removed on the next conversion or app exit"}
 
-    def source_models(self):
-        """Inventory every selected model; retain server-side references, not payloads."""
-        models, errors = [], []
-        self._source_models.clear()
-        for source in self.sources:
-            try:
-                browser = AssetBrowser(nca_workspace=self._cache / "sources" / uuid.uuid4().hex)
-                browser.filename_dictionary = self.settings.get("hashes") or None
-                root = browser.open(source)
-                if source.is_dir():
-                    assets = browser.scan()["assets"]
-                elif root["kind"] == "gfpak":
-                    assets = browser.scan_gfpak_assets(root["id"])["assets"]
-                else:
-                    # Inventory siblings for complete animation matching, while keeping
-                    # the user-selected model as the only conversion candidate.
-                    assets = [root] + [browser._public(browser._fs_node(item))
-                              for item in sorted(source.parent.iterdir())
-                              if item != source and item.is_file() and not item.is_symlink()]
-                for row in assets:
-                    row.setdefault("game_scope", str(browser.root_path))
-                texture_folder = Path(self.settings["textures"]) if self.settings.get("textures") else None
-                if texture_folder and texture_folder.is_dir():
-                    from .asset_browser import classify
-                    for texture in sorted(texture_folder.rglob("*")):
-                        if texture.is_file() and not texture.is_symlink() and classify(texture.name) == "texture":
-                            row = browser._public(browser._fs_node(texture))
-                            row.update(relative=texture.name, game_scope=str(browser.root_path))
-                            assets.append(row)
-                browser._model_matches.update(match_model_assets(assets))
-                candidates = [row for row in assets if row["category"] == "model"
-                              and (source.is_dir() or root["kind"] == "gfpak" or row["id"] == root["id"])]
-                if texture_folder and len(candidates) == 1:
-                    model_id = candidates[0]["id"]
-                    linked = browser._model_matches.setdefault(model_id, [])
-                    used = {item["id"] for item in linked}
-                    for row in assets:
-                        if row["category"] == "texture" and row["id"] not in used and Path(browser.node(row["id"])["path"]).is_relative_to(texture_folder):
-                            linked.append({"id": row["id"], "confidence": "probable",
-                                           "reason": "user-selected texture folder for a single model"})
-                if not candidates:
-                    errors.append(source.name + ": No resolved supported models found")
-                for row in candidates:
-                    key = uuid.uuid4().hex
-                    self._source_models[key] = (browser, row["id"])
-                    models.append({"key": key, "name": row.get("relative", row["name"])})
-            except Exception as exc:
-                errors.append(source.name + ": " + str(exc))
-        return {"models": models, "errors": errors}
+    def _install_addon(self):
+        try:
+            addon = ensure_addon(self.settings.get("addon"))
+            with self._lock:
+                self.settings["addon"] = addon
+                self.setup = {"state": "ready", "error": ""}
+                self._save()
+        except Exception as exc:
+            with self._lock:
+                self.setup = {"state": "failed", "error": str(exc)}
 
-    def source_preview(self, key: str):
-        found = self._source_models.get(key)
-        if not found:
-            raise ValueError("Source selection expired; select the models again")
-        browser, node_id = found
-        return {**self.browse_fast_preview(node_id, browser), "exportKey": key,
-                "animations": bool(self.settings.get("animations", True))}
-
-    def source_previews(self):
-        # Compatibility for older clients; current UI resolves one manifest at a time.
-        result = self.source_models()
-        return [self.source_preview(row["key"]) for row in result["models"]]
-
-    def source_export_pokemon(self, key: str):
-        found = self._source_models.get(key)
-        if not found:
-            raise ValueError("Source selection expired; select the models again")
-        browser, node_id = found
-        node = browser.node(node_id)
-        from .pokemon_assets import pokemon_id
-        name = pokemon_id(node["name"]) or "pokemon"
-        selected = self._dialog("save", name + ".zip", ("ZIP archive (*.zip)",))
-        if not selected:
-            return False
-        return str(browser.export_pokemon(node_id, Path(selected[0])))
+    def retry_addon(self):
+        with self._lock:
+            if self.setup["state"] == "checking":
+                return False
+            self.setup = {"state": "checking", "error": ""}
+        threading.Thread(target=self._install_addon, daemon=True).start()
+        return True
 
     def _dialog(self, kind, title, file_types=(), multiple=False):
         import webview
@@ -227,18 +191,25 @@ class DesktopAPI:
         return [str(p) for p in self.sources]
 
     def select_option(self, option):
-        if option not in ("hashes", "textures"):
-            raise ValueError("Unsupported model setting")
-        selected = self._dialog("folder" if option == "textures" else "open", "Select optional " + option)
-        if selected:
-            self.settings[option] = selected[0]
+        if option not in ("blender", "addon", "hashes", "oodle", "textures"):
+            raise ValueError("Invalid converter setting")
+        if option in ("addon", "textures"):
+            paths = self._dialog("folder", "Choose directory")
+        else:
+            paths = self._dialog("open", "Choose file", ("All files (*.*)",))
+        if paths:
+            self.settings[option] = paths[0]
+            if option == "blender":
+                self._checked_blender = None
             self._save()
         return self.settings.get(option, "")
 
     def set_options(self, values):
-        for key in ("hashes", "textures"):
+        for key in ("blender", "addon", "hashes", "oodle", "textures"):
             if key in values:
                 self.settings[key] = str(values[key])[:4096]
+                if key == "blender":
+                    self._checked_blender = None
         if "animations" in values:
             self.settings["animations"] = bool(values["animations"])
         self._save()
@@ -260,8 +231,19 @@ class DesktopAPI:
                 raise RuntimeError("The desktop studio is closing")
             if self.job["running"]:
                 raise ValueError("A preview is already being prepared")
-            if any(not p.is_file() or p.suffix.lower() != ".glb" for p in sources):
-                raise ValueError("Use the built-in model preview and the viewer's Export GLB control")
+            if any(p.suffix.lower() != ".glb" for p in sources if p.is_file()) or any(p.is_dir() for p in sources):
+                blender = self._get_blender()
+                addon = find_addon(self.settings.get("addon"))
+                if not blender:
+                    raise ValueError(
+                        "Blender is not launchable. Install Blender or select its executable "
+                        "under Converter → Advanced settings."
+                    )
+                if not addon:
+                    raise ValueError("The Pokémon Switch Blender importer is not ready yet")
+            else:
+                blender = ""
+                addon = ""
             options = dict(self.settings)
             self._clear_cached_models()
             self.job = {"running": True,
@@ -280,6 +262,14 @@ class DesktopAPI:
                         validate_glb(source)
                         shutil.copy2(source, output)
                         log("Loaded original GLB without conversion")
+                    else:
+                        convert_model(ConversionOptions(
+                            source=source, output=output,
+                            blender=Path(blender), addon=Path(addon),
+                            dictionary=opt("hashes"), oodle=opt("oodle"),
+                            texture_folder=opt("textures"),
+                            animations=bool(options.get("animations", True))
+                        ), progress=log)
                     token = uuid.uuid4().hex
                     with self._lock:
                         self.export_paths[token] = output
@@ -302,21 +292,19 @@ class DesktopAPI:
     def start_conversion(self):
         return self._begin_conversion(list(self.sources))
 
-    def browse_fast_preview(self, node_id: str, browser=None):
+    def browse_fast_preview(self, node_id: str):
         """Prepare a browser-native preview manifest without running Blender."""
         with self._lock:
-            browser = browser or self._browser
-            manifest = browser.fast_preview_items(node_id)
+            manifest = self._browser.fast_preview_items(node_id)
             token = uuid.uuid4().hex
             records = manifest["items"]
             # Bound retained manifests; old viewer requests fail closed.
-            if len(self._quick_previews) >= 256:
+            if len(self._quick_previews) >= 6:
                 self._quick_previews.pop(next(iter(self._quick_previews)))
             self._quick_previews[token] = (
-                browser, [entry["source"] for entry in records])
+                self._browser, [entry["source"] for entry in records])
             return {
                 "label": manifest["label"], "selected": manifest["selected"],
-                "exportNodeId": node_id,
                 "matched": manifest.get("matched", {}),
                 "items": [{
                     "path": entry["path"], "size": entry["size"],
@@ -332,7 +320,7 @@ class DesktopAPI:
         with self._lock:
             item = self._browser.fast_texture_item(node_id)
             token = uuid.uuid4().hex
-            if len(self._quick_previews) >= 256:
+            if len(self._quick_previews) >= 6:
                 self._quick_previews.pop(next(iter(self._quick_previews)))
             self._quick_previews[token] = (self._browser, [item["source"]])
             return {
@@ -344,7 +332,7 @@ class DesktopAPI:
         """Resolve only a server-issued token/index pair, never client paths."""
         with self._lock:
             found = self._quick_previews.get(token)
-            if not found:
+            if not found or found[0] is not self._browser:
                 return None
             browser, records = found
             if index < 0 or index >= len(records):

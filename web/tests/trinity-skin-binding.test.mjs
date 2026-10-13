@@ -52,7 +52,7 @@ test('native segment-scale compensation keeps child proportions while parent squ
   child.segmentScaleCompensate=true;child.position.set(2,0,0);child.scale.set(.8,1,1);
   root.add(parent);parent.add(child);parent.scale.set(.5,1,1);
   root.updateMatrixWorld(true);
-  assert.deepEqual(child.getWorldPosition(new THREE.Vector3()).toArray(),[1,0,0]);
+  assert.deepEqual(child.getWorldPosition(new THREE.Vector3()).toArray(),[2,0,0]);
   assert.ok(Math.abs(child.getWorldScale(new THREE.Vector3()).x-.8)<1e-6);
   parent.scale.set(.25,1,1);root.updateMatrixWorld(true);
   assert.ok(Math.abs(child.getWorldScale(new THREE.Vector3()).x-.8)<1e-6);

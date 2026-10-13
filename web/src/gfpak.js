@@ -1,10 +1,8 @@
 /**
  * Portable, read-only GFLXPACK parser for browsers and Node.
  * Does not decrypt NSP/NCA data and does not include copyrighted assets.
- * Type 3 (Oodle) blocks decode with lazily loaded local WebAssembly; no native DLL.
+ * Type 3 (Oodle) blocks remain compressed: a browser cannot load Windows DLLs.
  */
-import {decompressOodle} from './oodle-wasm.js';
-
 const MAX_FILES = 250000;
 const MAX_UNPACKED = 512 * 1024 * 1024;
 const decoder = new TextDecoder();
@@ -168,15 +166,7 @@ export async function parseGfpakFile(file, filename = file?.name || 'archive.gfp
 /** Resolve a single file-backed resource without reading its parent archive. */
 export async function extractResourceAsync(archive, resource, { packed = false } = {}) {
   if (archive.resources[resource.index] !== resource) throw new Error('Resource not found');
-  if (!archive.file) {
-    // The in-memory/ZIP archive reader predates file-backed GFPAKs.
-    // Keep its synchronous stored/LZ4 path, but Oodle needs async WASM.
-    if (packed || resource.compression !== 3)
-      return extractResource(archive, resource, { packed });
-    return decompressOodle(
-      new Uint8Array(archive.buffer, resource.offset, resource.packedSize),
-      resource.size);
-  }
+  if (!archive.file) return extractResource(archive, resource, { packed });
   const block = archive.file.slice(resource.offset, resource.offset + resource.packedSize);
   // Blob slices are zero-copy file references, even for enormous stored files.
   if (packed) return block;
@@ -185,9 +175,7 @@ export async function extractResourceAsync(archive, resource, { packed = false }
     return block;
   }
   if (resource.compression === 3) {
-    if (resource.size > MAX_UNPACKED || resource.packedSize > MAX_UNPACKED)
-      throw new Error('Oodle resource exceeds 512 MiB browser decoding limit');
-    return decompressOodle(new Uint8Array(await block.arrayBuffer()), resource.size);
+    throw new Error('Oodle compression is not available in the browser. Use Windows GFPAK-OPEN.');
   }
   if (resource.compression !== 2) throw new Error('Unknown GFPAK compression code ' + resource.compression);
   if (resource.size > MAX_UNPACKED || resource.packedSize > MAX_UNPACKED) {
@@ -264,7 +252,7 @@ export function extractResource(archive, resource, { packed = false } = {}) {
     return new Uint8Array(data);
   }
   if (resource.compression === 2) return decompressLz4(data, resource.size);
-  if (resource.compression === 3) throw new Error('Oodle decoding is asynchronous; call extractResourceAsync instead.');
+  if (resource.compression === 3) throw new Error('Oodle compression is not available in the browser. Use Windows GFPAK-OPEN for this resource.');
   throw new Error('Unknown GFPAK compression code ' + resource.compression);
 }
 

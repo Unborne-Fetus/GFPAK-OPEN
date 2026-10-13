@@ -1216,12 +1216,17 @@ async function preview(row = selected) {
           showNotice('Native 3D preview loaded without Blender or temporary conversion.');
           return;
         }
-        throw Error('Built-in decoder could not preview this model: ' + outcome.reason);
+        showNotice('Native decoder unavailable (' + outcome.reason +
+          '); trying Blender only for this unsupported model.');
       } catch (error) {
-        throw Error(error.message || String(error));
+        showNotice('Fast preview unavailable (' + (error.message || error) +
+          '); trying the existing converter.');
       }
     }
-    throw Error('This model format is not yet supported by the built-in decoder.');
+    showNotice('Preparing fallback 3D preview with the local converter…');
+    const started = await api.preview_browser_item(row.id);
+    if (started !== false) window.dispatchEvent(new CustomEvent('gfpak-native-conversion-started'));
+    else showNotice('A conversion is already running.', true);
   } catch (error) { showNotice(error.message || String(error), true); }
   finally {
     previewInFlight = false;
@@ -1392,13 +1397,10 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () =>
     canInspectTexture(selected) ? inspectTexture() : preview());
-  window.addEventListener('gfpak-export-pokemon', async event => {
-    const sourceKey = event.detail?.key;
-    const nodeId = event.detail?.nodeId || previewExportId;
-    if (!sourceKey && !nodeId) return;
+  window.addEventListener('gfpak-export-pokemon', async () => {
+    if (!previewExportId) return;
     try {
-      const result = sourceKey ? await api.source_export_pokemon(sourceKey) :
-        await api.browse_export_pokemon(nodeId);
+      const result = await api.browse_export_pokemon(previewExportId);
       if (result) showNotice('Pokémon ZIP saved: '+result);
     } catch(error) {showNotice(error.message || String(error),true);}
   });

@@ -4,7 +4,6 @@ import { parseNativeAnimation, NativeAnimationError, unpackQuaternion } from '..
 import { parseTrskl } from '../src/trinity.js';
 import { animationTracks } from '../src/trinity-model.js';
 import * as THREE from 'three';
-import {Builder} from 'flatbuffers';
 import { makeAnimatedTrinityTriangle } from './trinity-animation-fixture.mjs';
 
 function arrayBuffer(bytes) {
@@ -57,33 +56,4 @@ test('ambiguous bone names do not produce incorrectly bound animations', () => {
     name:'Test',frameRate:30,frameCount:1,
     tracks:[{bone:'root',translation:[{frame:0,value:[1,2,3]}]}]
   },[a,b]),null);
-});
-
-test('unsupported secondary animation channel does not erase valid skeletal motion',()=>{
-  const b=new Builder(512);
-  const bone=b.createString('root');
-  b.startVector(12,1,4);
-  b.prep(4,12);
-  for(const value of [0.5,0,0].reverse())b.writeFloat32(value);
-  const position=b.endVector();
-  b.startObject(1);b.addFieldOffset(0,position,0);
-  const framed=b.endObject();
-  b.startObject(1);const unknown=b.endObject();
-  b.startObject(7);
-  b.addFieldOffset(0,bone,0);
-  b.addFieldInt8(1,9,0);b.addFieldOffset(2,unknown,0);
-  b.addFieldInt8(5,2,0);b.addFieldOffset(6,framed,0);
-  const track=b.endObject();
-  b.startVector(4,1,4);b.addOffset(track);
-  const tracks=b.endVector();
-  b.startObject(2);b.addFieldOffset(0,tracks,0);
-  const skeletal=b.endObject();
-  b.startObject(3);b.addFieldInt32(1,1,0);b.addFieldInt32(2,30,0);
-  const info=b.endObject();
-  b.startObject(2);b.addFieldOffset(0,info,0);b.addFieldOffset(1,skeletal,0);
-  b.finish(b.endObject());
-  const clip=parseNativeAnimation(arrayBuffer(b.asUint8Array()),'test.tranm');
-  assert.equal(clip.unsupportedChannels,1);
-  assert.equal(clip.tracks.length,1);
-  assert.deepEqual(clip.tracks[0].translation[0].value,[0.5,0,0]);
 });

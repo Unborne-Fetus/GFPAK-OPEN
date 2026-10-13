@@ -41,15 +41,15 @@
           <div class="section-heading"><span class="step-number">01</span><h2>IMPORT SOURCE</h2><span class="section-line"></span></div>
           <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Choose or drop a model or GFPAK file">
             <span class="drop-icon">⬡</span>
-            <strong>Drop game files or Pokémon models here</strong>
-            <span>NSP / XCI / extracted folders / 3D models / ZIP / GFPAK</span>
+            <strong>Drop model files here</strong>
+            <span>3D models, source files, ZIP packages &amp; GFPAK</span>
             <button id="chooseFiles" class="button button-outline" type="button">BROWSE FILES <span>↗</span></button>
           </div>
           <div class="secondary-actions">
             <button id="chooseFolder" class="text-button" type="button">＋ Import a folder</button>
             <button id="demoButton" class="text-button" type="button">◇ Try demo model</button>
           </div>
-          <input id="fileInput" type="file" accept=".nsp,.nsz,.xci,.xcz,.zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.gfbmdl,.trmdl,.trmsh,.trmbf,.trskl,.gfbanm,.tranm,.bntx,.bundle,.unity3d,.assets,.nusrcmdlb,.nutexb,.ply,.stl,.3ds,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
+          <input id="fileInput" type="file" accept=".zip,.fbx,.obj,.dae,.glb,.gltf,.gfpak,.gfbmdl,.trmdl,.trmsh,.trmbf,.trskl,.gfbanm,.tranm,.bntx,.bundle,.unity3d,.assets,.nusrcmdlb,.nutexb,.ply,.stl,.3ds,.mtl,.png,.jpg,.jpeg,.tga,.dds,.webp,.bin" multiple hidden />
           <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
           <input id="hashInput" type="file" accept=".txt,.json" hidden />
           <div id="sourceSummary" class="source-summary" aria-live="polite">
@@ -82,7 +82,6 @@
           <label for="outputName" class="input-label">FILE NAME</label>
           <div class="filename-row"><input id="outputName" class="field" value="converted-model" spellcheck="false" aria-label="GLB export filename" /><span>.glb</span></div>
           <button id="exportPokemonButton" class="button button-secondary" type="button" disabled>EXPORT POKÉMON ZIP ↓</button>
-          <button id="downloadPreviewDiagnostics" class="button button-secondary" type="button" disabled>DOWNLOAD PREVIEW DIAGNOSTICS ↓</button>
           <button id="exportButton" class="button button-primary" type="button" disabled>EXPORT GLB <span class="button-arrow">↗</span></button>
           <p class="helper-copy">Exports actual 3D meshes. Native GFBMDL/TRMDL preview and Trinity skinning are experimental. Compatible BNTX and DDS textures are supported; original game shaders and some native animations remain incomplete.</p>
         </section>
@@ -103,9 +102,8 @@
           <div class="mode-tabs" role="tablist" aria-label="Workspace mode">
             <button id="tabViewer" type="button" class="mode-tab active" role="tab" aria-selected="true" aria-controls="viewerPanel">◈ &nbsp; 3D VIEWPORT</button>
             <button id="tabArchive" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="archivePanel">▦ &nbsp; GFPAK INSPECTOR</button>
-            <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; MODEL CONVERTER</button>
+            <button id="tabConverter" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="desktopTools" hidden>◇ &nbsp; BLENDER CONVERTER</button>
             <button id="tabAssets" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="assetBrowser" hidden>▤ &nbsp; GAME FILE EXPLORER</button>
-            <button id="tabBrowserGame" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="browserGamePanel">▤ &nbsp; OPEN GAME FILES</button>
           </div>
           <div id="currentModelTag" class="current-file">NO MODEL LOADED</div>
         </div>
@@ -150,11 +148,6 @@
             <label for="clipSelect" class="input-label">ANIMATION</label>
             <select id="clipSelect" class="field" disabled><option value="">No animations available</option></select>
             <button id="toggleAnimation" type="button" class="button button-secondary mini" disabled>▶ PLAY ANIMATION</button>
-            <label id="textureVariantLabel" for="textureVariantSelect" class="input-label" hidden>TEXTURE VARIANT</label>
-            <select id="textureVariantSelect" class="field" hidden disabled>
-              <option value="regular">Regular textures</option>
-              <option value="shiny">Shiny textures</option>
-            </select>
             <div class="inspector-separator"></div>
             <label class="input-label">SOURCE DETAILS</label>
             <div class="detail-pair"><span>Original format</span><strong id="originalFormat">—</strong></div>
@@ -169,7 +162,7 @@
           <div class="archive-header">
             <span class="eyebrow">GAME FREAK / ARCHIVE ANALYZER</span>
             <h2>GFLXPACK resource explorer</h2>
-            <p>Inspect Switch model archives and preview native GFBMDL and Trinity geometry from stored, LZ4, or Oodle-compressed resources. Compatible Oodle streams decode locally using WebAssembly.</p>
+            <p>Inspect Switch model archives and preview native GFBMDL geometry when resources are stored or LZ4-compressed. Other formats may need separate conversion.</p>
           </div>
           <div class="archive-metrics">
             <div><span>RESOURCES</span><strong id="archiveResources">—</strong></div>
@@ -196,125 +189,7 @@
             <span id="archiveRowCount">0 resources shown</span>
             <label class="toggle-inline"><input id="savePacked" type="checkbox" checked /> Export compressed bytes (safe for all codecs)</label>
           </div>
-          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including compatible stored/LZ4/Oodle GFPAK entries. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle Kraken, Mermaid, Selkie and Leviathan use a locally bundled open-source WASM decoder (GPL-3.0-or-later); unsupported versions or very large resources may still fail. See the third-party license notices in the repository.</div>
-        </section>
-
-        <section id="browserGamePanel" class="asset-browser browser-game-panel nx-fileviewer" role="tabpanel" aria-labelledby="tabBrowserGame" hidden>
-          <div class="nx-title-strip">
-            <div class="nx-app-title"><span class="nx-logo">▤</span><strong>File Viewer</strong><span class="nx-subtitle">GFPAK-OPEN / Browser Game Explorer</span></div>
-            <div class="nx-top-menu" aria-label="File viewer menus">
-              <details class="nx-menu"><summary>File</summary><div class="nx-menu-items">
-                <button type="button" id="webMenuOpenPackage">Open game package…</button>
-                <button type="button" id="webMenuOpenFolder">Open extracted folder…</button>
-                <button type="button" id="webMenuLoadKeys">Load local prod.keys…</button>
-              </div></details>
-              <details class="nx-menu"><summary>View</summary><div class="nx-menu-items">
-                <button type="button" id="webMenuFocusTree">Focus content tree</button>
-                <button type="button" id="webMenuClearSearch">Clear search and filters</button>
-              </div></details>
-              <details class="nx-menu"><summary>Tools</summary><div class="nx-menu-items">
-                <button type="button" id="webMenuRescan">Rescan readable assets</button>
-                <button type="button" id="webMenuExportIndex">Export indexed files JSON</button>
-              </div></details>
-              <details class="nx-menu"><summary>Help</summary><div class="nx-menu-items">
-                <button type="button" id="webMenuAbout">About this file viewer</button>
-              </div></details>
-            </div>
-          </div>
-          <div class="asset-hero">
-            <div>
-              <span class="eyebrow">BUILT-IN GAME-ASSET EXPLORER · WEB EDITION</span>
-              <h2>Browse packages and extracted game files</h2>
-              <p>Expandable folder tree, local NCA decryption, and connected models, animations and textures. No external software or uploads.</p>
-            </div>
-            <div class="asset-actions">
-              <button type="button" id="webGameOpenFolder" class="button button-primary">＋ Open game folder</button>
-              <button type="button" id="webGameOpenPackage" class="button button-secondary">Open GFPAK / NSP / XCI / NSZ</button>
-              <button type="button" id="webGameOpenKeys" class="button button-secondary">🔑 Load prod.keys</button>
-              <button type="button" id="webGameClearKeys" class="button button-secondary" disabled>Forget keys</button>
-              <input id="webGameFile" type="file" accept=".nsp,.nsz,.xci,.xcz,.gfpak,.zip" hidden />
-              <input id="webGameFolder" type="file" webkitdirectory directory multiple hidden />
-              <input id="webGameKeysFile" type="file" accept=".keys,.txt,text/plain" hidden />
-            </div>
-          </div>
-          <div class="asset-toolbar">
-            <button type="button" id="webGameBack" class="button button-secondary" disabled>← Back</button>
-            <div id="webGameTitle" class="asset-breadcrumb" aria-live="polite">No game source selected</div>
-            <button type="button" id="webGameRescan" class="button button-secondary" disabled>⌕ Rescan</button>
-            <button type="button" id="webGameSaveIndex" class="button button-secondary" disabled>↓ Save index</button>
-          </div>
-          <div class="asset-class-browser" aria-label="Found game assets">
-            <span class="asset-class-title">FOUND GAME ASSETS</span>
-            <div class="asset-class-actions" role="group" aria-label="Show asset class">
-              <button type="button" class="asset-class-button active" data-web-asset-class="all" aria-pressed="true">▤ All files</button>
-              <button type="button" class="asset-class-button" data-web-asset-class="model" aria-pressed="false">◇ Models <strong id="webGameModels">0</strong></button>
-              <button type="button" class="asset-class-button" data-web-asset-class="texture" aria-pressed="false">▧ Textures <strong id="webGameTextures">0</strong></button>
-              <button type="button" class="asset-class-button" data-web-asset-class="animation" aria-pressed="false">▶ Animations <strong id="webGameAnimations">0</strong></button>
-            </div>
-            <p class="asset-class-hint">Select folders to browse normally, or choose a class to search that type across the entire indexed game. Counts cover readable files only.</p>
-          </div>
-          <div class="asset-filterbar">
-            <input id="webGameSearch" class="field" type="search" placeholder="Filter names, folders and Pokémon asset IDs…" aria-label="Filter indexed game files" />
-            <select id="webGameCategory" class="field" aria-label="Filter by file type">
-              <option value="all">All files</option>
-              <option value="model">Models</option>
-              <option value="archive">GFPAK / model archives</option>
-              <option value="animation">Animations</option>
-              <option value="texture">Textures</option>
-              <option value="container">NCA / NCZ containers</option>
-              <option value="companion">Skeletons / mesh buffers</option>
-              <option value="other">Other files</option>
-            </select>
-          </div>
-          <div class="asset-content">
-            <aside class="nx-tree-panel">
-              <div class="nx-pane-heading"><span class="nx-pane-icon">▤</span> Content tree <span class="nx-tree-shortcut">Folders</span></div>
-              <div class="nx-tree-scroller">
-                <div id="webGameTree" role="tree" aria-label="Game source and folders">
-                  <div class="nx-tree-empty">Open a game package or extracted folder to browse.</div>
-                </div>
-              </div>
-              <div id="webGameTreeStatus" class="nx-tree-status">No package loaded</div>
-            </aside>
-            <div class="web-game-center">
-              <div class="asset-table-wrap" role="region" aria-label="Files in selected folder">
-                <table class="asset-table browser-game-table">
-                  <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>State</th></tr></thead>
-                  <tbody id="webGameRows"><tr><td colspan="4" class="table-empty">Open a package or folder to browse assets.</td></tr></tbody>
-                </table>
-              </div>
-              <div class="web-game-footer">
-                <span id="webGamePage" class="helper-copy">No files</span>
-                <button type="button" id="webGameMore" class="button button-secondary" hidden>＋ Load next 250 files</button>
-              </div>
-            </div>
-            <aside class="asset-inspector">
-              <span class="eyebrow">SELECTED RESOURCE</span>
-              <h3 id="webGameSelected">Nothing selected</h3>
-              <dl id="webGameMetadata" class="nx-file-metadata"></dl>
-              <p id="webGameSignature" class="nx-signature">Select a file for its format, size, source, and preview options.</p>
-              <div id="webGameFamily" class="nx-asset-family" hidden>
-                <div class="nx-family-title">Related Pokémon files</div>
-                <div id="webGameFamilyFiles" class="nx-family-files"></div>
-              </div>
-              <div class="nx-selection-actions browser-game-actions">
-                <button type="button" id="webGamePreview" class="button button-primary" disabled>◈ Preview in 3D</button>
-                <button type="button" id="webGameExport" class="button button-secondary" disabled>↓ Save selected file…</button>
-              </div>
-              <p class="helper-copy">Models use the same 3D viewer as the app. Compatible textures and animations are automatically matched for preview.</p>
-              <div class="asset-scan-summary">
-                <strong>Package inventory</strong>
-                <dl class="nx-file-metadata">
-                  <dt>Indexed files</dt><dd id="webGameFiles">0</dd>
-                  <dt>Source format</dt><dd id="webGameFormat">No game loaded</dd>
-                  <dt>Folder files</dt><dd id="webGameFolderCount">0</dd>
-                </dl>
-              </div>
-            </aside>
-          </div>
-          <p id="webGameKeysStatus" class="asset-notice" role="status">No keys loaded. Choose your own local prod.keys to decrypt compatible NCAs. Keys stay in browser memory and are never uploaded or stored.</p>
-          <p id="webGameNotice" class="asset-notice" role="status">Browse the folder tree; double-click a model to preview it, or select a file to export.</p>
-          <p class="asset-guidance">Supports file-backed NSP/XCI indexes, local NCA3 AES-XTS / AES-CTR decryption, readable RomFS and PartitionFS, and original asset export. Rights-managed files may require matching title keys. Complex sparse/compressed/patch storage and some original shaders/animations remain unsupported. Locked content is not counted as empty game data.</p>
+          <div class="archive-warning"><strong>Native 3D support:</strong> GFBMDL meshes (Let’s Go / Sword / Shield) and compatible TRMDL/TRMSH/TRMBF meshes (Arceus, Scarlet/Violet, Z-A) can now render directly if their companion files are available, including from stored/LZ4 GFPAK entries with a matching hash dictionary. Compatible BNTX textures are previewable and native model materials can use them; original shaders and some animation tracks remain incomplete. Oodle-compressed archives still need a compatible decompressor. Use the <a href="https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml" target="_blank" rel="noopener noreferrer">Windows converter</a> for those formats.</div>
         </section>
 
         <section id="assetBrowser" class="asset-browser nx-fileviewer" role="tabpanel" aria-labelledby="tabAssets" hidden>
@@ -506,26 +381,33 @@
         </section>
 
         <section id="desktopTools" class="side-section desktop-native" role="tabpanel" aria-labelledby="tabConverter" hidden>
-          <div class="section-heading"><span class="step-number">04</span><h2>BUILT-IN MODEL CONVERSION</h2><span class="section-line"></span></div>
-          <p class="helper-copy">Models open directly with their compatible textures, skeletons and animations. Export GLB from the viewer to keep a copy.</p>
-          <div class="native-state" id="nativeDecoderStatus">Built-in decoders ready</div>
+          <div class="section-heading"><span class="step-number">04</span><h2>BLENDER MODEL CONVERSION</h2><span class="section-line"></span></div>
+          <p class="helper-copy">Model files are converted quietly to a disposable preview. Save a GLB only when you want to keep a copy.</p>
+          <div class="native-state" id="nativeBlenderStatus">Checking Blender…</div>
+          <div class="native-state" id="nativeAddonStatus">Checking Pokémon importer…</div>
           <div class="native-button-row">
             <button type="button" id="nativeChoose" class="button button-secondary">Select model files</button>
             <button type="button" id="nativeFolder" class="button button-secondary">Select folder</button>
           </div>
           <p id="nativeSources" class="helper-copy">No native conversion sources selected.</p>
           <details class="native-advanced">
-            <summary>Optional model settings</summary>
-            <label class="toggle-row"><input id="nativeAnimations" type="checkbox" checked /><span>Include compatible animations</span></label>
+            <summary>Advanced converter settings</summary>
+            <label class="input-label" for="nativeBlender">Blender executable</label>
+            <div class="native-path"><input class="field" id="nativeBlender" readonly /><button type="button" data-native-pick="blender" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeAddon">Switch Blender importer folder</label>
+            <div class="native-path"><input class="field" id="nativeAddon" readonly /><button type="button" data-native-pick="addon" class="button button-secondary">Browse</button></div>
+            <button type="button" id="nativeRetryAddon" class="text-button">Retry automatic importer download</button>
             <label class="input-label" for="nativeHashes">GFPAK filename dictionary</label>
-            <div class="native-path"><input class="field" id="nativeHashes" readonly /><button type="button" data-native-pick="hashes" class="button button-secondary">Browse</button><button type="button" data-native-clear="hashes" class="text-button">Clear</button></div>
-            <label class="input-label" for="nativeTextures">Additional texture folder</label>
-            <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button><button type="button" data-native-clear="textures" class="text-button">Clear</button></div>
+            <div class="native-path"><input class="field" id="nativeHashes" readonly /><button type="button" data-native-pick="hashes" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeOodle">Oodle DLL (optional, supply locally)</label>
+            <div class="native-path"><input class="field" id="nativeOodle" readonly /><button type="button" data-native-pick="oodle" class="button button-secondary">Browse</button></div>
+            <label class="input-label" for="nativeTextures">Decoded texture folder (optional)</label>
+            <div class="native-path"><input class="field" id="nativeTextures" readonly /><button type="button" data-native-pick="textures" class="button button-secondary">Browse</button></div>
+            <label class="toggle-row"><input id="nativeAnimations" type="checkbox" /><span>Import compatible animations</span></label>
           </details>
-          <button type="button" id="nativeConvert" class="button button-primary">Preview in 3D ↗</button>
-          <button type="button" id="nativeBatchExport" class="button button-secondary" disabled>Export all GLBs in one ZIP ↓</button>
+          <button type="button" id="nativeConvert" class="button button-primary">Preview with Blender ↗</button>
           <div id="nativeProgress" class="helper-copy" role="status" aria-live="polite"></div>
-          <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Model preview details"></div>
+          <div id="nativeLog" class="native-log" role="log" aria-live="polite" aria-label="Blender conversion details"></div>
           <div id="nativeResults" class="native-results" aria-live="polite"></div>
           <p class="helper-copy" id="nativeCacheNote">Temporary previews are deleted on the next conversion or when the app closes.</p>
         </section>
@@ -555,6 +437,5 @@
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/desktop-integration.js"></script>
   <script type="module" src="/src/asset-browser.js"></script>
-  <script type="module" src="/src/browser-game-explorer.js"></script>
 </body>
 </html>

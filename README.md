@@ -10,16 +10,16 @@ GFPAK OPEN recognizes model packages from Pokémon Switch games from **Let's Go 
 
 | Game | Original native format | Browser rendering | Native conversion route |
 | --- | --- | --- | --- |
-| Let's Go Pikachu / Eevee | GFBMDL, GFPAK, GFBANM | Native GFBMDL mesh preview/export; also converted assets | Built-in FlatBuffers decoder; original shaders and some GFBANM variants remain unsupported; experimental skeletal clips added |
-| Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Native GFBMDL mesh preview/export; also converted assets | Built-in FlatBuffers decoder; original shaders and GFBANM are not yet decoded |
+| Let's Go Pikachu / Eevee | GFBMDL, GFPAK, GFBANM | Native GFBMDL mesh preview/export; also converted assets | Browser FlatBuffers decoder or desktop importer; original shaders and some GFBANM variants remain unsupported; experimental skeletal clips added |
+| Sword / Shield + Isle of Armor + Crown Tundra | GFBMDL, GFPAK | Native GFBMDL mesh preview/export; also converted assets | Browser FlatBuffers decoder or desktop importer; original shaders and GFBANM are not yet decoded |
 | New Pokémon Snap | NUSRCMDLB / NUTEXB | Converted 3D assets | Game-specific extraction required |
 | Brilliant Diamond / Shining Pearl | Unity assets and asset bundles | Converted 3D assets | AssetStudio / AssetRipper to FBX/OBJ/GLB |
-| Legends: Arceus | GFPAK / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native Trinity decoder; compatible Oodle GFPAKs now decode using WASM |
+| Legends: Arceus | GFPAK / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native experimental Trinity decoder; Oodle GFPAKs still blocked |
 | Scarlet / Violet + Teal Mask + Indigo Disk | Trinity / TRMDL | Native TRMDL + TRMSH + TRMBF geometry; converted 3D assets | Browser-native experimental Trinity decoder; textures/animations still partial |
 | Legends: Z-A + Mega Dimension | Revised Trinity / TRMDL | Compatible native TRMDL geometry; converted 3D assets | Experimental Trinity decoder; model revisions still need real-data testing |
 | Other Switch Pokémon spin-offs | Varies (Unity, custom engines) | Converted 3D assets | Separate extraction may be necessary |
 
-**Important:** Browser-side geometry decoding now handles compatible **GFBMDL** and **TRMDL/TRMSH/TRMBF** resources. Trinity skeleton data (TRSKL) can supply bones/skin weights, and decoded PNG/JPEG material maps can provide approximate PBR shading. Compatible skeletal TRANM and GFBANM tracks now have experimental browser animation playback and GLB export. Some BNTX texture variants, original shaders, unsupported animation variations and unsupported Oodle revisions still require further work, and revised Z-A files have not yet been validated. Stored, LZ4 and compatible Oodle GFPAK resources can be previewed directly; a static GitHub Pages app cannot use a Windows Oodle DLL or Blender.
+**Important:** Browser-side geometry decoding now handles compatible **GFBMDL** and **TRMDL/TRMSH/TRMBF** resources. Trinity skeleton data (TRSKL) can supply bones/skin weights, and decoded PNG/JPEG material maps can provide approximate PBR shading. Compatible skeletal TRANM and GFBANM tracks now have experimental browser animation playback and GLB export. Some BNTX texture variants, original shaders, unsupported animation variations and **Oodle-compressed** resources still require further decoding, and revised Z-A files have not yet been validated. Only stored or LZ4-compressed GFPAK resources with a matching filename-hash dictionary can be previewed directly; a static GitHub Pages app cannot use a Windows Oodle DLL or Blender.
 
 ## GitHub Pages — web 3D studio
 
@@ -28,11 +28,11 @@ The sidebar includes a game selector with automatic filename-based suggestions. 
 - GLB, GLTF, FBX, OBJ + MTL, DAE, STL, PLY, 3DS, **GFBMDL, TRMDL and TRMSH** model rendering, using actual geometry decoders.
 - ZIP and folder imports with associated local textures and experimental native skeletal animation clips.
 - **Standalone texture inspector:** Open individual BNTX/DDS/PNG/JPEG/WebP files or select them inside a ZIP/folder. A Nintendo BNTX container lists every internal named surface; choose a surface, view its original dimensions/format, and save a decoded PNG preview. RGBA8/BGRA8, R8/RG8/RGB565 and BC1–BC5 use CPU decoding; BC7/ASTC previews require WebGL GPU extensions. The original data never leaves your device.
-- **Texture inspection inside GFPAKs:** Select any resource and click **PROBE SELECTED TEXTURE** to detect supported BNTX/DDS/PNG/JPEG/WebP signatures without a filename-hash dictionary. A matching dictionary lets you filter known textures and choose the correct names. Only the requested resource is extracted; compatible Oodle entries use the browser's lazy WASM decoder.
+- **Texture inspection inside GFPAKs:** Select any resource and click **PROBE SELECTED TEXTURE** to detect supported BNTX/DDS/PNG/JPEG/WebP signatures without a filename-hash dictionary. A matching dictionary lets you filter known textures and choose the correct names. Only the requested stored/LZ4 entry is extracted; Oodle entries still require a separate compatible decoder.
 - Compatible **GFBMDL material references can now load BNTX textures**, including named surfaces from a single local BNTX container; ambiguous matches are skipped rather than assigning incorrect Pokémon markings.
 - Orbit controls, zoom/pan, automatic camera framing, model statistics, and compatible animation playback.
 - Export to actual GLB with meshes; empty output is rejected.
-- GFPAK inspection, including archives inside ZIPs; filename-hash lists; metadata JSON exports; stored/LZ4/Oodle resource extraction and packed-resource export. When a hash dictionary identifies a stored/LZ4/Oodle **GFBMDL or TRMDL with its companion files**, click **PREVIEW 3D MESH** to decode it and export real geometry as GLB.
+- GFPAK inspection, including archives inside ZIPs; filename-hash lists; metadata JSON exports; stored/LZ4 resource extraction and Oodle packed-resource export. When a hash dictionary identifies a stored/LZ4 **GFBMDL or TRMDL with its companion files**, click **PREVIEW 3D MESH** to decode it and export real geometry as GLB.
 - Specific feedback for unsupported native resources, with browser GFBMDL/Trinity geometry decoding and warnings when shaders, textures, rigging or animations cannot be reconstructed.
 
 No files are sent to our server. Original game models and other assets are not distributed.
@@ -55,18 +55,14 @@ The production build uses npm run build and outputs dist-web/.
 
 Get the portable executable from [Build Windows Model Converter](https://github.com/Unborne-Fetus/GFPAK-OPEN/actions/workflows/build-windows.yml). On a Windows source checkout, double-click `run.bat`: it installs **build-time tools**, compiles the web interface, bundles its dependencies, creates **`dist/GFPAK-OPEN.exe`**, and launches that executable. It creates **no installer** and does not invoke the source-only `launch.py` as the final desktop app. `run.bat --build-only` builds without launching (used by CI). You need Python 3 and Node.js to build locally, but not to run the resulting EXE.
 
-The desktop application opens one studio window with the 3D viewer, GFPAK Inspector, **Model Converter**, and **Game File Explorer**. Previews, compatible animations, texture decoding and GLB export run through the bundled native viewer. Blender and its importer are no longer installed, detected, downloaded or launched.
+The desktop application opens **one studio window** with the web 3D viewer, GFPAK Inspector, **Blender Converter**, and **Game File Explorer** tabs. It does not launch a separate converter app. It detects installed Blender automatically; Blender and the optional importer are still required for native formats that cannot be decoded directly.
 
-1. Open your game file and select your compatible keys in Game File Explorer.
-2. Select a model and click **Preview in 3D**, or select native files/folders in **Model Converter**.
-3. Use **Export GLB** in the viewer to save decoded geometry, skeleton, compatible animation clips and textures. **Export Pokémon** saves the associated original assets together in a ZIP.
-
-The portable EXE includes its runtime dependencies. Building it from GitHub with `run.bat` still requires Python and Node.js. Full fidelity for every game/version is not yet supported: unsupported formats report decoder errors rather than requiring another app.
-The Model Converter fully scans selected folders and GFPAKs, lists every resolved model, and matches companions across subfolders. Each model can be previewed separately. **Export all GLBs in one ZIP** converts sequentially with compatible textures, skeletons and animations; `export-report.json` records any failures without discarding successful exports. Original Pokémon ZIP export follows the exact source selected in either the converter or explorer, including unresolved archive members where available.
-
-Optional model settings retain filename dictionary selection, an additional texture folder, and the animation inclusion switch. These do not require Blender or its importer.
-
-Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
+1. Blender is detected automatically, including supported Microsoft Store installations. Blender itself is **not** automatically downloaded.
+2. On first start, the app checks for the open-source [Pokémon Switch Blender importer](https://github.com/ChicoEevee/Pokemon-Switch-Model-Importer-Blender). If missing, it downloads it from the upstream GitHub repository into your local GFPAK-OPEN application data directory, validates the required importer files and reuses it on later runs. This one-time download requires an internet connection; use the Retry control if it fails. You can still choose a manually installed add-on folder in Advanced Settings.
+3. Under **Blender Converter**, choose individual native models, an extracted folder, or multiple GFPAKs, then click **Preview with Blender**. There is no mandatory file-save dialog: GLBs are generated into an app-owned temporary session directory and automatically shown in the same 3D viewer.
+4. Temporary previews are deleted when another preview begins or when the desktop app exits normally. Click **Save GLB** to explicitly copy the cached model to a permanent location (or export in the 3D Viewer tab). Your original input files are never removed.
+5. For supported Trinity GFPAKs, the desktop converter first identifies verified **TRMDL/TRMSH/TRMBF groups from the archive's FNV-1a hashes** without needing a filename dictionary. It then attempts to restore the exact companion filenames by reading strings from the decoded model and verifying their hashes. Unrecognized resources still benefit from an optional gfpak.txt/JSON dictionary.
+6. Compression type 3 can be decompressed with the independently maintained open-source [pyooz](https://pypi.org/project/pyooz/) decoder (installed by run.bat or included in Windows builds), or using a compatible existing local Oodle DLL. No proprietary DLL or game files are downloaded or bundled. Unsupported Oodle variants and unresolvable texture/material references can still prevent a complete conversion.
 
 ### Expanded Pokémon Switch archive compatibility (October 2026)
 
@@ -85,7 +81,7 @@ The expanded functionality has automated synthetic fixture coverage and CI build
 
 ### Fast 3D preview and three-class asset catalog
 
-- **Faster Preview in 3D:** The desktop File Explorer first requests a small, read-only preview manifest for supported native GFBMDL/TRMDL/TRMSH meshes and common GLB/glTF/OBJ/FBX/DAE models. For native Pokémon models, **geometry is drawn first**, followed by compatible textures and animation clips in the background; the first visible model no longer waits for them. Standard GLB and untextured OBJ previews skip eager loading of unrelated texture files. For compatible assets inside a physical GFPAK **or a GFPAK nested in a readable NCA/RomFS section**, the app streams individual required resources without extracting the entire packed archive. Unsupported native variants report a built-in decoder error; there is no external conversion fallback. Exact performance improvements depend on the real game files, storage and supported formats, and have not been benchmarked.
+- **Faster Preview in 3D:** The desktop File Explorer first requests a small, read-only preview manifest for supported native GFBMDL/TRMDL/TRMSH meshes and common GLB/glTF/OBJ/FBX/DAE models. For native Pokémon models, **geometry is drawn first**, followed by compatible textures and animation clips in the background; the first visible model no longer waits for them. Standard GLB and untextured OBJ previews skip eager loading of unrelated texture files. For compatible assets inside a physical GFPAK **or a GFPAK nested in a readable NCA/RomFS section**, the app streams individual required resources without extracting the entire packed archive. Blender is invoked only if the native decoder cannot handle the model. Exact performance improvements depend on the real game files, storage and supported formats, and have not been benchmarked.
 - **Always full discovery, not partial scans:** Opening an extracted folder, GFPAK, NSP or XCI now automatically traverses **all readable source files, NCA/NCZ sections, and recognized GFPAK members**, including archives nested inside RomFS. No default 4,000/40,000-file, 12/64-NCA, or 1,200-result cutoff remains. The background scanner reports entries visited and which section is being read; the catalog is kept in the desktop process and filtered/paginated into the UI, 250 rows at a time. **Locate assets** reruns a full scan for the current source. Locked/encrypted NCAs, unknown hashes and unsupported resource formats remain explicitly **unresolved**, not falsely shown as verified zero. A full scan of a large game may take time and cannot decrypt inaccessible sections or infer every hashed filename.
 - **Automatic model companions:** After the full inventory completes, GFPAK-OPEN associates known models with their likely mesh buffers, skeletons, textures and native animations. Verified same-stem filenames and matching internal `pm####` asset-family IDs take priority; files in a folder with only one model and same-game cross-archive Pokémon matches are labeled **probable**. Generic `body.bntx` or `idle.tranm` files shared among multiple models are not blindly assigned. Model rows show companion counts, and the right-side related-assets panel has clickable texture and animation entries. **Preview in 3D on a compatible GFBMDL/TRMDL model now imports its linked textures and native animation clips automatically, including cross-folder and cross-GFPAK companions:** geometry appears first, supported surface maps are applied to the original mesh materials, skeleton-compatible clips appear in the animation menu and can be played, and GLB export waits for the companion import to finish. Exact material references are respected; otherwise a single clearly associated diffuse texture or uniquely named material matches can be applied. Unsupported BNTX/animation variations or ambiguous matches are reported, never invented or silently substituted.
 - **Actionable results:** Selecting a model offers the fast 3D preview. Recognized BNTX, DDS, PNG, JPEG and WebP textures from folders, ZIPs, GFPAKs and readable NCA sections now have **View texture**, which opens the built-in surface inspector and supports PNG export without converting the model. Animation entries show native names, file details and related Pokémon asset families; actual clip playback still requires a compatible loaded model and decoder. Animation clips can play when the matching model's native animation tracks are supported; individual raw animations are not claimed to be full standalone 3D scenes.
@@ -102,7 +98,7 @@ The recursive scan is bounded to at most 40,000 scanned files per request and th
 
 GFPAK indexes are now **lazy on Windows and the web**. The desktop reader maps the index briefly and releases the file immediately; it does not copy a multi-gigabyte GFPAK into RAM. The web studio uses local File/Blob range reads rather than `file.arrayBuffer()` on the whole archive. Opening and searching a GFPAK therefore requires only its metadata. Resource content is fetched on demand.
 
-The built-in explorer shows resource offsets, compressed sizes, hashes and bounded hexadecimal previews. **Save selected file** streams stored entries; **Save packed bytes** streams the original compressed block without requiring a decoder, including for entries larger than 512 MiB. Existing output files are never silently replaced. The browser exports stored and packed resources as Blob slices. LZ4 decoding remains capped at 512 MiB of output; supported Oodle resources decode locally; unsupported game-specific compression may still fail. A large resource can be indexed and inspected even if it cannot yet be decoded to a usable model.
+The built-in explorer shows resource offsets, compressed sizes, hashes and bounded hexadecimal previews. **Save selected file** streams stored entries; **Save packed bytes** streams the original compressed block without requiring a decoder, including for entries larger than 512 MiB. Existing output files are never silently replaced. The browser exports stored and packed resources as Blob slices. LZ4 decoding remains capped at 512 MiB of output; browser Oodle and unsupported game-specific compression are not claimed to work. A large resource can be indexed and inspected even if it cannot yet be decoded to a usable model.
 
 Windows and Node regression tests use synthetic GFPAK fixtures, including a >512 MiB sparse file and an instrumented browser Blob that disallows reading the whole archive. These tests do not validate every Pokémon game or proprietary compression variant.
 
@@ -175,6 +171,16 @@ The PFS0/HFS0 readers handle large packages without loading their payloads into 
 
 
 
+**Blender 5.x / FlatBuffers:** The Pokémon Switch Blender importer also requires Python
+modules such as `flatbuffers` and `requests`. Blender may prohibit the importer's
+own pip installation when Online Access is disabled. GFPAK-OPEN instead prepares
+these packages in its own application-data folder on first conversion (source-run
+installations), or bundles them inside the downloaded Windows EXE. The Blender worker
+receives the package directory before registering the importer. You do **not** need
+to enable Blender's Online Access setting. The first source-run install requires
+network access to Python package downloads; packaged EXE builds include the packages
+and can run offline after the importer itself has been installed.
+
 **Animated demo:** The built-in geometric crystal has a four-second looping float
 and ring-orbit animation. Use the inspector's animation controls to pause/play;
 the animation is also included when exporting the demo to GLB.
@@ -199,70 +205,12 @@ Python unit tests:
 - [x] Experimental Trinity TRMDL/TRMSH/TRMBF vertex and mesh decoders with companion-file resolution, optional TRSKL skinning, TRMTR material references and decoded standard-image textures. Tested with original synthetic fixtures, NOT validated across real game samples.
 - [x] Experimental native TRANM / GFBANM skeletal keyframe decoding (fixed, dense, keyed 8/16-bit channels), bone animation playback and animated GLB export in browser, validated with synthetic fixtures only.
 - [x] Browser rendering of converted geometry and valid GLB export.
-- [x] Built-in Windows GFBMDL and TRMDL preview and GLB export entry points.
+- [x] Windows GFBMDL and TRMDL Blender import entry points.
 - [x] ZIP, folder and GFPAK archive inspection.
 - [ ] Validate native GFBMDL decoder against real Let's Go and Sword/Shield samples; currently tested with synthetic FlatBuffers-based geometry and browser GLB exports.
 - [ ] Validate each other native game family with representative real mesh, texture and animation samples.
 - [ ] Decode raw Unity and NUSRCMDLB models directly.
-- [x] Browser-native Oodle decompression for supported codecs via on-demand WASM (GPL notice in THIRD_PARTY_LICENSES.md).\n- [ ] CPU fallbacks for GPU-only BC7/ASTC BNTX textures and validation of additional Trinity revisions.
+- [ ] Browser-native Oodle decompression (decoder license/performance review), CPU fallbacks for GPU-only BC7/ASTC BNTX textures, and validation of actual Trinity revisions.
 - [ ] Validate native model skeletal skinning, native animation interpolation and all shader/material variations against actual game files.
 
 Only process models and game assets you own or are authorized to use.
-
-
-## Browser-native Oodle decompression
-
-GFPAK compression type **3** now uses an on-demand local WebAssembly decoder
-for compatible **Kraken, Mermaid, Selkie, Leviathan, LZNA and Bitknit** Oodle
-streams. No external `oo2core` DLL, Blender, backend service, key download or
-game upload is involved. Load your PLA NSP with your own locally provided keys,
-browse to a `.gfpak`, and select **Preview in 3D**. The standalone **GFPAK
-Inspector** can also auto-detect model resources in an Oodle-compressed archive.
-
-The browser does not decompress whole games automatically. Only selected model
-and companion blocks are decoded; on very large archives, background scanning
-yields to the UI and releases unused buffers. Per-resource in-memory decoding
-is limited to **512 MiB**. **Oodle formats are not all identical**: unsupported
-new versions and some game-specific variants may still fail. The original
-packed resource remains exportable if decoding fails.
-
-The `ooz-wasm` dependency is **GPL-3.0-or-later**. The upstream and license
-notices are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-Because GPL software has copyleft obligations, review the repository's
-licensing before redistributing a combined web build.
-
-## Browser-first game explorer (no Windows app required)
-
-**Same File Viewer layout as desktop:** the browser **OPEN GAME FILES** tab now uses the desktop app's three-pane interface: expandable **Content tree** on the left, the current folder's files in the center, and a **Selected Resource** inspector on the right. The File, View, Tools, and Help menus are functional without a Python/Windows bridge. Double-click a folder (or choose a branch in the tree) to navigate; double-click supported models to preview them. Global search and model/animation/texture class filters display results across the entire readable game. File lists and expanded tree leaves are paged in groups of 250 rather than allocating a huge table for every discovered asset. The existing local `prod.keys` reader and exported-asset actions are unchanged.
-
-
-
-Open the hosted site or run `npm run dev`, then choose **OPEN GAME FILES**. Drag an NSP/NSZ/XCI/XCZ to the main drop area, or use **Open NSP / XCI / GFPAK**. You can also use **Open extracted folder** to scan all available model, animation and texture files in a directory.
-
-The web reader streams **index metadata** from local files (rather than loading gigabyte-sized games into RAM) and currently supports:
-
-- NSP/NSZ **outer PFS0** file indexes and XCI **HFS0 game-card partition** indexes
-- NCA3 encrypted headers (AES-XTS), AES-CTR filesystem sections, and plaintext NCA sections, with **PartitionFS and RomFS** file browsing when compatible user-supplied keys are loaded
-- Full extracted-folder indexing, model/texture/animation filters, filename search, save selected original, and export full index JSON
-- Browser GFPAK inspection of package resources, plus native 3D preview and GLB / Pokémon ZIP export for compatible decoded models and companions
-- **Pokémon Legends: Arceus direct 3D preview:** Select a decrypted/readable `.gfpak` in **OPEN GAME FILES** and press **Preview in 3D**. The browser now scans original archive resources for `.trmdl`, `.trmsh` and `.trmbf` geometry and reconstructs unambiguous companion references even when the archive stores only filename hashes. Alternatively, open a GFPAK directly and click **AUTO-DETECT 3D MODEL** in the GFPAK Inspector. The shared viewport loads geometry first, then matches available textures and compatible animation clips.
-- Web model previews cover common GLB/glTF, FBX, OBJ, DAE, STL, PLY, 3DS and native Trinity/GFBMDL formats (where their original bytes and required dependencies can be decoded). **Compatible Oodle-compressed GFPAK blocks now decode via WASM**, but not every PLA model will succeed yet; an explicit error is shown rather than a fake or empty mesh.
-- A shared preview pipeline: select a readable GFBMDL/TRMDL/GLB model and press **Preview selected in 3D**; the 3D viewer can export GLB or a Pokémon ZIP when appropriate.
-
-### Decrypting game contents in the browser
-
-1. Open **OPEN GAME FILES** in the web studio.
-2. Press **Load local prod.keys** and select your own locally available compatible key file. Nothing is uploaded and the key-file text is not stored in browser storage.
-3. Choose your NSP or XCI. The browser decrypts compatible NCA3 headers (AES-XTS) and filesystem sections (AES-CTR or AES-XTS) using WebCrypto. If the game was already open, selecting a key file automatically rescans it.
-4. Filter the discovered files to models/textures/animations, then preview or export any readable Pokémon resource. Press **Forget keys** to clear loaded key values and references to the decrypted asset catalog.
-
-**Important limits:** `prod.keys` does **not** necessarily contain title content keys for rights-managed NCAs; a separately available compatible title key may be required. Some newer titles also use key revisions that must match the provided keys. The web reader does not yet decode **NCZ payload compression**, **sparse/compressed/patch NCA storage**, complex DLC/update overlays, or every original Pokémon model/shader/animation format. An encrypted or unsupported section stays visibly locked/unavailable; it is **not** counted as having zero assets. Downloaded decrypted files are explicit user-selected exports only, not automatic whole-game extraction. The app does not distribute or look up keys. Use only game data and keys you are authorized to access.
-
-## Exporting Pokémon to Pokédex 3D Max
-
-1. Open your own extracted game data and select the correct **Game Source** (important for game-internal Pokémon IDs).
-2. Preview the Pokémon and allow all matched textures and animations to finish loading.
-3. Click **Export Pokémon**. The ZIP contains original model/texture/skeleton/animation resources, a `gfpak-pokemon-export.json` interoperability manifest, and—if conversion succeeds—`pokedex3d/regular.glb`.
-4. In the Pokédex 3D Max project, drag the ZIP onto `import-gfpak-pokemon.bat` (or double-click that file and pick the ZIP). No Blender is used by this new GLB import path.
-
-The Pokédex's strict baseline requires complete embedded textures **and a recognizable idle animation**. If native materials or animations are still unsupported for that Pokémon, GFPAK exports the original files and clearly marks the ZIP `original-assets-only` rather than inventing a working GLB. This format does not imply every game source is already conversion-compatible. Existing Pokédex models are not overwritten by default.

@@ -7,19 +7,6 @@ import * as THREE from 'three';
 import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
 import { parseBntx, decodeBntxTexture } from './bntx.js';
 
-/** Browser previews should sample the original full-resolution base image.
- * DataTexture otherwise defaults to nearest-neighbor filtering (pixelated).
- * Compressed BNTX blocks cannot generate mipmaps in Three.js without decode.
- */
-export function configurePreviewTexture(texture,{compressed=false}={}) {
-  texture.magFilter=THREE.LinearFilter;
-  texture.minFilter=compressed ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps=!compressed;
-  texture.anisotropy=8;
-  texture.needsUpdate=true;
-  return texture;
-}
-
 function suffix(path) {
   const p = String(path).toLowerCase();
   return p.slice(p.lastIndexOf('.'));
@@ -49,7 +36,7 @@ export function decodeDDSTexture(bytes, srgb = true) {
   texture.magFilter = THREE.LinearFilter;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  configurePreviewTexture(texture,{compressed:!decoded.isRGBAUncompressed});
+  texture.needsUpdate = true;
   return texture;
 }
 
@@ -58,68 +45,21 @@ function normalizeTextureName(name) {
     .replace(/\.(?:bntx|dds|png|ktx2)$/i, '').toLowerCase();
 }
 
-export function textureVariantFromName(name) {
-  const value = String(name || '').replaceAll('\\', '/').split('/').pop().toLowerCase();
-  if (/(?:^|[_\-.])(shiny|rare|col(?:or)?[ _-]?0?1|s1)(?:$|[_\-.])/.test(value))
-    return 'shiny';
-  if (/(?:^|[_\-.])(normal|regular|default|col(?:or)?[ _-]?0?0|s0)(?:$|[_\-.])/.test(value))
-    return 'regular';
-  return 'regular';
-}
-
-function matchesVariantName(name, variant = 'regular') {
-  if (variant === 'shiny') return textureVariantFromName(name) === 'shiny';
-  return textureVariantFromName(name) !== 'shiny';
-}
-
-// Descriptor references often point to the original skin, while a user can
-// request its counterpart. Strip only explicit skin identifiers; leave the
-// material, species and channel identity intact.
-export function textureFamilyName(name) {
-  return normalizeTextureName(name)
-    .replace(/(^|[_.-])(shiny|rare|regular|default)(?=$|[_.-])/g, '$1')
-    .replace(/(^|[_.-])(color|col)[_-]?0?[01](?=$|[_.-])/g, '$1$2')
-    .replace(/[_.-]+/g, '_').replace(/^_|_$/g, '');
-}
-
-export function textureVariantForItem(item) {
-  if (['regular', 'shiny', 'mixed'].includes(item?.textureVariant))
-    return item.textureVariant;
-  // Container paths are often hash aliases and cannot indicate the surface
-  // color. Never let a neutral path turn a shiny-only BNTX into "mixed".
-  const names = item?.textureNames?.length ? item.textureNames : [item?.path];
-  const hasShiny = names.some(name => textureVariantFromName(name) === 'shiny');
-  const hasRegular = names.some(name => matchesVariantName(name, 'regular'));
-  return hasShiny && hasRegular ? 'mixed' : hasShiny ? 'shiny' : 'regular';
-}
-
-function itemHasVariant(item, variant = 'regular') {
-  const type = textureVariantForItem(item);
-  return type === 'mixed' || type === variant || (variant === 'regular' && type !== 'shiny');
-}
-
 /** Resolve real texture names from multi-surface Nintendo BNTX containers. */
-export async function loadDecodedTexture(item, srgb = true, preferredNames = [], options = {}) {
-  const variant = options.variant || 'regular';
+export async function loadDecodedTexture(item, srgb = true, preferredNames = []) {
   const format = suffix(item.path);
   const data = await item.getBytes();
   if (format === '.bntx') {
     const archive = parseBntx(data);
     const names = (Array.isArray(preferredNames) ? preferredNames : [preferredNames])
       .map(normalizeTextureName).filter(Boolean);
-    const searchTextures = archive.textures.filter(tex => matchesVariantName(tex.name, variant));
-    if (!searchTextures.length)
-      throw new Error('No '+variant+' texture surface is present in this BNTX');
-    const matched = searchTextures.filter(tex => names.includes(normalizeTextureName(tex.name)));
-    const families = new Set(names.map(textureFamilyName));
-    const familyMatches = searchTextures.filter(tex => families.has(textureFamilyName(tex.name)));
-    const chosen = matched.length ? matched : familyMatches;
-    if (chosen.length > 1) throw new Error('Several BNTX textures match the requested material');
-    if (!chosen.length && searchTextures.length !== 1) {
+    const matched = archive.textures.filter(tex => names.includes(normalizeTextureName(tex.name)));
+    if (matched.length > 1) throw new Error('Several BNTX textures match the requested name');
+    if (!matched.length && archive.textures.length !== 1) {
       throw new Error('BNTX contains ' + archive.textures.length +
-        ' textures; select a matching internal texture name (no uniquely matching '+variant+' surface for this material)');
+        ' textures; select a matching internal texture name rather than guessing the first');
     }
-    const surfaceIndex = chosen[0]?.index ?? searchTextures[0].index;
+    const surfaceIndex = matched[0]?.index ?? 0;
     const decoded = decodeBntxTexture(archive, surfaceIndex);
     // BC5 normal maps store only X/Y. Reconstruct positive Z before Three.js
     // expands RGB from [0,1] to a tangent-space normal in [-1,1].
@@ -149,7 +89,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
     texture.name = decoded.name || item.path;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    configurePreviewTexture(texture,{compressed:!!decoded.compressed});
+    texture.needsUpdate = true;
     return texture;
   }
   if (format === '.trtex')
@@ -167,7 +107,7 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
   texture.flipY = true;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  configurePreviewTexture(texture);
+  texture.needsUpdate = true;
   return texture;
 }
 
@@ -178,43 +118,16 @@ export async function loadDecodedTexture(item, srgb = true, preferredNames = [],
  * model has exactly one material. Never substitute normal/roughness maps for
  * a diffuse skin, or choose arbitrarily between multiple texture variants.
  */
-const diffuseSuffixes=['diffuse','color','basecolor','base','albedo','alb','col','skin'];
-function trimMaterialName(value) {
-  return String(value||'').toLowerCase()
-    .replace(/(?:material|_mat)$/i,'').replace(/[^a-z0-9]/g,'');
-}
-function trimTextureSurface(value){
-  return String(value||'').replaceAll('\\','/').split('/').at(-1)
-    .replace(/\.(?:bntx|dds|png|ktx2|webp|jpe?g)$/i,'')
-    .replace(/^pm\d{4}(?:_\d{2}){0,2}[_-]?/i,'')
-    .replace(/[^a-z0-9]/gi,'').toLowerCase();
-}
-/** A multi-surface BNTX may be stored under a hash. Use its *real internal*
- * surface names and accept only a single demonstrably matching diffuse map.
- */
-export function matchingLinkedDiffuseSurface(item,materialName,variant='regular') {
-  const key=trimMaterialName(materialName);
-  if(!key||key.length<3)return null;
-  const names=(item.textureNames||[]).filter(value=>matchesVariantName(value,variant));
-  const matched=names.filter(value=>{
-    const v=trimTextureSurface(value);
-    return v===key||diffuseSuffixes.some(s=>v===key+s);
-  });
-  return matched.length===1?matched[0]:null;
-}
-
-export function matchingLinkedDiffuseTexture(items, materialName, materialCount = 1, variant = 'regular') {
+export function matchingLinkedDiffuseTexture(items, materialName, materialCount = 1) {
   const linked = items.filter(item => item.linkedKind === 'texture' &&
-    /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path) && itemHasVariant(item, variant));
+    /\.(bntx|dds|png|jpe?g|webp)$/i.test(item.path));
   const diffuse = linked.filter(item => {
     const name = item.path.replaceAll('\\', '/').split('/').at(-1)
       .replace(/\.[^.]+$/, '').toLowerCase();
     return !/(?:^|[_-])(normal|nrm|rough|metal|mask|alpha|orm|occlusion|ao|emissive|emission)(?:$|[_-])/i.test(name);
   });
-  const key=trimMaterialName(materialName);
-  const internal=diffuse.filter(item=>matchingLinkedDiffuseSurface(item,materialName,variant));
-  if(internal.length===1)return internal[0];
-  if(internal.length>1)return null;
+  const key = String(materialName || '').toLowerCase()
+    .replace(/(?:material|_mat)$/i, '').replace(/[^a-z0-9]/g, '');
   if (key.length >= 3) {
     const candidates = diffuse.filter(item => {
       const basename = item.path.replaceAll('\\', '/').split('/').at(-1)

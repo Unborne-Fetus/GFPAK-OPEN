@@ -79,21 +79,6 @@ test('legacy GFBMDL texture mapping prefers unique exact/local matches',()=>{
   assert.equal(findLegacyTexture('body',[...rows,{item:local,base:'body',score:10}]),null);
 });
 
-test('legacy GFBMDL texture mapping respects regular and shiny variants',()=>{
-  const regular={path:'mon/body.png',linkedKind:'texture',textureVariant:'regular'};
-  const shiny={path:'mon/body_shiny.png',linkedKind:'texture',textureVariant:'shiny'};
-  const mixed={path:'mon/skins.bntx',linkedKind:'texture',textureVariant:'mixed'};
-  const rows=[
-    {item:regular,base:'body',score:10},
-    {item:shiny,base:'body_shiny',score:10},
-    {item:mixed,base:'skins',score:10}
-  ];
-  assert.equal(findLegacyTexture('body',rows,'regular'),regular);
-  assert.equal(findLegacyTexture('body',rows,'shiny'),shiny);
-  assert.equal(findLegacyTexture('eyes',rows,'regular'),mixed);
-  assert.equal(findLegacyTexture('eyes',rows,'shiny'),mixed);
-});
-
 test('DDS textures expose real dimensions and retain native compressed blocks',()=>{
   const bytes=new Uint8Array(136);
   const view=new DataView(bytes.buffer);

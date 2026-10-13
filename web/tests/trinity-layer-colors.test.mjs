@@ -48,12 +48,3 @@ test('ordinary material without native layer palette retains normal shading',()=
   applyLayerColors({material,colors:{}},[]);
   assert.equal(material.onBeforeCompile,original);
 });
-
-test('unlit effect palette uses simultaneous mask weights without leaving white albedo between colors',()=>{
-  const material=new THREE.MeshBasicMaterial({map:new THREE.Texture()});
-  applyLayerColors({material,shader:{name:'NonDirectional'},layerMaskMap:new THREE.Texture(),colors:Object.fromEntries([1,2,3,4].map(index=>['BaseColorLayer'+index,[.1,.03,.2,1]]))},[]);
-  const shader={uniforms:{},fragmentShader:'#include <map_fragment>',vertexShader:'#include <uv_vertex>'};
-  material.onBeforeCompile(shader);
-  assert.match(shader.fragmentShader,/max\(0.0,1.0-dot/);
-  assert.match(shader.fragmentShader,/gfLayerColors\[3\]\*gfWeights.a/);
-});

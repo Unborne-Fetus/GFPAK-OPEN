@@ -17,9 +17,6 @@ test('Export Pokémon button downloads original source assets in one ZIP',async(
   const stream=await download.createReadStream();const chunks=[];
   for await(const chunk of stream) chunks.push(chunk);
   const zip=await JSZip.loadAsync(Buffer.concat(chunks));
-  const manifest=JSON.parse(await zip.file('gfpak-pokemon-export.json').async('string'));
-  expect(manifest.format).toBe('gfpak-pokemon-export');
-  expect(manifest.selectedModel).toBe('test.trmdl');
-  if (manifest.convertedModel) expect(zip.file(manifest.convertedModel)).toBeTruthy();
+  expect(Object.keys(zip.files).length).toBe(5);
   expect(Array.from(await zip.file('test_idle.tracm').async('uint8array'))).toEqual([4,5,6]);
 });

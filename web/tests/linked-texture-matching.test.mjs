@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchingLinkedDiffuseTexture, textureVariantForItem,
-  textureVariantFromName, textureFamilyName,
-  configurePreviewTexture } from '../src/texture-loader.js';
-import * as THREE from 'three';
+import { matchingLinkedDiffuseTexture } from '../src/texture-loader.js';
 
 test('model with separate body and eyes materials receives the right linked textures',()=>{
   const items=[
@@ -34,54 +31,4 @@ test('single matched diffuse image can be applied without shader metadata',()=>{
     {path:'textures/pm0026_eyes.dds'}
   ];
   assert.equal(matchingLinkedDiffuseTexture(files,'MeshStandardMaterial',1),files[0]);
-});
-
-test('regular texture variant is preferred while shiny remains selectable',()=>{
-  const files=[
-    {path:'textures/pm0025_body_color.dds',linkedKind:'texture'},
-    {path:'textures/pm0025_body_color_shiny.dds',linkedKind:'texture'},
-    {path:'textures/pm0025_body_normal.dds',linkedKind:'texture'}
-  ];
-  assert.equal(textureVariantForItem(files[0]),'regular');
-  assert.equal(textureVariantForItem(files[1]),'shiny');
-  assert.equal(matchingLinkedDiffuseTexture(files,'BodyMaterial',2,'regular'),files[0]);
-  assert.equal(matchingLinkedDiffuseTexture(files,'BodyMaterial',2,'shiny'),files[1]);
-});
-
-test('mixed BNTX containers can serve either regular or shiny surfaces',()=>{
-  const mixed={path:'textures/pm0025_body.bntx',linkedKind:'texture',
-    textureNames:['body_color','body_color_shiny']};
-  assert.equal(textureVariantForItem(mixed),'mixed');
-  assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'regular'),mixed);
-  assert.equal(matchingLinkedDiffuseTexture([mixed],'BodyMaterial',1,'shiny'),mixed);
-});
-
-test('numeric native color skins map to their own normal and shiny surfaces',()=>{
-  assert.equal(textureVariantFromName('pm0025_body_col00.dds'),'regular');
-  assert.equal(textureVariantFromName('pm0025_body_col01.dds'),'shiny');
-  assert.equal(textureFamilyName('pm0025_body_col00.dds'),
-    textureFamilyName('pm0025_body_col01.dds'));
-  assert.equal(textureFamilyName('pm0025_body_color_shiny.dds'),
-    textureFamilyName('pm0025_body_color.dds'));
-});
-
-test('hashed BNTX with shiny-only internal surfaces does not claim a regular skin',()=>{
-  const shiny={path:'recovered/pm0025/resource_012.bntx',linkedKind:'texture',
-    textureNames:['body_color_shiny']};
-  assert.equal(textureVariantForItem(shiny),'shiny');
-  assert.equal(matchingLinkedDiffuseTexture([shiny],'body',1,'regular'),null);
-});
-
-test('full-resolution BNTX uses interpolated mipmapped and anisotropic filtering',()=>{
-  const native=new THREE.DataTexture(new Uint8Array(16*16*4),16,16);
-  configurePreviewTexture(native);
-  assert.equal(native.magFilter,THREE.LinearFilter);
-  assert.equal(native.minFilter,THREE.LinearMipmapLinearFilter);
-  assert.equal(native.generateMipmaps,true);
-  assert.equal(native.anisotropy,8);
-  const packed=new THREE.CompressedTexture([],16,16,THREE.RGBA_BPTC_Format);
-  configurePreviewTexture(packed,{compressed:true});
-  assert.equal(packed.minFilter,THREE.LinearFilter);
-  assert.equal(packed.generateMipmaps,false);
-  native.dispose();packed.dispose();
 });

@@ -1,6 +1,5 @@
 import {
-  loadDecodedTexture, matchingLinkedDiffuseTexture, matchingLinkedDiffuseSurface,
-  textureVariantForItem, textureFamilyName
+  loadDecodedTexture, matchingLinkedDiffuseTexture
 } from './texture-loader.js';
 import { applyLayerColors } from './trinity-layer-colors.js';
 import { associatedNativeAnimations } from './animation-association.js';
@@ -16,7 +15,6 @@ import {
   TrinityError, parseTrmdl, parseTrmsh, parseTrmbf,
   parseTrmtr, parseTrskl, decodeTrinityMeshes
 } from './trinity.js';
-import { bakeNativeDisplacement, animateNativeDisplacement } from './trinity-displacement.js';
 import { parseMeshVisibility } from './trinity-visibility.js';
 import { parseNativeAnimation } from './trinity-animation.js';
 
@@ -41,33 +39,19 @@ function findResource(project, ref, basePath, suffix, required = true) {
   const list = project.items ?? [];
   const rawRef = String(ref || '').replaceAll('\\', '/');
   const sourceRef = normalized(rawRef);
-  const sourceFilename = basename(sourceRef);
-  const expected = suffix || (sourceFilename.includes('.') ? ext(sourceFilename) : '');
-  // PLA TRMDL/TRMSH resources often reference bare names such as "head".
-  // The recovered archive project must retain actual .trmsh/.trmbf types,
-  // so resolve the reference with its requested extension when omitted.
-  const filename = sourceFilename && expected && !sourceFilename.endsWith(expected)
-    ? sourceFilename + expected : sourceFilename;
+  const filename = basename(sourceRef);
+  const expected = suffix || (filename.includes('.') ? ext(filename) : '');
   let candidates = list.filter(item => expected ? ext(item.path) === expected : true);
   if (!filename && !expected) {
     if (required) throw new TrinityError('Missing Trinity model resource filename');
     return null;
   }
   const baseDir = dirname(basePath);
-  const normalizedRef = normalized(baseDir + (filename && filename!==sourceFilename ? rawRef+expected : rawRef));
+  const normalizedRef = normalized(baseDir + rawRef);
   const exact = candidates.filter(item =>
     normalized(item.path) === normalizedRef || normalized(item.path) === sourceRef);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) throw new TrinityError('Ambiguous companion model path: ' + ref);
-  // A GFPAK descriptor can reference "head" while its filename-hash
-  // dictionary resolves the mesh to an unrelated canonical pathname.
-  // The scanner records the real descriptor association independently.
-  const aliased=candidates.filter(item=>(item.nativeAliases||[]).some(alias=>{
-    const token=normalized(alias);
-    return token===sourceRef || token===normalizedRef || basename(token)===filename;
-  }));
-  if(aliased.length===1)return aliased[0];
-  if(aliased.length>1)throw new TrinityError('Ambiguous descriptor companion '+ref);
   if (filename) candidates = candidates.filter(item => basename(item.path) === filename);
   if (!filename && expected) {
     const expectedStem = stem(basePath);
@@ -95,43 +79,29 @@ async function bytesFor(item) {
   return data;
 }
 
-function normalizeMaterialName(value) {return String(value||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
-
-function findOptionalTexture(project, name, parentPath, variant='regular') {
+function findOptionalTexture(project, name, parentPath) {
   if (!name) return null;
   const candidate = basename(name).replace(/\.(bntx|bntx\.gz|dds|ktx2)$/i, '');
   if (!candidate) return null;
-  const eligible = item => {
-    const type=textureVariantForItem(item);
-    return type==='mixed' || type===variant || (variant==='regular' && type!=='shiny');
-  };
   const related = project.items.filter(item => item.linkedKind === 'texture' &&
-    TEXTURE_EXT.has(ext(item.path)) && eligible(item));
-  const family = textureFamilyName(candidate);
+    TEXTURE_EXT.has(ext(item.path)));
   const exact = item => stem(item.path) === candidate ||
-    basename(item.path).startsWith(candidate + '.') ||
-    (family && textureFamilyName(item.path) === family);
-  const matchesSurface = item => (item.textureNames||[]).some(value =>
-    (variant==='shiny' ? textureVariantForItem({path:value})==='shiny' :
-      textureVariantForItem({path:value})!=='shiny') &&
-    (stem(value)===candidate || basename(value)===candidate ||
-    normalizeMaterialName(value)===normalizeMaterialName(candidate) ||
-    (family && textureFamilyName(value)===family)));
-  const matched = related.filter(item=>exact(item)||matchesSurface(item));
+    basename(item.path).startsWith(candidate + '.');
+  const matched = related.filter(exact);
   if (matched.length === 1) return matched[0];
   if (matched.length > 1) return null;
-  // The previous fallback ignored the selected skin and silently loaded a
-  // shiny image even with "Regular textures" selected.
   const nearby = project.items.filter(item => TEXTURE_EXT.has(ext(item.path)) &&
-    eligible(item) && exact(item));
+    exact(item));
   const nearest = nearby.filter(item => dirname(item.path) === dirname(parentPath));
   if (nearest.length === 1) return nearest[0];
   if (nearby.length === 1) return nearby[0];
   if (nearby.length) return null;
+  // Explicitly linked texture can be stored under a different filename or in
+  // another GFPAK. If there is only one, let its real image/BNTX decoder
+  // validate the requested internal surface before applying it.
   if (related.length === 1) return related[0];
   const packed = project.items.filter(item =>
-    ext(item.path) === '.bntx' && eligible(item) &&
-    dirname(item.path) === dirname(parentPath));
+    ext(item.path) === '.bntx' && dirname(item.path) === dirname(parentPath));
   return packed.length === 1 ? packed[0] : null;
 }
 
@@ -146,25 +116,23 @@ export function createMaterials(materials) {
       const mat = new Material({
         name: info.name || 'Trinity material',
         color: 0xd9e0e7, side: info.faceCulling === 1 ? THREE.BackSide : info.faceCulling === 2 ? THREE.DoubleSide : THREE.FrontSide,
-        ...(!unlit ? {roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
-        metalness: 0.0} : {}), ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
+        roughness: Number.isFinite(info.scalars?.Roughness) ? info.scalars.Roughness : 0.8,
+        metalness: 0.0, ...(eyeHighlight ? {clearcoat:1,clearcoatRoughness:0.1} : {})
       });
       mat.userData.nativeVertexColor = shader?.flags?.EnableVertexBaseColor === 'True' || shader?.flags?.EnableVertexColor === 'True';
       mat.transparent = !!info.alphaType && !/opaque/i.test(info.alphaType);
       mat.depthWrite = !mat.transparent;
       if (shader?.flags?.EnableAlphaTest === 'True') mat.alphaTest = info.scalars?.DiscardValue || 0.5;
       lookup.set(info.name.toLowerCase(), { material: mat, textures: info.textures,
-        colors: info.colors, scalars: info.scalars, shader });
+        colors: info.colors, scalars: info.scalars });
     }
   }
   return lookup;
 }
 
-export async function applyDecodedTextures(project, lookup, modelPath, report, created, options = {}) {
-  const requestedVariant = options.textureVariant || 'regular';
+export async function applyDecodedTextures(project, lookup, modelPath, report, created) {
   const channels = [
     { names: /^(basecolormap|basemap|diffusemap|albedomap|color0map)$/i, property: 'map', srgb: true },
-    { names: /^displacementmap$/i, property: 'nativeDisplacementMap', srgb: false },
     { names: /^layermaskmap$/i, property: 'layerMaskMap', srgb: false },
     { names: /^normalmap\d*$/i, property: 'normalMap', srgb: false },
     { names: /^roughnessmap\d*$/i, property: 'roughnessMap', srgb: false },
@@ -183,9 +151,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
         !/(normal|mask|rough|metal|occlusion|ao|emissive|emission)/i.test(textures[0].name) &&
         !/(?:_|-)(nrm|lym|msk|ao)(?:\.|$)/i.test(textures[0].file) ? textures[0] : null);
       if (!selected) continue;
-      const variant = (channel.property === 'map' || channel.property === 'emissiveMap')
-        ? requestedVariant : 'regular';
-      const textureItem = findOptionalTexture(project, selected.file, modelPath, variant);
+      const textureItem = findOptionalTexture(project, selected.file, modelPath);
       if (!textureItem) {
         report('No decoded image for ' + selected.file + ' (' + materialName + ')');
         continue;
@@ -193,35 +159,27 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
       try {
         const requestedNames = [selected.file, selected.name];
         const uv = definition.colors?.[channel.property === 'normalMap'
-          ? 'UVScaleOffsetNormal' : channel.property === 'nativeDisplacementMap' ? 'UVScaleOffset3' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
+          ? 'UVScaleOffsetNormal' : channel.highlight ? 'UVScaleOffset1' : 'UVScaleOffset'];
         const cacheKey = textureItem.path + '|' + (uv?.join(',') || '') + '|' + channel.srgb +
           (ext(textureItem.path) === '.bntx' ? '|' + requestedNames.join('|') : '');
         let texture = textureCache.get(cacheKey);
         if (!texture) {
-          texture = await loadDecodedTexture(textureItem, channel.srgb, requestedNames, {variant});
+          texture = await loadDecodedTexture(textureItem, channel.srgb, requestedNames);
           textureCache.set(cacheKey, texture);
           created.push(texture);
         }
         texture.name = selected.file || selected.name || channel.property;
-        // Native UV transforms apply to square images too, particularly eye
-        // and mask atlases. Ignoring those yields displaced, blurry features.
-        if (uv?.length === 4 && uv.every(Number.isFinite)) {
+        if (uv?.length === 4 && uv.every(Number.isFinite) &&
+            texture.image.width !== texture.image.height) {
           texture.repeat.set(uv[0], uv[1]);
           texture.offset.set(uv[2], uv[3]);
           if (uv[0] > 1) texture.wrapS = THREE.MirroredRepeatWrapping;
           texture.updateMatrix();
         }
         const material = definition.material;
-        if (channel.property === 'nativeDisplacementMap') definition.displacementMap = texture;
-        else if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
+        if (channel.property === 'layerMaskMap') definition.layerMaskMap = texture;
         else material[channel.property] = texture;
-        if (channel.property === 'map') {
-          material.color.setRGB(1, 1, 1);
-          // Opaque-looking geometry such as a Pokémon tail/wing often uses an
-          // alpha-cutout texture for its silhouette. Transparent texels must
-          // be discarded rather than displayed as rectangular cards.
-          material.alphaTest=Math.max(material.alphaTest,0.02);
-        }
+        if (channel.property === 'map') material.color.setRGB(1, 1, 1);
         if (channel.property === 'emissiveMap') {
           const color = definition.colors?.[channel.highlight ? 'EmissionColorLayer5' : 'EmissionColor'];
           material.emissive.setRGB(...(color?.slice(0,3) || [1,1,1]));
@@ -240,8 +198,7 @@ export async function applyDecodedTextures(project, lookup, modelPath, report, c
   return Array.from(textureCache.values()).map(texture => texture.image).filter(image => image?.close);
 }
 
-async function applyMatchedLinkedTextures(project, root, report, created, options = {}) {
-  const variant = options.textureVariant || 'regular';
+async function applyMatchedLinkedTextures(project, root, report, created) {
   const materials = new Set();
   root.traverse(object => {
     if (!object.isMesh) return;
@@ -254,26 +211,20 @@ async function applyMatchedLinkedTextures(project, root, report, created, option
   for (const material of materials) {
     if (material.map) continue;
     const item = matchingLinkedDiffuseTexture(
-      project.items, material.name, materials.size, variant);
+      project.items, material.name, materials.size);
     if (!item) continue;
     try {
-      // Several materials can use different surfaces within *one* BNTX.
-      // Never reuse the first decoded body texture for eyes, wings, or tails.
-      const matchingSurface=matchingLinkedDiffuseSurface(item,material.name,variant);
-      const cacheKey=item.path+'|'+variant+'|'+
-        (item.path.toLowerCase().endsWith('.bntx')
-          ? matchingSurface||material.name : '');
-      let texture = loaded.get(cacheKey);
+      let texture = loaded.get(item.path);
       if (!texture) {
-        texture = await loadDecodedTexture(item, true, matchingSurface ?
-          [matchingSurface] : [material.name], {variant});
-        loaded.set(cacheKey, texture);
+        // A multi-surface BNTX must still match the real material's
+        // surface name, otherwise the decoder rejects applying a guess.
+        texture = await loadDecodedTexture(item, true, [material.name]);
+        loaded.set(item.path, texture);
         created.push(texture);
         if (texture.image?.close) images.add(texture.image);
       }
       material.map = texture;
       material.color.setRGB(1, 1, 1);
-      material.alphaTest=Math.max(material.alphaTest,0.02);
       material.needsUpdate = true;
       report('Automatically applied linked texture ' + item.path +
         ' to material ' + material.name + '.');
@@ -297,10 +248,9 @@ export class NativeBone extends THREE.Bone {
       const scale = this.parent.scale;
       const inverse = value => Math.abs(value) > 1e-10 ? 1/value : 1;
       this.inverseParentScale.makeScale(inverse(scale.x),inverse(scale.y),inverse(scale.z));
-      // Compensation applies to the joint basis, after translation (T*IS*R*S).
-      // Cancelling the translation prevents scaled chains from retracting.
+      // Native local pose = inverse parent scale * T * R * S. Keep authored
+      // scale properties intact so animation channels do not accumulate.
       this.matrix.premultiply(this.inverseParentScale);
-      this.matrix.setPosition(this.position);
     }
   }
 }
@@ -358,11 +308,6 @@ export function makeMesh(part, material, skeletonInfo) {
     const uv = vertices.uv.slice();
     for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
     geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  }
-  if (vertices.uv1) {
-    const uv = vertices.uv1.slice();
-    for (let i=1;i<uv.length;i+=2) uv[i]=1-uv[i];
-    geometry.setAttribute('uv1', new THREE.BufferAttribute(uv, 2));
   }
   if (vertices.color?.length === vertices.count * 4) {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertices.color, 4));
@@ -521,212 +466,9 @@ async function loadNativeClips(project, selected, skeleton, report, scene) {
 }
 
 /**
- * Some Switch TRMDL versions omit skeleton/material references entirely, while
- * the files still exist as hashed GFPAK siblings. Recover only validated,
- * unambiguous companions from the selected Pokémon project.
- */
-/**
- * Prefer real animation bone-track evidence over arbitrary GFPAK resource
- * order. A common one-bone "root" is insufficient to distinguish rigs.
- * Return null for ties and weak evidence rather than binding a wrong species.
- */
-export function chooseRigByAnimationTracks(candidates, animations) {
-  if(candidates.length<2 || !animations.length)return null;
-  const normalize = name=>String(name||'').split(/[/:|\\\\]/).at(-1).trim().toLowerCase();
-  const observed = new Set();
-  for(const clip of animations){
-    for(const track of clip?.tracks||[]){
-      const name=normalize(track.bone);
-      if(name)observed.add(name);
-    }
-  }
-  if(observed.size<2)return null;
-  const scored=candidates.map(candidate=>{
-    const names=new Set((candidate.value?.bones||[]).map(bone=>normalize(bone.name)));
-    let hits=0;
-    for(const name of observed)if(names.has(name))hits++;
-    return {candidate,hits};
-  }).sort((a,b)=>b.hits-a.hits);
-  if(scored[0].hits<2 || scored[0].hits===scored[1].hits ||
-     scored[0].hits/observed.size<0.5)return null;
-  return scored[0].candidate;
-}
-
-/**
- * When names are hashed and several rigs exist, real skinning joint IDs can
- * disqualify incompatible rigs. A rig is never selected based on bone count
- * or arbitrary archive order alone.
- */
-export function chooseRigByMeshInfluences(candidates,parts) {
-  if(candidates.length<2)return null;
-  const used=new Set();
-  for(const part of parts||[]){
-    const {joints,weights,count}=part.vertices||{};
-    if(!joints||!weights||!Number.isInteger(count))continue;
-    for(let i=0;i<count*4 && i<joints.length && i<weights.length;i++){
-      if(weights[i]>1e-5 && Number.isFinite(joints[i]) && joints[i]>=0)
-        used.add(Math.round(joints[i]));
-    }
-  }
-  if(used.size<2)return null;
-  const valid=candidates.filter(({value})=>{
-    const bones=value?.bones||[];
-    const mapped=new Set(bones.map(b=>b.jointInfoIndex).filter(i=>i>=0));
-    const validIds=mapped.size?mapped:new Set(bones.map((_,i)=>i));
-    return [...used].every(index=>validIds.has(index));
-  });
-  return valid.length===1?valid[0]:null;
-}
-
-async function recoverTrinitySkeleton(project, selected, reference, report, parts=[]) {
-  const candidates=project.items.filter(item=>ext(item.path)==='.trskl');
-  if(reference){
-    try {
-      const explicit=findResource(project,reference,selected,'.trskl',false);
-      if(explicit){
-        const parsed=parseTrskl(await bytesFor(explicit));
-        if(parsed.bones?.length){
-          report('Verified skeleton reference '+reference+': '+parsed.bones.length+' bones.');
-          return parsed;
-        }
-      }
-    }catch(error){report('Referenced skeleton could not be decoded: '+error.message);}
-  }
-  const parsed=[];
-  for(const item of candidates.slice(0,48)){
-    try{
-      const value=parseTrskl(await bytesFor(item));
-      if(!value.bones?.length || value.bones.some(b=>!b.name ||
-        (b.parent>=value.bones.length)||(b.parent===b.index)))continue;
-      parsed.push({item,value});
-    }catch(error){report('Skipped invalid skeleton '+item.path+': '+error.message);}
-  }
-  const modelItem=project.items.find(item=>item.path===selected);
-  const origin=modelItem?.sourceArchive;
-  const own=origin?parsed.filter(row=>row.item.sourceArchive===origin):[];
-  const sameFolder=parsed.filter(row=>dirname(row.item.path)===dirname(selected));
-  let chosen=own.length===1?own[0]:
-    sameFolder.length===1?sameFolder[0]:
-    parsed.length===1?parsed[0]:null;
-  if(!chosen && parsed.length>1){
-    chosen=chooseRigByMeshInfluences(parsed,parts);
-    if(chosen)report('Skeleton verified against the model\'s real vertex joint influences.');
-  }
-  if(!chosen && parsed.length>1){
-    const clips=[];
-    // Bounded evidence probe: never decode hundreds of huge Oodle animations
-    // before the first 3D frame. Those without matching tracks cannot prove
-    // which skeleton belongs to the model.
-    const companions=associatedNativeAnimations(project.items,selected,()=>{})
-      .filter(item=>Number.isFinite(item.size) && item.size<=8*1024*1024);
-    let bytes=0;
-    for(const item of companions.slice(0,12)){
-      if(bytes+item.size>24*1024*1024)break;
-      bytes+=item.size;
-      try{clips.push(parseNativeAnimation(await bytesFor(item),basename(item.path)));}
-      catch(_){}
-    }
-    chosen=chooseRigByAnimationTracks(parsed,clips);
-    if(chosen)report('Skeleton linked using '+clips.length+
-      ' decoded animation(s) and uniquely matching bone tracks.');
-  }
-  if(chosen){
-    report('Recovered '+(parsed.length===1?'unambiguous ':'')+chosen.value.bones.length+'-bone skeleton from '+
-      chosen.item.path+(own.length===1?' in the model\'s own archive.':
-        ' (unique model companion).'));
-    return chosen.value;
-  }
-  if(!parsed.length)
-    report('No valid TRSKL rig available for this model; bones and skeletal clips cannot load.');
-  else report('Found '+parsed.length+
-    ' valid TRSKL rigs without a unique model reference; skipping unsafe rig substitution.');
-  return null;
-}
-
-/** Legends: Arceus often stores rare/shiny COLOR ASSIGNMENT in the
- * TRMTR material definition, not in an alternate albedo texture.
- * Apply the standard definition first; override matching materials only
- * when the user explicitly selects a real *_rare.trmtr definition.
- */
-export function trinityMaterialVariant(item) {
-  const names=[item?.path,...(item?.nativeAliases||[])];
-  return names.some(value=>/(?:^|[_.\\/-])(rare|shiny)(?:$|[_.\\/-])/i.test(String(value||'')))
-    ? 'shiny' : 'regular';
-}
-
-export function chooseTrinityMaterialSources(parsed,variant='regular') {
-  const standard=parsed.filter(row=>trinityMaterialVariant(row.item)!=='shiny');
-  const shiny=parsed.filter(row=>trinityMaterialVariant(row.item)==='shiny');
-  return variant==='shiny' ? [...standard,...shiny] : standard;
-}
-
-async function recoverTrinityMaterials(project, selected, references, parts, report, options={}) {
-  const sourceNames=new Set(parts.map(part=>normalizeMaterialName(part.material)).filter(Boolean));
-  const entries=project.items.filter(item=>ext(item.path)==='.trmtr');
-  const byPath=new Set();
-  for(const ref of references){
-    try {
-      const entry=findResource(project,ref,selected,'.trmtr',false);
-      if(entry)byPath.add(entry.path);
-    }catch(error){report('Material reference '+ref+' cannot be resolved: '+error.message);}
-  }
-  const parsed=[];
-  for(const item of entries.slice(0,48)){
-    try{
-      const data=parseTrmtr(await bytesFor(item));
-      if(!data.materials?.length)continue;
-      const names=new Set(data.materials.map(m=>normalizeMaterialName(m.name)));
-      const overlap=[...sourceNames].filter(n=>names.has(n)).length;
-      if(byPath.has(item.path)||overlap>0)parsed.push({item,data,overlap,explicit:byPath.has(item.path)});
-    }catch(error){report('Skipped invalid TRMTR '+item.path+': '+error.message);}
-  }
-  if(!parsed.length && entries.length===1){
-    try{
-      const data=parseTrmtr(await bytesFor(entries[0]));
-      if(data.materials?.length){
-        parsed.push({item:entries[0],data,overlap:0,explicit:false});
-        report('Recovered sole material definition '+entries[0].path+'.');
-      }
-    }catch(error){report('Material definition could not be decoded: '+error.message);}
-  }
-  const variant=options.textureVariant==='shiny'?'shiny':'regular';
-  const chosenDefs=chooseTrinityMaterialSources(parsed,variant);
-  for(const item of chosenDefs)report('Matched '+item.data.materials.length+
-    ' material definition(s) ['+trinityMaterialVariant(item.item)+'] from '+item.item.path+
-    (item.explicit?' by model reference':' by mesh material names')+'.');
-  if(parsed.some(item=>trinityMaterialVariant(item.item)==='shiny'))
-    report('TRMTR color assignment: '+variant+' selected; '+chosenDefs.length+
-      ' of '+parsed.length+' definitions used. Shiny definitions do not override the regular skin.');
-  if(!chosenDefs.length)report('No matching '+variant+' TRMTR material definitions found; using neutral materials.');
-  return chosenDefs.map(item=>item.data);
-}
-
-/**
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
  */
-/** Render only the highest-detail LOD for each actual native mesh family.
- * Preserve distinct head, body, and accessories; never invent subdivisions.
- */
-export function preferredTrinityMeshes(references) {
-  const groups=new Map();
-  for(let i=0;i<references.length;i++){
-    const ref=references[i];
-    const name=ref.replaceAll('\\','/').split('/').at(-1);
-    const lod=name.match(/(?:^|[_.-])lod[_-]?(\d+)(?=$|[_.-])/i);
-    const family=name.replace(/(?:^|[_.-])lod[_-]?\d+(?=$|[_.-])/i,'')
-      .replace(/[_.-]+/g,'_').replace(/^_|_$/g,'').toLowerCase();
-    // Untagged meshes are the primary asset, whereas LOD 0 is the highest
-    // marked level. For duplicate families keep exactly one.
-    const rank=lod?Number(lod[1]):0;
-    const prev=groups.get(family);
-    if(!prev || rank<prev.rank || (rank===prev.rank && lod && !prev.tagged)){
-      groups.set(family,{ref,index:i,rank,tagged:!!lod});
-    }
-  }
-  return [...groups.values()].sort((a,b)=>a.index-b.index).map(x=>x.ref);
-}
-
 export async function loadTrinityModel(project, selected, report = () => {}, options = {}) {
   const entry = project.items.find(item => item.path === selected);
   if (!entry) throw new TrinityError('Selected Trinity model not found');
@@ -740,11 +482,8 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   const parts = [];
   // LOD meshes are alternate versions of the same surface. Drawing all of
   // them at once overlays three skins and produces flicker during animation.
-  const primaryMeshes = preferredTrinityMeshes(meta.meshFiles);
-  if(primaryMeshes.length!==meta.meshFiles.length)
-    report('Using highest-detail native LOD: '+primaryMeshes.length+
-      ' mesh(es) instead of '+meta.meshFiles.length+' mixed resolution references.');
-  for (const meshRef of primaryMeshes) {
+  const primaryMeshes = meta.meshFiles.filter(ref => !/[_-]lod[1-9]\d*(?:\.|$)/i.test(ref));
+  for (const meshRef of primaryMeshes.length ? primaryMeshes : meta.meshFiles) {
     const shape = suffix === '.trmsh'
       ? entry
       : findResource(project, meshRef, selected, '.trmsh');
@@ -755,15 +494,22 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   }
   if (!parts.length) throw new TrinityError('No renderable Trinity geometry was decoded');
 
-  const skeleton=await recoverTrinitySkeleton(project,selected,meta.skeleton,report,parts);
-  const materialDefs=await recoverTrinityMaterials(project,selected,meta.materials,parts,report,options);
-  const lookup=createMaterials(materialDefs);
-  // A PLA shiny TRMTR recolors the same shared base textures. Do not require
-  // separate shiny BNTX imagery when only the material palette changes.
-  const hasShinyImages=project.items.some(item=>item.linkedKind==='texture' &&
-    ['shiny','mixed'].includes(textureVariantForItem(item)));
-  const textureOptions=options.textureVariant==='shiny' && !hasShinyImages
-    ? {...options,textureVariant:'regular'} : options;
+  let skeleton = null;
+  if (meta.skeleton) {
+    try {
+      const skeletonFile = findResource(project, meta.skeleton, selected, '.trskl', false);
+      if (skeletonFile) skeleton = parseTrskl(await bytesFor(skeletonFile));
+      else report('Skeleton reference found, but TRSKL file is unavailable.');
+    } catch (error) { report('TRSKL decoding error: ' + error.message); }
+  }
+  const materialDefs = [];
+  for (const ref of meta.materials) {
+    const materialFile = findResource(project, ref, selected, '.trmtr', false);
+    if (!materialFile) continue;
+    try { materialDefs.push(parseTrmtr(await bytesFor(materialFile))); }
+    catch (error) { report('Material decode skipped: ' + error.message); }
+  }
+  const lookup = createMaterials(materialDefs);
   const created = [];
   let sourceImages = [];
   const scene = new THREE.Group();
@@ -772,8 +518,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
   const defaults = new Map();
   for (const part of parts) {
     const name = (part.material || '').toLowerCase();
-    let material = lookup.get(name)?.material ||
-      [...lookup.entries()].find(([key])=>normalizeMaterialName(key)===normalizeMaterialName(name))?.[1].material;
+    let material = lookup.get(name)?.material;
     if (!material) {
       if (!defaults.has(name)) defaults.set(name, new THREE.MeshStandardMaterial({
         name: part.material || 'Unassigned material', color: 0xd9e0e7,
@@ -803,19 +548,15 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
         const [images, clips] = await Promise.all([
           (async () => {
             const images = await applyDecodedTextures(
-              project, lookup, selected, report, created, textureOptions);
-            if (!disposed) bakeNativeDisplacement(scene, lookup, report);
+              project, lookup, selected, report, created);
             const fallbackImages = await applyMatchedLinkedTextures(
-              project, scene, report, created, textureOptions);
+              project, scene, report, created);
             return images.concat(fallbackImages);
           })(),
           loadNativeClips(project, selected, rig, report, scene),
         ]);
         sourceImages = images;
-        if (!disposed) {
-          await animateNativeDisplacement(scene, lookup, project, clips, report);
-          animations.push(...clips);
-        }
+        if (!disposed) animations.push(...clips);
         report('Finished ' + created.length + ' texture(s) and ' +
           clips.length + ' native animation clip(s).');
         return animations;
