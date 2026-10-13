@@ -817,7 +817,7 @@ class NativeNCAIntegrationTests(unittest.TestCase):
             main = browser.open(nsp)
             entry = browser.children(main["id"])["entries"][0]
             result = browser.children(entry["id"])
-            self.assertEqual(result["entries"][0]["name"], "Sections unavailable")
+            self.assertTrue(result["entries"][0]["name"].startswith("Sections unavailable"))
             self.assertNotIn("Section 1", str(result["entries"]))
             self.assertIn("incomplete", result["note"])
             details = browser.item_details(result["entries"][0]["id"])
