@@ -11,6 +11,7 @@ titles without a supplied content key fail explicitly.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import struct
 from collections import OrderedDict
@@ -100,6 +101,83 @@ def _xts(key: bytes, block: bytes, sector: int, endian: str) -> bytes:
     Cipher, algorithms, modes = _crypto()
     ctx = Cipher(algorithms.AES(key), modes.XTS(sector.to_bytes(16, endian))).decryptor()
     return ctx.update(block) + ctx.finalize()
+
+
+def decode_nca3_header(raw: bytes, keys: Keyset) -> tuple[bytes, bool, str]:
+    """Decode only the 0xC00-byte NCA header, shared by reader and diagnostics."""
+    if len(raw) < 0xC00:
+        raise NativeNCAError("NCA header is incomplete.")
+    if raw[0x200:0x204] == b"NCA3":
+        return raw[:0xC00], True, "none"
+    key = keys.get("nca_header_key", "header_key")
+    if not key or len(key) != 32:
+        raise NativeNCAError(
+            "Encrypted NCA detected. GFPAK-OPEN's built-in reader needs a "
+            "compatible user-supplied keys file; no other app is needed."
+        )
+    for order in ("big", "little"):
+        try:
+            candidate = b"".join(
+                _xts(key, raw[i:i + 0x200], i // 0x200, order)
+                for i in range(0, 0xC00, 0x200)
+            )
+        except ValueError:
+            continue
+        if candidate[0x200:0x204] == b"NCA3":
+            return candidate, False, order
+    raise NativeNCAError("The supplied NCA header key could not decode this NCA3 header.")
+
+
+def inspect_nca3_header(raw: bytes, keys: Keyset) -> dict:
+    """Safe metadata-only diagnosis; no rights ID, content key or game bytes returned."""
+    header, plaintext, tweak = decode_nca3_header(raw, keys)
+    rights = header[0x230:0x240]
+    generation = max(header[0x206], header[0x220])
+    sections = []
+    for i in range(4):
+        start, end = struct.unpack_from("<II", header, 0x240 + i * 16)
+        if start == 0 and end == 0:
+            continue
+        fs_header = header[0x400 + i * 0x200:0x600 + i * 0x200]
+        sections.append({"section": i, "encryption_mode": fs_header[4],
+                         "fs_header_revision": fs_header[:2].hex()})
+    if not any(rights):
+        match = "not-rights-managed"
+        fingerprint = "none"
+    else:
+        identifier = rights.hex()
+        direct = keys.get("titlekey_" + identifier, identifier)
+        reversed_id = rights[::-1].hex()
+        reversed_key = keys.get("titlekey_" + reversed_id, reversed_id)
+        if direct is not None:
+            match = "exact-match" if len(direct) == 16 else "invalid-length"
+        elif reversed_key is not None:
+            match = "byte-reversed-entry-only (not used for decryption)"
+        else:
+            match = "missing"
+        fingerprint = hashlib.sha256(rights).hexdigest()[:16]
+    return {
+        "nca_magic": "NCA3",
+        "header": "plaintext" if plaintext else "encrypted",
+        "header_tweak_endianness": tweak,
+        "rights_id_header_offset": "0x230",
+        "rights_id_fingerprint_sha256_16": fingerprint,
+        "rights_id_key_match": match,
+        "key_generation": generation,
+        "key_area_type": header[0x207],
+        "sections": sections,
+    }
+
+
+def inspect_nca3_entry(analyzer: NSPAnalyzer, index: int, keys: Keyset) -> dict:
+    """Read only the first 3072 bytes, even for multi-gigabyte NCA entries."""
+    entry = analyzer.get(index)
+    if not entry.name.lower().endswith(".nca") or entry.size < 0xC00:
+        raise NativeNCAError("Selected entry is not a complete NCA header.")
+    with analyzer.path.open("rb") as source:
+        source.seek(entry.offset)
+        raw = source.read(0xC00)
+    return inspect_nca3_header(raw, keys)
 
 
 def _u32(data: bytes, offset: int) -> int:
@@ -418,31 +496,7 @@ class NativeNCA:
         if self.entry.size < 0xC00:
             raise NativeNCAError("NCA header is incomplete.")
         raw = self.read_raw(0, 0xC00)
-        if raw[0x200:0x204] == b"NCA3":
-            header = raw
-            self.plaintext = True
-        else:
-            key = self.keys.get("nca_header_key", "header_key")
-            if not key or len(key) != 32:
-                raise NativeNCAError(
-                    "Encrypted NCA detected. GFPAK-OPEN's built-in reader needs a "
-                    "compatible user-supplied keys file; no other app is needed."
-                )
-            header = None
-            for order in ("big", "little"):
-                try:
-                    candidate = b"".join(
-                        _xts(key, raw[i:i + 0x200], i // 0x200, order)
-                        for i in range(0, 0xC00, 0x200)
-                    )
-                except ValueError:
-                    continue
-                if candidate[0x200:0x204] == b"NCA3":
-                    header = candidate
-                    self.header_tweak = order
-                    break
-            if header is None:
-                raise NativeNCAError("The supplied NCA header key could not decode this NCA3 header.")
+        header, self.plaintext, self.header_tweak = decode_nca3_header(raw, self.keys)
         self.header = header
         old_generation, key_type = header[0x206], header[0x207]
         generation = max(old_generation, header[0x220])
