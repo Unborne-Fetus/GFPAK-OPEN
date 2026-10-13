@@ -8,6 +8,7 @@ import {categoryOf,kindOf,fromBlob,openZip,openXci,readPackage,openGfpak,
         inspectNca,openNcaSection,romChildren} from './browser-package-reader.js';
 import {parseHashDictionary} from './gfpak.js';
 import {parseNcaKeys,keyInfo,parseNcaTicket} from './browser-nca-crypto.js';
+import {buildPokedexZip,modelIdentityFromPath,POKEDEX_GAMES,COMPATIBLE_MODEL_SUFFIXES} from './pokedex3d-export.js';
 
 const byId=id=>document.getElementById(id);
 const classSets={
@@ -36,7 +37,8 @@ const state={
   catalog:[],type:'all',dictionary:new Map(),source:null,
   busy:false,scanning:false,scanRevision:0,scanDone:false,selectedRevision:0,
   treeExpanded:new Set(),listPage:0,thumbnailUrl:null,
-  packMeta:null,sourceName:'',keys:new Map(),lastSelection:null
+  packMeta:null,sourceName:'',keys:new Map(),lastSelection:null,zipExporting:false,
+  pokedexButton:null,pokedexGameSelect:null,pokedexHint:null
 };
 const MAX_SCAN=150000;
 const MAX_EXPORT=300*1024*1024;
@@ -302,6 +304,13 @@ async function openInput(files,folder=false){
     const names=state.files.slice(0,100).map(n=>n.name);
     const detected=detectGameFromNames([root.name,...names]);
     const support=gameCapabilities(detected.id);
+    const detectedGame=detected.id==='pla'?'la':detected.id;
+    const chosenGame=document.getElementById('gameSource')?.value;
+    if(state.pokedexGameSelect && POKEDEX_GAMES.includes(chosenGame)){
+      state.pokedexGameSelect.value=chosenGame==='pla'?'la':chosenGame;
+    }else if(state.pokedexGameSelect && POKEDEX_GAMES.includes(detectedGame)){
+      state.pokedexGameSelect.value=detectedGame;
+    }
     byId('assetGameProfile').hidden=false;
     byId('assetGameName').textContent=detected.id==='auto'?'Game unrecognized':detected.name;
     byId('assetGameEngine').textContent=detected.engine||'Unknown engine';
@@ -467,6 +476,17 @@ function select(node){
   byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture';
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
   byId('assetExportPokemon').disabled=!node || !['model','asset package'].includes(node.category);
+  if(state.pokedexButton) {
+    let compatible=!!node && node.children===null && COMPATIBLE_MODEL_SUFFIXES.test(node.name);
+    if(compatible) {
+      try{modelIdentityFromPath(node.path.slice(state.root.path.length+1));}
+      catch{compatible=false;}
+    }
+    state.pokedexButton.disabled=!compatible||state.zipExporting;
+    state.pokedexButton.title=compatible?
+      'Convert original assets without displaying a preview, validate textured geometry and idle animations, then export the Pokédex 3D Max import ZIP.':
+      'Choose a model file with a recognizable pm#### Pokémon ID; raw packages cannot be converted automatically.';
+  }
   byId('assetSaveFile').disabled=!node||(!node.source&&!node.lazySource);
   byId('assetSavePacked').hidden=!node?.packedSource;
   byId('assetSavePacked').disabled=!node?.packedSource;
@@ -533,21 +553,44 @@ function canPreview(node){
     (node.children===null&&node.category==='model'));
 }
 function matchingAssets(model){
-  const family=model.name.match(/pm\d{3,5}(?:_\d{2})?/i)?.[0]?.toLowerCase();
-  const parent=model.parent;
-  const prefix=model.name.replace(/\.[^.]+$/,'').toLowerCase();
+  // Desktop parity: include decoded companions from a selected GFPAK and from
+  // sibling archives, but never merge files explicitly owned by another pm####.
+  const lower=s=>String(s||'').replaceAll('\\','/').toLowerCase();
+  const token=p=>lower(p).match(/(?:^|[/_.-])(pm\d{4})(?=$|[/_.-])/)?.[1]||'';
+  const family=token(model.path);
+  const modelPrefix=model.name.replace(/\.[^.]+$/,'').toLowerCase();
+  let archive=model.parent;
+  while(archive && !['gfpak','zip'].includes(archive.kind))archive=archive.parent;
+  const sameArchive=node=>{
+    let parent=node.parent;
+    while(parent){if(parent===archive)return true;parent=parent.parent;}
+    return false;
+  };
+  const archiveModels=archive?state.files.filter(item=>item.category==='model'&&sameArchive(item)):[];
+  const archiveFamilies=new Set(archiveModels.map(item=>token(item.path)).filter(Boolean));
+  const archiveIsMixed=archiveFamilies.size>1;
+  const immediateModelCount=state.files.filter(item=>
+    item.parent===model.parent && item.category==='model').length;
   const companions=state.files.filter(other=>{
-    if(other===model||(!other.source&&!other.lazySource)||other.children!==null)return false;
-    if(!['model','mesh','texture','skeleton','animation','material','other'].includes(other.category))
+    if(other===model||other.children!==null||(!other.source&&!other.lazySource))return false;
+    if(!['model','mesh','texture','skeleton','animation','material','other','unknown'].includes(other.category))
       return false;
-    const otherName=other.name.toLowerCase();
-    const sibling=other.parent===parent;
-    if(!sibling && !(family&&other.path.toLowerCase().includes(family)))return false;
-    if(sibling && (otherName.startsWith(prefix+'_')||otherName.startsWith(prefix+'.')||
-        otherName==='body.bntx'||otherName==='idle.tranm'||otherName==='body.trmsh'))
-      return true;
-    return !!family&&otherName.includes(family);
-  }).slice(0,90);
+    const otherFamily=token(other.path);
+    if(family&&otherFamily&&otherFamily!==family)return false;
+    const sibling=other.parent===model.parent;
+    const sameFamily=!!family&&otherFamily===family;
+    const filename=other.name.toLowerCase();
+    const modelRelated=filename.startsWith(modelPrefix+'_')||
+      filename.startsWith(modelPrefix+'.');
+    // Export all members of a single-model GFPAK, including unnamed hashes:
+    // skeleton/texture/animation files often have no recognizable extension.
+    const insideArchive=archive&&sameArchive(other);
+    if(insideArchive && (!archiveIsMixed||sameFamily))return true;
+    if(sameFamily)return true;
+    if(sibling&&immediateModelCount===1)return true;
+    if(sibling&&modelRelated)return true;
+    return false;
+  });
   return [model,...companions];
 }
 async function preview(node){
@@ -618,6 +661,67 @@ async function exportAssetPack(node){
     setTimeout(()=>URL.revokeObjectURL(url),30000);
     notice('Exported '+matches.length+' original asset files as ZIP. Use the 3D viewer for GLB export.');
   }catch(e){notice('Asset ZIP failed: '+(e.message||String(e)),true);}
+}
+
+
+async function exportPokedex3dPack(node){
+  if(!node||state.zipExporting)return;
+  const startRoot=state.root;
+  const button=state.pokedexButton;
+  state.zipExporting=true;
+  button.disabled=true;
+  button.textContent='◷ BUILDING POKÉDEX ZIP…';
+  try{
+    const game=state.pokedexGameSelect?.value||'';
+    const matches=matchingAssets(node);
+    if(!matches.length||matches[0]!==node)throw Error('Selected model no longer exists.');
+    const prefix=startRoot.path+'/';
+    const entries=matches.map(asset=>{
+      const path=asset.path.startsWith(prefix)?asset.path.slice(prefix.length):asset.path;
+      return {
+        path,size:asset.size,
+        linkedKind:asset.category,
+        getBytes:async()=>{
+          if(state.root!==startRoot)throw Error('Game source changed during Pokémon export.');
+          const source=await ensureSource(asset);
+          if(source.size>256*1024*1024)
+            throw Error('A companion file exceeds the 256 MiB in-browser decoder limit: '+asset.name);
+          const bytes=await source.read(0,source.size);
+          return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+        },
+        getText:async()=>{
+          const src=await ensureSource(asset);
+          if(src.size>16*1024*1024)throw Error('Text resource is too large');
+          return new TextDecoder().decode(await src.read(0,src.size));
+        }
+      };
+    });
+    const selected=node.path.slice(prefix.length);
+    const project={
+      label:state.sourceName||startRoot.name,
+      items:entries,
+      models:entries.filter(item=>COMPATIBLE_MODEL_SUFFIXES.test(item.path))
+    };
+    const {blob,report}=await buildPokedexZip(project,selected,game,
+      message=>notice('Pokédex ZIP · '+message));
+    if(state.root!==startRoot)throw Error('Game source changed during Pokémon export.');
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download=node.name.replace(/\.[^.]+$/,'')+'-pokedex3d.zip';
+    document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    notice('Pokédex 3D Max ZIP exported: '+report.meshCount+' meshes, '+
+      report.textureCount+' embedded textures, '+report.animations.length+
+      ' animation clips (idle: '+report.idle+'). No preview or render required.');
+  }catch(error){
+    notice('Pokédex 3D Max ZIP could not be exported: '+
+      (error.message||String(error))+
+      ' Raw Asset ZIP remains available for source-file backups.',true);
+  }finally{
+    state.zipExporting=false;
+    button.textContent='↓ EXPORT POKÉDEX 3D MAX ZIP';
+    if(state.root===startRoot)select(state.selected);
+  }
 }
 
 async function saveSourceToDisk(node,source,fileName){
@@ -830,6 +934,39 @@ function install(){
   byId('nspAudit').hidden=true;byId('nxMenuHash').hidden=true;
   byId('nxMenuLinkFolder').hidden=true;byId('assetExportPokemon').hidden=false;
   byId('assetExportPokemon').textContent='↓ EXPORT RAW ASSET ZIP';
+  const gameLabel=document.createElement('label');
+  gameLabel.className='input-label';
+  gameLabel.textContent='SOURCE GAME FOR POKÉDEX 3D MAX';
+  const gameSelect=document.createElement('select');
+  gameSelect.id='pokedexExportGame';
+  gameSelect.className='field';gameSelect.setAttribute('aria-label','Source game for Pokédex 3D Max ZIP');
+  const games=[
+    ['', 'Choose game to build compatible ZIP…'],
+    ['lgpe',"Let's Go Pikachu / Eevee"],
+    ['swsh','Sword / Shield'],
+    ['bdsp','Brilliant Diamond / Shining Pearl'],
+    ['la','Legends: Arceus'],
+    ['sv','Scarlet / Violet'],
+    ['za','Legends: Z-A']
+  ];
+  for(const [value,label] of games){
+    const option=document.createElement('option');
+    option.value=value;option.textContent=label;gameSelect.append(option);
+  }
+  state.pokedexGameSelect=gameSelect;
+  const pokedexButton=document.createElement('button');
+  pokedexButton.type='button';
+  pokedexButton.id='assetExportPokedex3d';
+  pokedexButton.className='button button-primary';
+  pokedexButton.textContent='↓ EXPORT POKÉDEX 3D MAX ZIP';
+  pokedexButton.disabled=true;
+  pokedexButton.addEventListener('click',()=>void exportPokedex3dPack(state.selected));
+  state.pokedexButton=pokedexButton;
+  const hint=document.createElement('p');
+  hint.className='helper-copy';
+  hint.textContent='Raw Asset ZIP: original files only, never renders. Pokédex ZIP: builds a real GLB in memory without opening a preview; it requires embedded textures and a usable idle animation.';
+  state.pokedexHint=hint;
+  byId('assetExportPokemon').after(gameLabel,gameSelect,pokedexButton,hint);
   const input=document.createElement('input');input.type='file';input.multiple=true;input.hidden=true;
   input.accept='.nsp,.nsz,.xci,.xcz,.ncz,.zip,.gfpak,.nca,.glb,.gltf,.trmdl,.gfbmdl,.bntx';
   const folderInput=document.createElement('input');folderInput.type='file';
