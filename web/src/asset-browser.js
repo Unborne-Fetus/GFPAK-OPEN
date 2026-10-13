@@ -360,7 +360,7 @@ async function startNSPTask(kind, row) {
 async function refreshNCAReader() {
   if (!api?.browse_nca_settings) return;
   try {
-    const state = await api.browse_nca_settings();
+    const state = await api.browse_refresh_keys();
     const keyset = state.keyset || 'No keys file selected';
     id('ncaReaderStatus').textContent =
       '✓ Self-contained NCA / RomFS / ExeFS reader · ' + keyset +
@@ -389,10 +389,10 @@ function invalidateNCASections() {
 
 async function selectNCASetting(kind) {
   try {
-    await api.browse_nca_select(kind);
-    invalidateNCASections();
+    await api.browse_open_keys_folder();
+    showNotice('Place your own prod.keys in the opened keys folder. GFPAK will detect it when you return.');
+    // Refresh when the desktop window regains focus after a file is dropped.
     await refreshNCAReader();
-    showNotice('Local keys file selected. Expand an NCA to browse its real sections inside GFPAK-OPEN.');
   } catch (error) { showNotice(error.message || String(error), true); }
 }
 
@@ -1384,6 +1384,14 @@ function initialize() {
   id('assetAttachNCA').addEventListener('click', nxAttachToSelectedNCA);
   id('assetAttachBaseNCA').addEventListener('click', nxAttachBaseNCA);
   id('ncaSelectKeyset').addEventListener('click', () => selectNCASetting('keyset'));
+  window.addEventListener('focus', () => {
+    if (!id('assetBrowser').hidden) {
+      api.browse_refresh_keys().then(() => {
+        invalidateNCASections();
+        return refreshNCAReader();
+      }).catch(error => showNotice(String(error.message || error), true));
+    }
+  });
   id('assetOpenFile').addEventListener('click', () => openSource('file'));
   void restoreSource();
   id('assetBack').addEventListener('click', () => {
