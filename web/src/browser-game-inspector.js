@@ -162,7 +162,7 @@ async function expandGfpak(node){
     if(node.size>256*1024*1024)throw Error('Nested GFPAK too large to materialize in browser');
     blob=new Blob([await node.source.read(0,node.size)]);
   }
-  await addRows(node,await openGfpak(blob,state.dictionary));
+  await addRows(node,await openGfpak(blob,state.dictionary,node.name));
   node.metadata.format='GFLXPACK';
 }
 async function lookupLocalPackageTicket(identifier) {
@@ -474,7 +474,7 @@ function select(node){
   byId('assetSelectedInfo').textContent=node?
     (labelFor(node.category)+' · '+sizeOf(node.size)+(node.error?' · '+node.error:'')) :
     'Select a file to inspect its details.';
-  byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture'||state.busy;
+  byId('assetPreview').disabled=(!canPreview(node)&&node?.category!=='texture')||(state.busy&&!state.scanning);
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
   byId('assetExportPokemon').disabled=!node || !['model','asset package'].includes(node.category);
   if(state.pokedexButton) {
@@ -562,7 +562,16 @@ function matchingAssets(model){
   return browserModelAssetMatches(model,state.files);
 }
 async function preview(node){
-  if(!node||state.busy||state.zipExporting)return;
+  if(!node||state.zipExporting)return;
+  // A full 6+ GiB NCA scan can continue indefinitely. The user must be able
+  // to preview an already-discovered model without waiting for it to finish.
+  if(state.scanning){
+    state.scanRevision++;state.scanning=false;state.busy=false;
+    byId('assetScan').textContent='⌕ Locate assets';
+    byId('assetScanSummary').textContent=
+      'Scan paused for 3D preview. Previously indexed files remain available.';
+  }
+  if(state.busy)return;
   if(node.kind!=='gfpak'&&node.category!=='model'&&
      node.category!=='texture'&&node.category!=='mesh')return;
   const root=state.root;
