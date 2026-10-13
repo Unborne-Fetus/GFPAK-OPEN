@@ -11,12 +11,132 @@ DESCRIPTORS = {'.trmdl', '.gfbmdl', '.trmsh', '.trmtr', '.trmmt', '.trskl',
 MAX_DESCRIPTOR = 16 * 1024 * 1024
 
 
+def _native_model_type(data):
+    """Identify actual Trinity/GFBMDL FlatBuffers structures, not hash guesses.
+
+    This check is intentionally stricter than a valid FlatBuffers vtable:
+    GFBMDL needs a mesh with vertex attributes, geometry bytes and polygons;
+    TRMDL needs an actual .trmsh reference. A standalone model does not need
+    the Trinity three-file hash family to be recognized.
+    """
+    if len(data) < 32:
+        return None
+
+    def u16(at):
+        if at < 0 or at + 2 > len(data):
+            raise ValueError("outside data")
+        return struct.unpack_from("<H", data, at)[0]
+
+    def u32(at):
+        if at < 0 or at + 4 > len(data):
+            raise ValueError("outside data")
+        return struct.unpack_from("<I", data, at)[0]
+
+    def i32(at):
+        if at < 0 or at + 4 > len(data):
+            raise ValueError("outside data")
+        return struct.unpack_from("<i", data, at)[0]
+
+    def table(at):
+        if at < 4 or at + 4 > len(data):
+            raise ValueError("invalid table")
+        vt = at - i32(at)
+        if vt < 4 or vt >= at:
+            raise ValueError("invalid vtable")
+        length, obj = u16(vt), u16(vt + 2)
+        if (length < 4 or length > 1024 or length & 1 or obj < 4 or
+                obj > 65535 or vt + length > len(data) or at + obj > len(data)):
+            raise ValueError("invalid table bounds")
+        return at, vt, length, obj
+
+    def field(tab, slot):
+        at, vt, length, obj = tab
+        index = 4 + slot * 2
+        offset = u16(vt + index) if index < length else 0
+        if offset and not 4 <= offset < obj:
+            raise ValueError("invalid field")
+        return at + offset if offset else None
+
+    def ptr(at):
+        if at is None:
+            raise ValueError("missing pointer")
+        result = at + u32(at)
+        if result <= at or result + 4 > len(data):
+            raise ValueError("invalid pointer")
+        return result
+
+    def entries(tab, slot, limit):
+        at = field(tab, slot)
+        if at is None:
+            return []
+        vec = ptr(at)
+        count = u32(vec)
+        if not 0 < count <= limit or vec + 4 + count * 4 > len(data):
+            raise ValueError("invalid vector")
+        return [table(ptr(vec + 4 + index * 4)) for index in range(count)]
+
+    def string(tab, slot):
+        at = field(tab, slot)
+        if at is None:
+            return ""
+        start = ptr(at)
+        length = u32(start)
+        if not 0 < length <= 512 or start + 4 + length >= len(data):
+            raise ValueError("invalid string")
+        value = data[start + 4:start + 4 + length]
+        decoded = value.decode("utf-8")
+        if not decoded.isprintable() or data[start + 4 + length] != 0:
+            raise ValueError("invalid string")
+        return decoded
+
+    try:
+        root = table(u32(0))
+        # Trinity models contain a list of independently named .trmsh files
+        # in root slot 1. Do not require their hashes to share a basename.
+        try:
+            models = entries(root, 1, 512)
+            refs = [string(entry, 0).lower() for entry in models]
+            if refs and all(ref.endswith(".trmsh") for ref in refs):
+                return ".trmdl"
+        except (ValueError, struct.error, UnicodeError):
+            pass
+
+        # Sword/Shield and Let's Go store actual vertex geometry in GFBMDL.
+        # Root slot 8 references mesh tables, each of which contains polygon,
+        # vertex declaration and vertex byte vectors (slots 0, 1, 2).
+        meshes = entries(root, 8, 10000)
+        mesh = meshes[0]
+        attributes = entries(mesh, 1, 64)
+        if not attributes:
+            return None
+        polygons = entries(mesh, 0, 4096)
+        if not polygons:
+            return None
+        geom_at = field(mesh, 2)
+        geom = ptr(geom_at)
+        nbytes = u32(geom)
+        if not 12 <= nbytes <= 450 * 1024 * 1024:
+            return None
+        # Large model resources may be examined through only a prefix.
+        # Requiring an attribute table and polygon prevents data-only guesses.
+        if not any(field(attr, 0) is not None and
+                   field(attr, 1) is not None and field(attr, 2) is not None
+                   for attr in attributes):
+            return None
+        return ".gfbmdl"
+    except (ValueError, struct.error, UnicodeError):
+        return None
+
+
 def content_extension(data):
     """Signatures identify formats, never an original filename or species."""
     for magic, extension in ((b'BNTX', '.bntx'), (b'DDS ', '.dds'),
                              (b'\x89PNG\r\n\x1a\n', '.png')):
         if data.startswith(magic):
             return extension
+    model_extension = _native_model_type(data)
+    if model_extension:
+        return model_extension
     # Native animation FlatBuffers have no magic. Require playback info,
     # bounded bone vectors, valid strings and supported channel union tables.
     def read(fmt, at):
@@ -107,6 +227,12 @@ def discover_resource_names(archive, initial):
     families = {pokemon_id(name) for name in names.values()
                 if Path(name).suffix.lower() in {".trmdl", ".gfbmdl"}} - {""}
     family = next(iter(families)) + "_" if len(families) == 1 else ""
+    if not family:
+        # The RomFS archive basename provides a display label, not proof
+        # of a resource type. Type still comes from decoded model structure.
+        origin = pokemon_id(getattr(getattr(archive, "source", None), "stem", ""))
+        if origin:
+            family = origin + "_"
     hashes = {}
     for resource in archive.resources:
         for value in (resource.path_hash, resource.file_hash):
