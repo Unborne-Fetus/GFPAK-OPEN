@@ -201,25 +201,45 @@ TICKET_BODY_OFFSETS = {
 }
 
 
-def _parse_common_ticket(raw: bytes) -> dict | None:
-    """Inspect the bounded header of a ticket without exporting its secrets."""
+def _inspect_ticket(raw: bytes) -> tuple[dict | None, str]:
+    """Parse bounded ticket fields, with a safe failure reason for diagnostics.
+
+    Signature type is seen in both byte orders in ticket producers. Never
+    interpret one without checking the known signature IDs and body bounds.
+    """
     if len(raw) < 4:
-        return None
-    body = TICKET_BODY_OFFSETS.get(int.from_bytes(raw[:4], "big"))
-    if body is None or len(raw) < body + 0x170:
-        return None
+        return None, "too-short-for-signature"
+    signature = raw[:4]
+    sig_big = int.from_bytes(signature, "big")
+    sig_little = int.from_bytes(signature, "little")
+    if sig_big in TICKET_BODY_OFFSETS:
+        body, byte_order = TICKET_BODY_OFFSETS[sig_big], "big"
+    elif sig_little in TICKET_BODY_OFFSETS:
+        body, byte_order = TICKET_BODY_OFFSETS[sig_little], "little"
+    else:
+        return None, "unrecognized-signature-type"
+    if len(raw) < body + 0x170:
+        return None, "truncated-ticket-data"
     key_type = raw[body + 0x141]
     if key_type not in (0, 1):
-        return None
+        return None, "unsupported-title-key-type"
     rights = raw[body + 0x160:body + 0x170]
     if not any(rights):
-        return None
+        return None, "missing-rights-id"
     return {
         "rights_id": rights,
         "key_type": key_type,
         "generation": raw[body + 0x145],
+        "ticket_version": raw[body + 0x140],
+        "signature_byte_order": byte_order,
         "encrypted_key": raw[body + 0x40:body + 0x50] if key_type == 0 else None,
-    }
+    }, "ok"
+
+
+def _parse_common_ticket(raw: bytes) -> dict | None:
+    """Keep matching and diagnostic parsing on exactly the same code path."""
+    ticket, _reason = _inspect_ticket(raw)
+    return ticket
 
 
 def _matching_package_ticket(analyzer: NSPAnalyzer, rights: bytes) -> tuple[dict | None, int]:
@@ -254,6 +274,8 @@ def inspect_package_tickets(analyzer: NSPAnalyzer, rights: bytes) -> dict:
         "tickets_checked": 0,
         "parsed_tickets": 0,
         "unreadable_or_unsupported_tickets": 0,
+        "parse_failure_reasons": {},
+        "signature_byte_orders": {"big": 0, "little": 0},
         "exact_rights_matches": 0,
         "same_rights_prefix_different_generation": 0,
         "other_rights_ids": 0,
@@ -268,13 +290,18 @@ def inspect_package_tickets(analyzer: NSPAnalyzer, rights: bytes) -> dict:
             result["tickets_checked"] += 1
             if not 0x1B0 <= entry.size <= 1024 * 1024:
                 result["unreadable_or_unsupported_tickets"] += 1
+                failures = result["parse_failure_reasons"]
+                failures["invalid-ticket-size"] = failures.get("invalid-ticket-size", 0) + 1
                 continue
             source.seek(entry.offset)
-            ticket = _parse_common_ticket(source.read(min(entry.size, 0x500)))
+            ticket, reason = _inspect_ticket(source.read(min(entry.size, 0x500)))
             if ticket is None:
                 result["unreadable_or_unsupported_tickets"] += 1
+                failures = result["parse_failure_reasons"]
+                failures[reason] = failures.get(reason, 0) + 1
                 continue
             result["parsed_tickets"] += 1
+            result["signature_byte_orders"][ticket["signature_byte_order"]] += 1
             if ticket["rights_id"] == rights:
                 result["exact_rights_matches"] += 1
                 result["matching_ticket_type"] = (
