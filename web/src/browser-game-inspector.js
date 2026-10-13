@@ -9,6 +9,7 @@ import {categoryOf,kindOf,fromBlob,openZip,openXci,readPackage,openGfpak,
 import {parseHashDictionary} from './gfpak.js';
 import {parseNcaKeys,keyInfo,parseNcaTicket} from './browser-nca-crypto.js';
 import {buildPokedexZip,modelIdentityFromPath,POKEDEX_GAMES,COMPATIBLE_MODEL_SUFFIXES} from './pokedex3d-export.js';
+import {browserModelAssetMatches,browserNativeProject} from './browser-native-project.js';
 
 const byId=id=>document.getElementById(id);
 const classSets={
@@ -473,7 +474,7 @@ function select(node){
   byId('assetSelectedInfo').textContent=node?
     (labelFor(node.category)+' · '+sizeOf(node.size)+(node.error?' · '+node.error:'')) :
     'Select a file to inspect its details.';
-  byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture';
+  byId('assetPreview').disabled=!canPreview(node)&&node?.category!=='texture'||state.busy;
   byId('assetPreview').textContent=node?.category==='texture'?'▧ View texture':'◈ Preview in 3D';
   byId('assetExportPokemon').disabled=!node || !['model','asset package'].includes(node.category);
   if(state.pokedexButton) {
@@ -554,92 +555,80 @@ function hexDump(bytes,offset){
 }
 function canPreview(node){
   return !!node&&(node.kind==='gfpak'||
-    (node.children===null&&node.category==='model'));
+    (node.children===null&&(node.category==='model'||
+      (node.category==='mesh'&&/\.trmsh$/i.test(node.name)))));
 }
 function matchingAssets(model){
-  // Desktop parity: include decoded companions from a selected GFPAK and from
-  // sibling archives, but never merge files explicitly owned by another pm####.
-  const lower=s=>String(s||'').replaceAll('\\','/').toLowerCase();
-  const token=p=>lower(p).match(/(?:^|[/_.-])(pm\d{4})(?=$|[/_.-])/)?.[1]||'';
-  const family=token(model.path);
-  const modelPrefix=model.name.replace(/\.[^.]+$/,'').toLowerCase();
-  let archive=model.parent;
-  while(archive && !['gfpak','zip'].includes(archive.kind))archive=archive.parent;
-  const sameArchive=node=>{
-    let parent=node.parent;
-    while(parent){if(parent===archive)return true;parent=parent.parent;}
-    return false;
-  };
-  const archiveModels=archive?state.files.filter(item=>item.category==='model'&&sameArchive(item)):[];
-  const archiveFamilies=new Set(archiveModels.map(item=>token(item.path)).filter(Boolean));
-  const archiveIsMixed=archiveFamilies.size>1;
-  const immediateModelCount=state.files.filter(item=>
-    item.parent===model.parent && item.category==='model').length;
-  const companions=state.files.filter(other=>{
-    if(other===model||other.children!==null||(!other.source&&!other.lazySource))return false;
-    if(!['model','mesh','texture','skeleton','animation','material','other','unknown'].includes(other.category))
-      return false;
-    const otherFamily=token(other.path);
-    if(family&&otherFamily&&otherFamily!==family)return false;
-    const sibling=other.parent===model.parent;
-    const sameFamily=!!family&&otherFamily===family;
-    const filename=other.name.toLowerCase();
-    const modelRelated=filename.startsWith(modelPrefix+'_')||
-      filename.startsWith(modelPrefix+'.');
-    // Export all members of a single-model GFPAK, including unnamed hashes:
-    // skeleton/texture/animation files often have no recognizable extension.
-    const insideArchive=archive&&sameArchive(other);
-    if(insideArchive && (!archiveIsMixed||sameFamily))return true;
-    if(sameFamily)return true;
-    if(sibling&&immediateModelCount===1)return true;
-    if(sibling&&modelRelated)return true;
-    return false;
-  });
-  return [model,...companions];
+  return browserModelAssetMatches(model,state.files);
 }
 async function preview(node){
-  if(!node)return;
-  if(node.kind!=='gfpak'&&node.category!=='model'&&node.category!=='texture')return;
+  if(!node||state.busy||state.zipExporting)return;
+  if(node.kind!=='gfpak'&&node.category!=='model'&&
+     node.category!=='texture'&&node.category!=='mesh')return;
+  const root=state.root;
+  const button=byId('assetPreview');
+  button.disabled=true;
+  const originalText=button.textContent;
   try{
-    await ensureSource(node);
     if(node.kind==='gfpak'){
-      if(node.size>MAX_EXPORT)throw Error('This GFPAK exceeds browser preview memory cap');
-      const source=await node.source.read(0,node.size);
-      const file=new File([source],node.name);
-      window.dispatchEvent(new CustomEvent('gfpak-native-model',{detail:file}));
-      byId('tabArchive').click();
-      notice('Opening GFPAK in the existing archive inspector.');return;
+      notice('Finding models and related resources inside '+node.name+'…');
+      await expand(node);
+      const models=state.files.filter(item=>{
+        if(item.category!=='model' || item.children!==null)return false;
+        let cursor=item.parent;
+        while(cursor){if(cursor===node)return true;cursor=cursor.parent;}
+        return false;
+      });
+      if(!models.length)throw Error('No verified model was found in this GFPAK. Try loading a filename-hash dictionary, or inspect the archive for unsupported compression.');
+      if(models.length!==1){
+        await go(node);
+        notice('This GFPAK contains '+models.length+' models. Select the desired TRMDL/GFBMDL resource and click Preview in 3D.');
+        return;
+      }
+      node=models[0];
+      select(node);
     }
     if(node.category==='texture'){
-      if(node.size>MAX_EXPORT)throw Error('Texture exceeds preview memory cap');
-      const bytes=await node.source.read(0,node.size);
+      const source=await ensureSource(node);
+      if(source.size>MAX_EXPORT)throw Error('Texture exceeds browser preview memory cap');
+      const bytes=await source.read(0,source.size);
       window.dispatchEvent(new CustomEvent('gfpak-browser-texture',{
         detail:{name:node.name,bytes}
       }));
-      notice('Texture sent to the web viewer.');
-      return;
+      byId('tabViewer').click();
+      notice('Opening decoded texture in the web viewer.');return;
     }
-    const matched=matchingAssets(node);
-    const total=matched.reduce((n,v)=>n+v.size,0);
-    if(total>MAX_EXPORT)throw Error('Model and companion files exceed the 300 MiB browser preview limit');
-    if(matched.length===1){
-      const raw=await node.source.read(0,node.size);
-      const file=new File([raw],node.name);
-      window.dispatchEvent(new CustomEvent('gfpak-native-model',{detail:file}));
-    }else{
-      const zip=new JSZip();
-      for(const asset of matched){
-        const relative=asset.path.slice(state.root.path.length+1);
-        const source=await ensureSource(asset);
-        zip.file(relative,await source.read(0,asset.size));
-      }
-      const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
-      const file=new File([blob],'browser-preview.zip',{type:'application/zip'});
-      window.dispatchEvent(new CustomEvent('gfpak-native-model',{detail:file}));
-    }
-    byId('tabViewer').click();
-    notice('Opening '+node.name+' in 3D · '+(matched.length-1)+' linked companions.');
-  }catch(e){notice('Preview could not start: '+(e.message||String(e)),true);}
+    if(node.category==='mesh' && !/\.trmsh$/i.test(node.name))
+      throw Error('This resource is a companion, not a standalone previewable model.');
+    const matches=matchingAssets(node);
+    const {project,selected}=browserNativeProject(node,matches,root,ensureSource);
+    if(root!==state.root)throw Error('Game source changed during preview setup.');
+    const game=state.pokedexGameSelect?.value||byId('gameSource')?.value||'auto';
+    notice('Preparing 3D preview of '+node.name+' with '+(project.items.length-1)+
+      ' associated assets. No intermediate ZIP is needed.');
+    // Bridge the local Blob-backed asset readers directly to the common
+    // GFBMDL/TRMDL/Three.js pipeline already used by the EXE. The desktop
+    // fixes for skinning, UV seams, texture selection, LOD and clips apply.
+    const result=await new Promise((resolve,reject)=>{
+      let settled=false;
+      const finish=(success,reason)=>{
+        if(settled)return;
+        settled=true;
+        success?resolve(true):reject(new Error(reason||'Model decoder rejected the source'));
+      };
+      window.dispatchEvent(new CustomEvent('gfpak-browser-native-preview',{
+        detail:{project,selected,sourceGame:game,finish}
+      }));
+      if(!window.gfpakBrowserNativePreviewAvailable)
+        finish(false,'Browser 3D preview is not available in this build.');
+    });
+    if(root===state.root && result)notice('Opened '+node.name+' in 3D. Native textures and animations are associated automatically when readable.');
+  }catch(error){
+    notice('3D preview unavailable: '+(error.message||String(error)),true);
+  }finally{
+    button.textContent=originalText;
+    button.disabled=!canPreview(state.selected)&&state.selected?.category!=='texture';
+  }
 }
 function rawArchiveMembers(archive) {
   const members=[];
