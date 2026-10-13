@@ -27,7 +27,7 @@ test('Export Pokémon button downloads original source assets in one ZIP',async(
   expect(new TextDecoder().decode(glb.slice(0,4))).toBe('glTF');
 });
 
-test('desktop explorer export prepares a native preview and sends GLB plus metadata to the ZIP writer',async({page})=>{
+test('desktop raw ZIP bypasses preview while Pokédex export still produces a GLB',async({page})=>{
   const assets=makeTrinityTriangle();
   const items=Object.entries(assets).map(([path,bytes],i)=>({path,size:bytes.length,url:'/__quick_asset/export/'+i}));
   await page.addInitScript(items=>{
@@ -41,7 +41,8 @@ test('desktop explorer export prepares a native preview and sends GLB plus metad
       browse_scan_status:async()=>({running:false,result:null}),
       browse_fast_preview:async()=>({label:'pokemon',selected:'models/test.trmdl',items}),
       browse_export_pokemon:async(id,glb,metadata)=>{
-        window.exports.push({id,magic:atob(glb).slice(0,4),metadata});return 'pokemon.zip';
+        window.exports.push({id,magic:glb ? atob(glb).slice(0,4) : null,
+          metadata:metadata || null});return 'pokemon.zip';
       }
     }};
   },items);
@@ -52,11 +53,17 @@ test('desktop explorer export prepares a native preview and sends GLB plus metad
   await page.locator('#tabAssets').click();
   await page.locator('#assetOpenFolder').click();
   await page.locator('#assetRows tr').first().click();
+  // Raw assets must export without ever asking the 3D decoder to render.
   await page.locator('#assetExportPokemon').click();
   await expect.poll(()=>page.evaluate(()=>window.exports.length)).toBe(1);
-  expect(await page.evaluate(()=>window.exports[0])).toMatchObject({id:'model',magic:'glTF',
-    metadata:{selectedModel:'models/test.trmdl',sourceGame:'la',convertedModel:'pokedex3d/regular.glb'}});
-  // The viewer action uses the same native ZIP writer for the same loaded model.
-  await page.locator('#exportPokemonButton').click();
+  expect(await page.evaluate(()=>window.exports[0])).toEqual({
+    id:'model',magic:null,metadata:null});
+  // Compatible exports still need a real decoded mesh and GLB metadata.
+  await page.locator('#assetExportPokedex3d').click();
   await expect.poll(()=>page.evaluate(()=>window.exports.length)).toBe(2);
+  expect(await page.evaluate(()=>window.exports[1])).toMatchObject({id:'model',magic:'glTF',
+    metadata:{selectedModel:'models/test.trmdl',sourceGame:'la',convertedModel:'pokedex3d/regular.glb'}});
+  // The viewer export uses the same GLB ZIP writer.
+  await page.locator('#exportPokemonButton').click();
+  await expect.poll(()=>page.evaluate(()=>window.exports.length)).toBe(3);
 });
