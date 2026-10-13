@@ -46,23 +46,26 @@ def _crypto():
 class Keyset:
     """A locally chosen keys text file. Values never leave the Python process."""
 
-    def __init__(self, path: str | Path | None):
+    def __init__(self, path: str | Path | None, title_path: str | Path | None = None):
         self._keys = {}
-        if not path:
-            return
-        file = Path(path)
-        if not file.is_file() or file.stat().st_size > 1024 * 1024:
-            raise NativeNCAError("The selected local keys file is missing or too large.")
-        for line in file.read_text(encoding="utf-8-sig", errors="replace").splitlines():
-            match = KEY_PATTERN.match(line)
-            if not match:
+        # Load locally provided production and title keys together; no key data
+        # leaves this process or gets written to settings/logs.
+        for source in (path, title_path):
+            if not source:
                 continue
-            name, value = match.groups()
-            if len(value) in (32, 64):
-                try:
-                    self._keys[name.lower()] = bytes.fromhex(value)
-                except ValueError:
+            file = Path(source)
+            if not file.is_file() or file.stat().st_size > 1024 * 1024:
+                raise NativeNCAError("A selected local keys file is missing or too large.")
+            for line in file.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+                match = KEY_PATTERN.match(line)
+                if not match:
                     continue
+                name, value = match.groups()
+                if len(value) in (32, 64):
+                    try:
+                        self._keys[name.lower()] = bytes.fromhex(value)
+                    except ValueError:
+                        continue
 
     def get(self, *names: str) -> bytes | None:
         for name in names:
