@@ -874,8 +874,65 @@ async function openFastDesktopPreview(detail) {
   }
 }
 
+/** Reuse the EXE's exact GFBMDL/Trinity/Three.js decoder with browser-file
+ * sources. This is an actual preview, not an archive-inspector handoff.
+ * Source model bytes and companion files stay local, loaded on demand.
+ */
+async function openBrowserNativePreview(detail) {
+  const finished=typeof detail?.finish==='function'?detail.finish:()=>{};
+  if(state.busy||!state.stage){
+    finished(false,'The 3D viewer is busy or WebGL is unavailable.');return;
+  }
+  const {project,selected,sourceGame}=detail||{};
+  if(!selected||!project?.items?.length ||
+     !project.items.some(item=>item.path===selected)){
+    finished(false,'The model and native asset bundle are incomplete.');return;
+  }
+  busy(true,'Previewing native 3D model','Decoding selected geometry, skeleton and associated materials…');
+  let loaded=null;
+  try{
+    if(['lgpe','swsh','bdsp','pla','la','sv','za'].includes(sourceGame)&&
+       el('gameSource').value==='auto'){
+      el('gameSource').value=sourceGame==='la'?'pla':sourceGame;
+      updateGameProfile();
+    }
+    // The fast mode exposes geometry immediately. The EXE's shared
+    // postLoad pipeline then applies textures, material layers, rigged
+    // animation clips, visibility, and detail-preserving texture sampling.
+    loaded=await loadModel(project,selected,message=>log(message),{fastPreview:true});
+    state.project=project;
+    state.exportProject=project;
+    state.desktopSource=false;
+    state.archive=null;
+    populateTextureSelect(project);
+    displayNativeGuidance(project.items.map(item=>item.path));
+    el('modelChoice').hidden=!project.models?.length;
+    el('modelFilter').value='';
+    filterModels();
+    el('modelSelect').value=selected;
+    setModel(loaded,extension(selected),project.label||'Local game file');
+    loaded=null; // setModel now owns this scene and its resource cleanup.
+    updateSource((project.label||'Local game file')+
+      ' · '+project.items.length+' original model/companion assets');
+    // The browser explorer is a different tab than the WebGL viewport.
+    // Calling the tab click also clears desktop-scoped explorer styling.
+    el('tabViewer').click();
+    log('Opened '+selected+' in 3D using browser-native decoding; '+
+      'applying original textures, rigs and animation clips in the background.','success');
+    finished(true);
+    completeFastPreview(state.loaded);
+  }catch(error){
+    loaded?.disposeAssets?.();
+    errorMessage(error);
+    finished(false,error.message||String(error));
+  }finally{
+    busy(false);
+  }
+}
+
 function start() {
   window.gfpakFastPreviewAvailable = true;
+  window.gfpakBrowserNativePreviewAvailable = true;
   window.gfpakFastTextureAvailable = true;
   window.addEventListener('gfpak-request-pokemon-export', event => {
     exportPokemon().then(()=>event.detail?.finish?.())
@@ -900,6 +957,10 @@ function start() {
   window.addEventListener('gfpak-fast-native-preview', event =>
     openFastDesktopPreview(event.detail).catch(error =>
       event.detail?.finish?.(false, error.message || String(error))
+    ));
+  window.addEventListener('gfpak-browser-native-preview',event =>
+    openBrowserNativePreview(event.detail).catch(error =>
+      event.detail?.finish?.(false,error.message||String(error))
     ));
   window.addEventListener('gfpak-native-model', event => {
     if (event.detail instanceof File) chooseProject([event.detail]);
