@@ -264,13 +264,34 @@ export async function exportGlb(root, animations = []) {
   // GLTF requires an image, so let Three.js read back an RGBA canvas
   // instead of throwing setTextureUtils() during Pokémon ZIP export.
   const exporter = new GLTFExporter().setTextureUtils(WebGLTextureUtils);
-  const result = await exporter.parseAsync(root, {
-    binary: true,
-    onlyVisible: false,
-    animations,
-    trs: true,
-    maxTextureSize: 4096
+  // GLTFExporter serializes geometry colors even when vertexColors is off.
+  // Native Pokémon colors often hold shader masks (0..255), not an albedo
+  // multiplier. Export the attributes actually used by the preview material.
+  const originals = [];
+  root.traverse(mesh => {
+    if (!mesh.isMesh || !mesh.geometry?.getAttribute('color')) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if (materials.some(material => material?.vertexColors)) return;
+    const geometry = mesh.geometry.clone();
+    geometry.deleteAttribute('color');
+    originals.push([mesh, mesh.geometry, geometry]);
+    mesh.geometry = geometry;
   });
+  let result;
+  try {
+    result = await exporter.parseAsync(root, {
+      binary: true,
+      onlyVisible: false,
+      animations,
+      trs: true,
+      maxTextureSize: 4096
+    });
+  } finally {
+    for (const [mesh, original, temporary] of originals) {
+      mesh.geometry = original;
+      temporary.dispose();
+    }
+  }
   if (!(result instanceof ArrayBuffer)) throw new Error('GLB exporter did not produce binary data');
   const view = new DataView(result);
   if (view.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) throw new Error('Invalid GLB header');
