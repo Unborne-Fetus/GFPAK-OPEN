@@ -12,7 +12,7 @@ import { parseNativeAnimation } from './trinity-animation.js';
 import { animationTracks } from './trinity-model.js';
 import { parseBntx } from './bntx.js';
 import { applyLegacyEyeLayer } from './gfbmdl-eye-layer.js';
-import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire, applyLegacyFireMask } from './gfbmdl-fire.js';
+import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire } from './gfbmdl-fire.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -329,15 +329,6 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
       for (let i = 0; i < model.materials.length; i++) {
         const definition=model.materials[i];
         if(isLegacyFireMask(definition)){
-          const masks=['Mask0Texture','Mask1Texture'].map(sampler=>{
-            const map=definition.maps.find(map=>map.sampler===sampler);
-            const name=model.textureNames[map?.textureIndex];
-            return {name,item:name && findLegacyTexture(name,known)};
-          }).filter(mask=>mask.item);
-          try{
-            await applyLegacyFireMask(definition,materials[i],masks,textureObjects);
-            report('Applied native fire silhouette depth mask.');
-          }catch(error){report('Could not apply fire silhouette mask: '+error.message);}
           continue;
         }
         if(isLegacyFireCore(definition)){
@@ -351,8 +342,14 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
               const name=model.textureNames[map?.textureIndex];
               return {name,item:name && findLegacyTexture(name,known)};
             }).filter(mask=>mask.item);
-            await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks);
-            report('Applied solid native fire palette to '+definition.name+'.');
+            const maskSource=model.materials.find(source=>isLegacyFireMask(source) &&
+              (source.scalars?.MatLinkID ?? 0)===(definition.scalars?.MatLinkID ?? 0));
+            const silhouetteMap=maskSource?.maps.find(map=>map.sampler==='Mask1Texture');
+            const silhouetteName=model.textureNames[silhouetteMap?.textureIndex];
+            const silhouetteItem=silhouetteName && findLegacyTexture(silhouetteName,known);
+            await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks,
+              silhouetteItem ? {name:silhouetteName,item:silhouetteItem} : null);
+            report('Applied native flame outline and palette to '+definition.name+'.');
           }catch(error){report('Could not render native fire: '+error.message);}
           continue;
         }
