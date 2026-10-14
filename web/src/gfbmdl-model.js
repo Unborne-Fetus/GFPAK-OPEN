@@ -11,6 +11,7 @@ import { decodeGfbmdl } from './gfbmdl.js';
 import { parseNativeAnimation } from './trinity-animation.js';
 import { animationTracks } from './trinity-model.js';
 import { parseBntx } from './bntx.js';
+import { applyLegacyEyeLayer } from './gfbmdl-eye-layer.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -321,6 +322,20 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
           materials[i].map = texture;
           materials[i].color.setRGB(1, 1, 1);
           materials[i].needsUpdate = true;
+          const source = model.materials[i];
+          const layer = source.flags?.Layer1Enable && source.maps.find(map =>
+            /^LyCol0Tex$/i.test(map.sampler) && map.textureIndex >= 0 &&
+            map.textureIndex < model.textureNames.length);
+          if (layer) {
+            const name = model.textureNames[layer.textureIndex];
+            const item = findLegacyTexture(name, known);
+            if (item) {
+              const iris = await loadDecodedTexture(item, true, [name]);
+              applyLegacyTextureTransform(iris, legacyTextureTransform(source, 'Layer1'));
+              textureObjects.push(iris);
+              applyLegacyEyeLayer(materials[i], iris, textureObjects, report);
+            } else report('Could not match eye layer ' + name + '.');
+          }
         } catch (error) {
           report('Could not apply texture ' + file.path + ': ' + error.message);
         }
