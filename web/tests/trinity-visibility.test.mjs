@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Builder} from 'flatbuffers';
 import {parseMeshVisibility} from '../src/trinity-visibility.js';
-import {createMaterials,makeMesh} from '../src/trinity-model.js';
-function fixture(type,visible) {
-  const b=new Builder(256),name=b.createString('alternate_mesh');
+import {createMaterials,makeMesh,applyRestVisibility,loadTrinityModel} from '../src/trinity-model.js';
+import {makeTrinityTriangle} from './trinity-fixture.mjs';
+import * as THREE from 'three';
+function fixture(type,visible,shapeName='alternate_mesh') {
+  const b=new Builder(256),name=b.createString(shapeName);
   let keys,values;
   if(type===4) {keys=b.createByteVector([0,38,74]);values=b.createByteVector([2]);}
   b.startObject(2);
@@ -29,4 +31,36 @@ test('native inverted shells honor culling and vertex data is not automatically 
   assert.equal(material.isMeshBasicMaterial,true);
   const mesh=makeMesh({name:'shell',vertices:{count:3,position:new Float32Array(9),color:new Float32Array(12)},indices:new Uint32Array([0,1,2])},material);
   assert.equal(mesh.material.vertexColors,false);
+});
+
+test('authored idle visibility hides alternate shape parts without deleting mesh geometry',()=>{
+  const scene = new THREE.Group();
+  const hidden = new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial());
+  const normal = new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial());
+  hidden.name='Alternate_Wing:feather'; normal.name='Normal_Wing:feather';
+  scene.add(hidden,normal);
+  assert.equal(applyRestVisibility(scene,[
+    {name:'alternate_wing',frames:[0],values:[false]},
+    {name:'Normal_Wing',frames:[0],values:[true]},
+  ]),2);
+  assert.equal(hidden.visible,false);
+  assert.equal(normal.visible,true);
+  assert.equal(hidden.userData.nativeIdleVisibility,true);
+  assert.equal(applyRestVisibility(scene,[{name:'Normal_Wing',frames:[9],values:[false]}]),0);
+  assert.equal(normal.visible,true);
+});
+
+test('Trinity preview honors standalone idle TRACM even with no skeleton/TRANM',async()=>{
+  const files={...makeTrinityTriangle(),
+    'models/defaultwait.tracm': new Uint8Array(fixture(1,false,'Test Pokemon'))};
+  const items=Object.entries(files).map(([path,bytes])=>({
+    path,size:bytes.byteLength,getBytes:async()=>bytes,
+  }));
+  const {root,sourceStats}=await loadTrinityModel({items},
+    'models/test.trmdl',()=>{},{fastPreview:true});
+  const shapes=[];
+  root.traverse(mesh=>{if(mesh.isMesh)shapes.push(mesh);});
+  assert.equal(sourceStats.meshParts,1);
+  assert.equal(shapes.length,1);
+  assert.equal(shapes[0].visible,false);
 });
