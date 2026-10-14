@@ -243,6 +243,10 @@ export function decodeGfbmdl(bytes) {
     return {
       name: reader.string(table, 0) || materialNames[i] || 'Material ' + i,
       renderLayer: reader.integer(table, 2),
+      flags: Object.fromEntries(reader.objects(table, 12, 512).map(value => {
+        const at = reader.field(value, 1);
+        return [reader.string(value, 0), at ? reader.u8(at) !== 0 : false];
+      })),
       scalars: Object.fromEntries(reader.objects(table, 13, 512).map(value => {
         const at = reader.field(value, 1);
         return [reader.string(value, 0), at ? reader.f32(at) : 0];
