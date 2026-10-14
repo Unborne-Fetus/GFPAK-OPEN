@@ -66,3 +66,15 @@ test('slanted eye openings receive a small horizontal gaze correction', async ()
   assert.ok(Math.abs(center[0]-1/3)<1e-6);
   assert.ok(Math.abs(center[1]-19/60)<1e-6);
 });
+
+test('tear-duct gaze nudges move paired eyes in opposite UV directions', async () => {
+  const {nearestEyeOpening}=await import('../src/gfbmdl-eye-layer.js');
+  const pixels=new Uint8Array(20*20*4);pixels.fill(255);
+  for(let y=6;y<14;y++)for(let x=6;x<14;x++)pixels[(y*20+x)*4+3]=0;
+  const neutral=nearestEyeOpening(pixels,20,20,[.5,.5]);
+  const left=nearestEyeOpening(pixels,20,20,[.5,.5],1);
+  const right=nearestEyeOpening(pixels,20,20,[.5,.5],-1);
+  assert.ok(left[0]>neutral[0]);assert.ok(right[0]<neutral[0]);
+  assert.equal(left[1],neutral[1]);assert.equal(right[1],neutral[1]);
+  assert.ok(Math.abs(left[0]-neutral[0]-(neutral[0]-right[0]))<1e-6);
+});
