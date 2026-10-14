@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {configureTextureSampling} from './texture-quality.js';
 
-export function nearestEyeOpening(pixels, width, height, uvCenter) {
+export function nearestEyeOpening(pixels, width, height, uvCenter, inwardDirection = 0) {
   const seen=new Uint8Array(width*height);
   let best=null,bestDistance=Infinity;
   for(let start=0;start<seen.length;start++){
@@ -18,6 +18,9 @@ export function nearestEyeOpening(pixels, width, height, uvCenter) {
     // Slanted eyelids bias the area centroid toward the nose. Move halfway
     // toward the horizontal span's center for a small, neutral gaze correction.
     const center=[(x/queue.length+(minX+maxX+1)/2)/(2*width),y/queue.length/height];
+    // A slight gaze toward the inner eye corner, requested independently
+    // of neutral aperture centering. Scale the nudge with the eye's width.
+    center[0]+=inwardDirection*(maxX-minX+1)/width*.08;
     const distance=center.reduce((sum,v,i)=>{
       const a=((uvCenter[i]%1)+1)%1,d=Math.abs(v-a);return sum+Math.min(d,1-d)**2;
     },0);
@@ -58,7 +61,7 @@ export function centerEyeIris(iris, center, paintedCenter = [.5,.5]) {
 
 // Legacy Pokémon eyes use a transparent eyelid sheet over a separately
 // transformed iris. Bake the combination so exported GLBs retain it too.
-export function applyLegacyEyeLayer(material, iris, created, report = () => {}, uvCenter = [.5,.5]) {
+export function applyLegacyEyeLayer(material, iris, created, report = () => {}, uvCenter = [.5,.5], inwardDirection = 0) {
   const base=material.map;
   if (!base || !iris) return;
   base.updateMatrix(); iris.updateMatrix();
@@ -106,7 +109,7 @@ export function applyLegacyEyeLayer(material, iris, created, report = () => {}, 
       '\nvoid main(){gl_FragColor=texture2D(gfEyeBase,(gfEyeBaseTransform*vec3(gfEyeUV,1.0)).xy);\n#include <colorspace_fragment>\n}';
     renderer.setRenderTarget(target);renderer.render(scene,new THREE.Camera());
     renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
-    const opening=nearestEyeOpening(pixels,width,height,uvCenter);
+    const opening=nearestEyeOpening(pixels,width,height,uvCenter,inwardDirection);
     pass.fragmentShader='varying vec2 gfEyeUV;\n'+declarations+
       '\nvoid main(){gl_FragColor=texture2D(gfEyeIris,gfEyeUV);\n#include <colorspace_fragment>\n}';
     pass.needsUpdate=true;
