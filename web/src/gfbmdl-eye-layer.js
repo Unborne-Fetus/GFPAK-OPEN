@@ -23,12 +23,31 @@ export function nearestEyeOpening(pixels, width, height, uvCenter) {
   return best;
 }
 
-export function centerEyeIris(iris, center) {
+export function irisContentCenter(pixels, width, height) {
+  // Iris sheets may include a large white/transparent margin. Locate the
+  // painted feature instead of assuming that it is at UV (0.5, 0.5).
+  const corners=[0,width-1,(height-1)*width,width*height-1];
+  const background=[0,1,2].map(c=>corners.reduce((sum,i)=>sum+pixels[i*4+c],0)/4);
+  const transparent=corners.every(i=>pixels[i*4+3]<128);
+  let minX=width,minY=height,maxX=-1,maxY=-1;
+  for(let i=0;i<width*height;i++){
+    if(pixels[i*4+3]<128)continue;
+    if(!transparent && !background.some((v,c)=>Math.abs(pixels[i*4+c]-v)>32))continue;
+    const x=i%width,y=Math.floor(i/width);
+    minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+  }
+  return maxX>=minX?[(minX+maxX+1)/(2*width),(minY+maxY+1)/(2*height)]:[.5,.5];
+}
+
+export function centerEyeIris(iris, center, paintedCenter = [.5,.5]) {
   const point=new THREE.Vector2(...center).applyMatrix3(iris.matrix);
   // Move the authored iris center to the eyelid aperture. Integer periods
   // retain the native texture orientation and scale, including mirrored U.
-  for(const [axis,value] of [['x',point.x],['y',point.y]]){
-    const target=Math.floor(value)+.5;
+  for(const [axis,value,index] of [['x',point.x,0],['y',point.y,1]]){
+    const period=Math.floor(value);
+    const wrap=axis==='x'?iris.wrapS:iris.wrapT;
+    const mirrored=wrap===THREE.MirroredRepeatWrapping && Math.abs(period%2)===1;
+    const target=period+(mirrored?1-paintedCenter[index]:paintedCenter[index]);
     iris.offset[axis]+=target-value;
   }
   iris.updateMatrix();
@@ -85,7 +104,12 @@ export function applyLegacyEyeLayer(material, iris, created, report = () => {}, 
     renderer.setRenderTarget(target);renderer.render(scene,new THREE.Camera());
     renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
     const opening=nearestEyeOpening(pixels,width,height,uvCenter);
-    if(opening)centerEyeIris(iris,opening);
+    pass.fragmentShader='varying vec2 gfEyeUV;\n'+declarations+
+      '\nvoid main(){gl_FragColor=texture2D(gfEyeIris,gfEyeUV);\n#include <colorspace_fragment>\n}';
+    pass.needsUpdate=true;
+    renderer.render(scene,new THREE.Camera());
+    renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
+    if(opening)centerEyeIris(iris,opening,irisContentCenter(pixels,width,height));
     pass.fragmentShader=composite;pass.needsUpdate=true;
     renderer.render(scene,new THREE.Camera());
     renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
