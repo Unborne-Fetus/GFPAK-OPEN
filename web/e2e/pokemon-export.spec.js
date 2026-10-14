@@ -74,7 +74,7 @@ test('GLB exporter converts a GPU-compressed Pokémon texture into an embedded P
   const outcome=await page.evaluate(async()=>{
     const {exportGlb}=await import('/GFPAK-OPEN/src/model.js');
     const source=await (await fetch('/GFPAK-OPEN/src/model.js')).text();
-    const THREE=await import(source.match(/import \\* as THREE from ["']([^"']+)["']/)[1]);
+    const THREE=await import(source.match(/import \* as THREE from ["']([^"']+)["']/)[1]);
     // A real BC1/DXT1 block: solid green. This exercises the exporter
     // path that formerly failed with "setTextureUtils() must be called".
     const probe=new THREE.WebGLRenderer({antialias:false});
