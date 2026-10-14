@@ -95,8 +95,10 @@ export function legacyTextureTransform(source, prefix = 'Color') {
   const value = (name, fallback) => Number.isFinite(values[prefix + name])
     ? values[prefix + name] : fallback;
   const u = value('UVScaleU', 1), v = value('UVScaleV', 1);
-  return [u, v, (value('BaseU', 0) + value('UVTranslateU', 0)) * u,
-    (value('BaseV', 0) + value('UVTranslateV', 0)) * v];
+  // Base/translate offsets are already in the scaled texture domain.
+  // Scaling them again selects the mirrored opposite eye in legacy atlases.
+  return [u, v, value('BaseU', 0) + value('UVTranslateU', 0),
+    value('BaseV', 0) + value('UVTranslateV', 0)];
 }
 
 export function applyLegacyTextureTransform(texture, transform) {
