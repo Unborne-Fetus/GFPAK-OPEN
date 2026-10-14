@@ -12,6 +12,7 @@ import { parseNativeAnimation } from './trinity-animation.js';
 import { animationTracks } from './trinity-model.js';
 import { parseBntx } from './bntx.js';
 import { applyLegacyEyeLayer } from './gfbmdl-eye-layer.js';
+import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire } from './gfbmdl-fire.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -275,6 +276,11 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
       side: THREE.DoubleSide,
     });
     material.name = source.name || 'GFBMDL Material ' + i;
+    if (isLegacyFireMask(source)) {
+      // This is an auxiliary effect mask, not a visible grey flame shell.
+      material.transparent=true;material.opacity=0;
+      material.depthWrite=false;material.colorWrite=false;
+    }
     return material;
   });
   const rig = buildLegacyRig(root, model.bones);
@@ -318,6 +324,19 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
         }
         const renderTextures = async () => {
       for (let i = 0; i < model.materials.length; i++) {
+        const definition=model.materials[i];
+        if(isLegacyFireMask(definition))continue;
+        if(isLegacyFireCore(definition)){
+          const map=definition.maps.find(map=>map.sampler==='LerpTex');
+          const name=model.textureNames[map?.textureIndex];
+          const item=name && findLegacyTexture(name,known);
+          try{
+            if(!item)throw new Error('Missing native flame gradient '+name);
+            await applyLegacyFire(definition,materials[i],item,name,textureObjects);
+            report('Applied native red/yellow fire palette to '+definition.name+'.');
+          }catch(error){report('Could not render native fire: '+error.message);}
+          continue;
+        }
         const match = chooseMap(model.textureNames, model.materials[i]);
         if (!match) continue;
         const referencedName = model.textureNames[match.textureIndex];
