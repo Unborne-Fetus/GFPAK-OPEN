@@ -110,6 +110,18 @@ export function applyLegacyTextureTransform(texture, transform) {
   return texture;
 }
 
+function materialUvCenter(model, materialIndex) {
+  let u=0,v=0,count=0;
+  for(const mesh of model.meshes){
+    const uv=mesh.properties.uv;
+    if(!uv)continue;
+    const indices=new Set(mesh.groups.filter(group=>group.materialIndex===materialIndex)
+      .flatMap(group=>mesh.indices.slice(group.start,group.start+group.count)));
+    for(const i of indices){u+=uv[i*2];v+=1-uv[i*2+1];count++;}
+  }
+  return count?[u/count,v/count]:[.5,.5];
+}
+
 function threeMesh(geometrySource, materialArray, rig = null) {
   const attributes = geometrySource.properties;
   const geometry = new THREE.BufferGeometry();
@@ -333,7 +345,8 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
               const iris = await loadDecodedTexture(item, true, [name]);
               applyLegacyTextureTransform(iris, legacyTextureTransform(source, 'Layer1'));
               textureObjects.push(iris);
-              applyLegacyEyeLayer(materials[i], iris, textureObjects, report);
+              applyLegacyEyeLayer(materials[i], iris, textureObjects, report,
+                materialUvCenter(model, i));
             } else report('Could not match eye layer ' + name + '.');
           }
         } catch (error) {
