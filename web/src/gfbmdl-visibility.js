@@ -67,7 +67,10 @@ export function applyGfbmdlRestVisibility(root, channels) {
     if (!object.isMesh) return;
     const name = object.name.toLowerCase();
     if (!visibility.has(name)) return;
-    object.visible = visibility.get(name);
+    // GLB has no standard mesh-visibility animation channel. Encoding the
+    // authored show/hide state as an instantaneous node scale preserves it
+    // in both the browser preview and exported, animated glTF files.
+    object.scale.setScalar(visibility.get(name) ? 1 : 0);
     object.userData.nativeIdleVisibility = true;
     applied++;
   });
