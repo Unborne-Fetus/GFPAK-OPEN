@@ -269,6 +269,16 @@ export function decodeGfbmdl(bytes) {
     rotation: reader.vector3(table, 6, [0, 0, 0]),
     translation: reader.vector3(table, 7, [0, 0, 0])
   }));
+  // The model's mesh bindings (slot 7) associate each geometry slot with
+  // a named skin bone. These names are also the targets of GFBANM shape
+  // visibility tracks. Without them, alternate wings/tails all render.
+  for (const binding of reader.objects(model, 7)) {
+    const boneIndex = reader.integer(binding, 0, -1);
+    const meshIndex = reader.integer(binding, 1, 0);
+    if (boneIndex < 0 || boneIndex >= bones.length ||
+        meshIndex < 0 || meshIndex >= meshes.length) continue;
+    if (bones[boneIndex].name) meshes[meshIndex].name = bones[boneIndex].name;
+  }
   const meshCount = meshes.length;
   const vertexCount = meshes.reduce((n, mesh) => n + mesh.vertexCount, 0);
   const triangleCount = meshes.reduce((n, mesh) => n + mesh.indices.length / 3, 0);
