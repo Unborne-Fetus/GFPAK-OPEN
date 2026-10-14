@@ -67,3 +67,56 @@ test('desktop raw ZIP bypasses preview while Pokédex export still produces a GL
   await page.locator('#exportPokemonButton').click();
   await expect.poll(()=>page.evaluate(()=>window.exports.length)).toBe(3);
 });
+
+
+test('GLB exporter converts a GPU-compressed Pokémon texture into an embedded PNG',async({page})=>{
+  await page.goto('/');
+  const outcome=await page.evaluate(async()=>{
+    const {exportGlb}=await import('/GFPAK-OPEN/src/model.js');
+    const THREE=await import('three');
+    // A real BC1/DXT1 block: solid green. This exercises the exporter
+    // path that formerly failed with "setTextureUtils() must be called".
+    const probe=new THREE.WebGLRenderer({antialias:false});
+    const supported=probe.extensions.has('WEBGL_compressed_texture_s3tc');
+    probe.dispose();
+    if(!supported)return {unsupported:true};
+    const block=new Uint8Array([0xe0,0x07,0x1f,0x00,0,0,0,0]);
+    const texture=new THREE.CompressedTexture(
+      [{data:block,width:4,height:4}],4,4,THREE.RGB_S3TC_DXT1_Format
+    );
+    texture.colorSpace=THREE.SRGBColorSpace;
+    texture.needsUpdate=true;
+    const geometry=new THREE.PlaneGeometry(1,1);
+    const material=new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide});
+    const root=new THREE.Group();
+    root.add(new THREE.Mesh(geometry,material));
+    try {
+      const data=await exportGlb(root);
+      const view=new DataView(data);
+      const jsonLength=view.getUint32(12,true);
+      const gltf=JSON.parse(new TextDecoder().decode(new Uint8Array(data,20,jsonLength)));
+      const image=gltf.images?.[0];
+      const bufferView=gltf.bufferViews?.[image?.bufferView];
+      const binaryStart=20+jsonLength+8;
+      const png=new Uint8Array(data,binaryStart+(bufferView?.byteOffset||0),bufferView?.byteLength||0);
+      const bitmap=await createImageBitmap(new Blob([png],{type:'image/png'}));
+      const canvas=document.createElement('canvas');
+      canvas.width=canvas.height=4;
+      const context=canvas.getContext('2d');
+      context.drawImage(bitmap,0,0,4,4);
+      const pixel=Array.from(context.getImageData(2,2,1,1).data);
+      bitmap.close();
+      return {meshes:gltf.meshes?.length,textures:gltf.textures?.length,
+        mimeType:image?.mimeType,pixel};
+    } finally {
+      geometry.dispose();material.dispose();texture.dispose();
+    }
+  });
+  test.skip(outcome.unsupported===true,'Browser GPU lacks the BC1 texture extension');
+  expect(outcome.meshes).toBe(1);
+  expect(outcome.textures).toBe(1);
+  expect(outcome.mimeType).toBe('image/png');
+  expect(outcome.pixel[1]).toBeGreaterThan(220);
+  expect(outcome.pixel[0]).toBeLessThan(35);
+  expect(outcome.pixel[2]).toBeLessThan(35);
+});
