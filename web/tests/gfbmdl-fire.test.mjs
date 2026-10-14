@@ -18,3 +18,14 @@ test('native fire shader uses authored red and yellow palette with correct color
 test('missing authored flame colors are rejected rather than guessed', () => {
   assert.throws(()=>fireGradientPixels({colors:{}},{width:1,height:1,data:new Uint8Array(4)}),/palette is missing/);
 });
+
+test('native flame streak masks cut out edges at full mask resolution', () => {
+  const source={colors:{BaseColor0:[1,0,0],LayerColor0:[1,1,0]},
+    scalars:{DiscardValuie:.85,ColorLerpValue:0}};
+  const gradient={width:1,height:1,data:new Uint8Array([128,128,128,255])};
+  const mask={width:3,height:1,data:new Uint8Array([0,0,0,255,128,128,128,255,255,255,255,255])};
+  const pixels=fireGradientPixels(source,gradient,[mask]);
+  assert.equal(pixels.length,12);
+  assert.deepEqual([pixels[3],pixels[7],pixels[11]],[255,255,0]);
+  assert.equal(pixels[0],255);assert.equal(pixels[8],255);
+});
