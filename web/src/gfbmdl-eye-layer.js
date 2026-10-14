@@ -20,7 +20,7 @@ export function nearestEyeOpening(pixels, width, height, uvCenter, inwardDirecti
     const center=[(x/queue.length+(minX+maxX+1)/2)/(2*width),y/queue.length/height];
     // A slight gaze toward the inner eye corner, requested independently
     // of neutral aperture centering. Scale the nudge with the eye's width.
-    center[0]+=inwardDirection*(maxX-minX+1)/width*.16;
+    center[0]+=inwardDirection*(maxX-minX+1)/width*.28;
     const distance=center.reduce((sum,v,i)=>{
       const a=((uvCenter[i]%1)+1)%1,d=Math.abs(v-a);return sum+Math.min(d,1-d)**2;
     },0);
@@ -115,7 +115,10 @@ export function applyLegacyEyeLayer(material, iris, created, report = () => {}, 
     pass.needsUpdate=true;
     renderer.render(scene,new THREE.Camera());
     renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
-    if(opening)centerEyeIris(iris,opening,irisContentCenter(pixels,width,height));
+    if(opening){
+      centerEyeIris(iris,opening,irisContentCenter(pixels,width,height));
+      report('Applied inward iris gaze (28% of eye width) to '+material.name+'.');
+    }
     pass.fragmentShader=composite;pass.needsUpdate=true;
     renderer.render(scene,new THREE.Camera());
     renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
