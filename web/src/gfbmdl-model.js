@@ -12,7 +12,7 @@ import { parseNativeAnimation } from './trinity-animation.js';
 import { animationTracks } from './trinity-model.js';
 import { parseBntx } from './bntx.js';
 import { applyLegacyEyeLayer } from './gfbmdl-eye-layer.js';
-import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire } from './gfbmdl-fire.js';
+import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire, applyLegacyFireMask } from './gfbmdl-fire.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -285,7 +285,10 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
   });
   const rig = buildLegacyRig(root, model.bones);
   for (const geometry of model.meshes) {
-    root.add(threeMesh(geometry, materials, rig));
+    const mesh=threeMesh(geometry, materials, rig);
+    if(geometry.groups.every(group=>isLegacyFireMask(model.materials[group.materialIndex])))
+      mesh.renderOrder=-10;
+    root.add(mesh);
   }
 
   // GFBMDL is already Y-up like Three.js. The Blender importer applies
@@ -325,7 +328,18 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
         const renderTextures = async () => {
       for (let i = 0; i < model.materials.length; i++) {
         const definition=model.materials[i];
-        if(isLegacyFireMask(definition))continue;
+        if(isLegacyFireMask(definition)){
+          const masks=['Mask0Texture','Mask1Texture'].map(sampler=>{
+            const map=definition.maps.find(map=>map.sampler===sampler);
+            const name=model.textureNames[map?.textureIndex];
+            return {name,item:name && findLegacyTexture(name,known)};
+          }).filter(mask=>mask.item);
+          try{
+            await applyLegacyFireMask(definition,materials[i],masks,textureObjects);
+            report('Applied native fire silhouette depth mask.');
+          }catch(error){report('Could not apply fire silhouette mask: '+error.message);}
+          continue;
+        }
         if(isLegacyFireCore(definition)){
           const map=definition.maps.find(map=>map.sampler==='LerpTex');
           const name=model.textureNames[map?.textureIndex];
@@ -338,7 +352,7 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
               return {name,item:name && findLegacyTexture(name,known)};
             }).filter(mask=>mask.item);
             await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks);
-            report('Applied native fire palette and '+masks.length+' flame edge masks to '+definition.name+'.');
+            report('Applied solid native fire palette to '+definition.name+'.');
           }catch(error){report('Could not render native fire: '+error.message);}
           continue;
         }
