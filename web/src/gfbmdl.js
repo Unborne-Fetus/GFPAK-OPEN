@@ -242,6 +242,7 @@ export function decodeGfbmdl(bytes) {
     }));
     return {
       name: reader.string(table, 0) || materialNames[i] || 'Material ' + i,
+      shader: reader.string(table, 1),
       renderLayer: reader.integer(table, 2),
       flags: Object.fromEntries(reader.objects(table, 12, 512).map(value => {
         const at = reader.field(value, 1);
@@ -251,6 +252,8 @@ export function decodeGfbmdl(bytes) {
         const at = reader.field(value, 1);
         return [reader.string(value, 0), at ? reader.f32(at) : 0];
       })),
+      colors: Object.fromEntries(reader.objects(table, 14, 512).map(value =>
+        [reader.string(value, 0), reader.vector3(value, 1, [0, 0, 0])])),
       maps
     };
   });
