@@ -9,7 +9,37 @@ export function isLegacyFireMask(source) {
   return /^PokeFireMaskShader\d*$/i.test(source?.shader || '');
 }
 
-export function fireGradientPixels(source, gradient, masks = []) {
+export function nativeFlameOutline(mask) {
+  const {width,height,data}=mask,seen=new Uint8Array(width*height);
+  const regions=[];
+  for(let start=0;start<seen.length;start++){
+    if(seen[start] || data[start*4]<128)continue;
+    const queue=[start];seen[start]=1;
+    let minX=width,maxX=0,minY=height,maxY=0;
+    for(let at=0;at<queue.length;at++){
+      const i=queue[at],x=i%width,y=Math.floor(i/width);
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+      for(const n of [x?i-1:-1,x+1<width?i+1:-1,y?i-width:-1,y+1<height?i+width:-1]){
+        if(n>=0 && !seen[n] && data[n*4]>=128){seen[n]=1;queue.push(n);}
+      }
+    }
+    if(queue.length>=16)regions.push({queue,minX,maxX,minY,maxY});
+  }
+  // The native sheet stores several outline frames. Use the first complete
+  // authored flame, rather than treating shader noise as holes in its center.
+  regions.sort((a,b)=>a.minY-b.minY || b.queue.length-a.queue.length);
+  const region=regions[0];
+  if(!region)throw new Error('No connected flame outline in native mask');
+  const w=region.maxX-region.minX+1,h=region.maxY-region.minY+1;
+  const pixels=new Uint8Array(w*h*4);
+  for(const i of region.queue){
+    const at=((Math.floor(i/width)-region.minY)*w+i%width-region.minX)*4;
+    pixels[at]=pixels[at+1]=pixels[at+2]=data[i*4];pixels[at+3]=255;
+  }
+  return {width:w,height:h,data:pixels};
+}
+
+export function fireGradientPixels(source, gradient, masks = [], outline = null) {
   const colors=source.colors || {};
   const mix=THREE.MathUtils.clamp(source.scalars?.ColorLerpValue || 0,0,1);
   const palette=prefix=>{
@@ -38,12 +68,12 @@ export function fireGradientPixels(source, gradient, masks = []) {
     pixels[i+2]=Math.round(THREE.MathUtils.clamp(color.b,0,1)*255);
     // Blend textures shape the shader's color layers; they are not holes in
     // the core. Silhouette clipping belongs to the separate FireMask pass.
-    pixels[i+3]=255;
+    pixels[i+3]=outline ? sample(outline,u,v) : 255;
   }
   return pixels;
 }
 
-export async function applyLegacyFire(source, material, item, name, textures, companions = []) {
+export async function applyLegacyFire(source, material, item, name, textures, companions = [], silhouette = null) {
   const archive=parseBntx(await item.getBytes());
   const surface=archive.textures.filter(t=>t.name.toLowerCase()===name.toLowerCase());
   if(surface.length!==1)throw new Error('Fire gradient surface is missing or ambiguous');
@@ -60,7 +90,14 @@ export async function applyLegacyFire(source, material, item, name, textures, co
   }
   const width=Math.max(gradient.width,...masks.map(m=>m.width));
   const height=Math.max(gradient.height,...masks.map(m=>m.height));
-  const texture=new THREE.DataTexture(fireGradientPixels(source,gradient,masks),width,height,THREE.RGBAFormat);
+  let outline=null;
+  if(silhouette){
+    const archive=parseBntx(await silhouette.item.getBytes());
+    const surface=archive.textures.filter(t=>t.name.toLowerCase()===silhouette.name.toLowerCase());
+    if(surface.length!==1)throw new Error('Missing authored flame outline');
+    outline=nativeFlameOutline(decodeBntxTexture(archive,surface[0].index));
+  }
+  const texture=new THREE.DataTexture(fireGradientPixels(source,gradient,masks,outline),width,height,THREE.RGBAFormat);
   texture.name=source.name+' native fire palette';
   texture.colorSpace=THREE.SRGBColorSpace;
   texture.flipY=false;
@@ -69,7 +106,7 @@ export async function applyLegacyFire(source, material, item, name, textures, co
   // Fire is self-lit. Emission preserves its authored colors under scene lights
   // and in GLB exports instead of shading the flame as a solid grey surface.
   material.map=texture;material.color.setRGB(0,0,0);
-  material.alphaTest=0;
+  material.alphaTest=outline ? .5 : 0;
   material.emissive.setRGB(1,1,1);material.emissiveMap=texture;
   material.emissiveIntensity=source.scalars?.OnGameEmissionVal ?? 1;
   material.toneMapped=false;material.needsUpdate=true;
