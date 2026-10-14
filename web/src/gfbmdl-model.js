@@ -2,6 +2,7 @@ import {
   loadDecodedTexture, matchingLinkedDiffuseTexture
 } from './texture-loader.js';
 import { associatedNativeAnimations } from './animation-association.js';
+import { parseGfbmdlVisibility, applyGfbmdlRestVisibility } from './gfbmdl-visibility.js';
 /**
  * Turn decoded legacy Game Freak GFBMDL mesh data into an actual Three.js scene.
  * Uses independent FlatBuffers geometry reader; no Blender/Python/remote service.
@@ -206,7 +207,7 @@ function threeMesh(geometrySource, materialArray, rig = null) {
     }
   }
   if (!mesh) mesh = new THREE.Mesh(geometry, assigned);
-  mesh.name = 'GFBMDL mesh ' + geometrySource.index;
+  mesh.name = geometrySource.name || 'GFBMDL mesh ' + geometrySource.index;
   mesh.frustumCulled = false;
   return mesh;
 }
@@ -233,22 +234,126 @@ function buildLegacyRig(root, entries) {
   return { bones, skeleton, deformingIndices };
 }
 
-async function readLegacyAnimations(project, selected, rig, report) {
-  if (!rig?.bones?.length) return [];
-  const sources = associatedNativeAnimations(project.items, selected, report)
+function legacyAnimationSources(project, selected, report) {
+  return associatedNativeAnimations(project.items, selected, report)
     .filter(item => getExtension(item.path) === '.gfbanm');
+}
+
+function preferredIdleScore(item) {
+  const name = baseName(item.path);
+  return /ba10_waita/i.test(name) ? 50 :
+    /ba10_waitb/i.test(name) ? 40 :
+    /kw01_wait/i.test(name) ? 30 :
+    /fi01_wait/i.test(name) ? 20 :
+    /(?:idle|standby|wait)/i.test(name) ? 10 : 0;
+}
+
+async function loadLegacyRestVisibility(project, selected, root, report) {
+  // Use the actual GFBANM idle visibility, not a wing/tail naming heuristic.
+  // Read just one small idle file so the first 3D frame stays responsive.
+  const sources = legacyAnimationSources(project, selected, report)
+    .filter(item => preferredIdleScore(item) > 0)
+    .sort((a,b) => preferredIdleScore(b) - preferredIdleScore(a) ||
+      a.path.localeCompare(b.path));
+  for (const item of sources) {
+    try {
+      const data = await item.getBytes();
+      const binary = data instanceof ArrayBuffer ? data :
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      const {channels} = parseGfbmdlVisibility(binary);
+      const count = applyGfbmdlRestVisibility(root, channels);
+      if (count) {
+        report('Applied ' + count + ' native idle skin visibility state(s).');
+        return;
+      }
+    } catch (error) {
+      report('Idle skin visibility skipped: ' + error.message);
+    }
+  }
+}
+
+function legacyVisibilityTracks(channels, frameRate, meshesByName) {
+  const tracks = [];
+  const covered = new Set();
+  const rate = Number.isFinite(frameRate) && frameRate > 0 ? frameRate : 30;
+  for (const channel of channels) {
+    const name = channel.name.toLowerCase();
+    const meshes = meshesByName.get(name) || [];
+    if (!meshes.length || !channel.values.length) continue;
+    const times = channel.frames.map(frame => frame / rate);
+    for (const mesh of meshes) {
+      const values = channel.values.flatMap(value => value ? [1,1,1] : [0,0,0]);
+      const track = new THREE.VectorKeyframeTrack(mesh.uuid + '.scale', times, values);
+      // Shape swaps must happen at frame boundaries, not by growing an
+      // alternate wing or tail gradually between visibility keys.
+      track.setInterpolation(THREE.InterpolateDiscrete);
+      tracks.push(track);
+      covered.add(mesh.uuid);
+    }
+  }
+  return {tracks, covered};
+}
+
+async function readLegacyAnimations(project, selected, rig, root, report) {
+  const sources = legacyAnimationSources(project, selected, report);
   if (sources.length < project.items.filter(item => getExtension(item.path) === '.gfbanm').length)
     report('Prioritizing ' + sources.length + ' matching GFBANM clips from this project.');
-  const clips = [];
+  const meshesByName = new Map();
+  root.traverse(mesh => {
+    if (!mesh.isMesh) return;
+    const name = mesh.name.toLowerCase();
+    if (!meshesByName.has(name)) meshesByName.set(name, []);
+    meshesByName.get(name).push(mesh);
+  });
+  const entries = [];
+  const animatedMeshes = new Set();
   for (const source of sources) {
     try {
       const data = await source.getBytes();
-      const binary = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      const native = parseNativeAnimation(binary, source.path.split('/').pop());
-      const clip = animationTracks(native, rig.bones);
-      if (clip) clips.push(clip);
+      const binary = data instanceof ArrayBuffer ? data :
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      const {channels, frameRate, frameCount} = parseGfbmdlVisibility(binary);
+      const {tracks:visTracks, covered} = legacyVisibilityTracks(channels, frameRate, meshesByName);
+      for (const id of covered) animatedMeshes.add(id);
+      let clip = null;
+      if (rig?.bones?.length) {
+        try {
+          const native = parseNativeAnimation(binary, source.path.split('/').pop());
+          clip = animationTracks(native, rig.bones);
+        } catch (error) {
+          if (!visTracks.length) throw error;
+        }
+      }
+      if (!clip && !visTracks.length) continue;
+      if (!clip) {
+        clip = new THREE.AnimationClip(baseName(source.path),
+          frameCount > 1 ? (frameCount - 1) / (frameRate || 30) : -1, []);
+      }
+      clip.tracks.push(...visTracks);
+      entries.push({clip, covered, visTracks, frameRate, frameCount});
     } catch (error) { report('Animation ' + source.path + ' skipped: ' + error.message); }
   }
+  const meshByUuid = new Map();
+  root.traverse(mesh => {if (mesh.isMesh) meshByUuid.set(mesh.uuid, mesh);});
+  for (const entry of entries) {
+    if (entry.visTracks.length) {
+      // A clip only lists surfaces that differ from the model's default
+      // visibility (all skin meshes enabled). Restore unmentioned alternate
+      // surfaces when switching from a different clip's idle visibility.
+      for (const uuid of animatedMeshes) {
+        if (entry.covered.has(uuid)) continue;
+        const mesh = meshByUuid.get(uuid);
+        if (mesh) {
+          const track = new THREE.VectorKeyframeTrack(uuid + '.scale', [0], [1,1,1]);
+          track.setInterpolation(THREE.InterpolateDiscrete);
+          entry.clip.tracks.push(track);
+        }
+      }
+    }
+    entry.clip.resetDuration();
+    entry.clip.optimize();
+  }
+  const clips = entries.map(entry => entry.clip);
   // Landing/attack clips can begin airborne or rotated. Start with the
   // authored neutral wait loop when present, retaining every selectable clip.
   clips.sort((a, b) => Number(!/(?:ba10_waita|idle|standby)/i.test(a.name)) -
@@ -291,6 +396,7 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
       mesh.renderOrder=-10;
     root.add(mesh);
   }
+  await loadLegacyRestVisibility(project, selected, root, report);
 
   // GFBMDL is already Y-up like Three.js. The Blender importer applies
   // +90° X only to convert to Blender's Z-up coordinate system.
@@ -442,7 +548,7 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
             await renderTextures();
             await attachMatchedLinkedTextures();
           })(),
-          readLegacyAnimations(project, selected, rig, report)
+          readLegacyAnimations(project, selected, rig, root, report)
         ]);
         if (!disposed) animations.push(...clips);
         report('GFBMDL companion textures and ' + clips.length +
