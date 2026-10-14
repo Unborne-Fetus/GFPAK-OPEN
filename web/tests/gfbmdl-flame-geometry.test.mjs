@@ -50,3 +50,19 @@ test('replacement flame preserves native skinning weights and gradient UV origin
     if(p.getY(i)===2)assert.equal(uv.getY(i),0);
   }
 });
+
+test('separate authored flame tips retain the gap between them instead of becoming circular rings',()=>{
+  const source=new THREE.BoxGeometry(8,8,4);
+  const data=new Uint8Array(8*8*4);
+  for(let y=0;y<8;y++)for(let x=0;x<8;x++){
+    if(y<3 && x>=3 && x<=4)continue;
+    data[(y*8+x)*4]=255;
+  }
+  const geometry=closedFlameGeometry(source,{width:8,height:8,data});
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+  const ray=new THREE.Raycaster(new THREE.Vector3(0,3,20),new THREE.Vector3(0,0,-1));
+  assert.equal(ray.intersectObject(mesh).length,0,'gap between tips remains open in the silhouette');
+  ray.set(new THREE.Vector3(-2,3,20),new THREE.Vector3(0,0,-1));
+  assert.ok(ray.intersectObject(mesh).length>0,'neighboring tip remains solid');
+  assert.equal(boundaryEdges(geometry),0);
+});
