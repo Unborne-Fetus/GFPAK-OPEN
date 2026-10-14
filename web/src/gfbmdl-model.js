@@ -13,6 +13,7 @@ import { animationTracks } from './trinity-model.js';
 import { parseBntx } from './bntx.js';
 import { applyLegacyEyeLayer } from './gfbmdl-eye-layer.js';
 import { isLegacyFireCore, isLegacyFireMask, applyLegacyFire } from './gfbmdl-fire.js';
+import { closedFlameGeometry } from './gfbmdl-flame-geometry.js';
 
 function getExtension(name) {
   return name.slice(name.lastIndexOf('.')).toLowerCase();
@@ -347,8 +348,15 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
             const silhouetteMap=maskSource?.maps.find(map=>map.sampler==='Mask1Texture');
             const silhouetteName=model.textureNames[silhouetteMap?.textureIndex];
             const silhouetteItem=silhouetteName && findLegacyTexture(silhouetteName,known);
-            await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks,
+            const flame=await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks,
               silhouetteItem ? {name:silhouetteName,item:silhouetteItem} : null);
+            if(flame.outline)root.traverse(mesh=>{
+              if(!mesh.isMesh || !mesh.geometry.groups.length ||
+                !mesh.geometry.groups.every(group=>group.materialIndex===i))return;
+              const old=mesh.geometry;
+              mesh.geometry=closedFlameGeometry(old,flame.outline,i);
+              old.dispose();
+            });
             report('Applied native flame outline and palette to '+definition.name+'.');
           }catch(error){report('Could not render native fire: '+error.message);}
           continue;
