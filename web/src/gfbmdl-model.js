@@ -113,15 +113,19 @@ export function applyLegacyTextureTransform(texture, transform) {
 }
 
 function materialUvCenter(model, materialIndex) {
-  let u=0,v=0,count=0;
+  let u=0,v=0,x=0,ux=0,count=0;
   for(const mesh of model.meshes){
     const uv=mesh.properties.uv;
     if(!uv)continue;
     const indices=new Set(mesh.groups.filter(group=>group.materialIndex===materialIndex)
       .flatMap(group=>mesh.indices.slice(group.start,group.start+group.count)));
-    for(const i of indices){u+=uv[i*2];v+=1-uv[i*2+1];count++;}
+    for(const i of indices){
+      const px=mesh.properties.position[i*3],pu=uv[i*2];
+      u+=pu;v+=1-uv[i*2+1];x+=px;ux+=pu*px;count++;
+    }
   }
-  return count?[u/count,v/count]:[.5,.5];
+  return count?{center:[u/count,v/count],
+    inwardDirection:Math.sign(-x*(ux-u*x/count))}:{center:[.5,.5],inwardDirection:0};
 }
 
 function threeMesh(geometrySource, materialArray, rig = null) {
@@ -347,8 +351,9 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
               const iris = await loadDecodedTexture(item, true, [name]);
               applyLegacyTextureTransform(iris, legacyTextureTransform(source, 'Layer1'));
               textureObjects.push(iris);
+              const placement=materialUvCenter(model, i);
               applyLegacyEyeLayer(materials[i], iris, textureObjects, report,
-                materialUvCenter(model, i));
+                placement.center, placement.inwardDirection);
             } else report('Could not match eye layer ' + name + '.');
           }
         } catch (error) {
