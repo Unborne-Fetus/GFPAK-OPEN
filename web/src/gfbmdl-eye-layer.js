@@ -20,7 +20,7 @@ export function nearestEyeOpening(pixels, width, height, uvCenter, inwardDirecti
     const center=[(x/queue.length+(minX+maxX+1)/2)/(2*width),y/queue.length/height];
     // A slight gaze toward the inner eye corner, requested independently
     // of neutral aperture centering. Scale the nudge with the eye's width.
-    center[0]+=inwardDirection*(maxX-minX+1)/width*.12;
+    center[0]+=inwardDirection*(maxX-minX+1)/width*.16;
     const distance=center.reduce((sum,v,i)=>{
       const a=((uvCenter[i]%1)+1)%1,d=Math.abs(v-a);return sum+Math.min(d,1-d)**2;
     },0);
