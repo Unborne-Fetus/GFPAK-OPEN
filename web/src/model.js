@@ -10,6 +10,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import * as WebGLTextureUtils from 'three/addons/utils/WebGLTextureUtils.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
@@ -259,7 +260,10 @@ export function modelStats(root, animations = []) {
 
 export async function exportGlb(root, animations = []) {
   if (!root) throw new Error('No model is loaded');
-  const exporter = new GLTFExporter();
+  // BNTX/DDS BC7/ASTC resources can remain GPU-compressed in the preview.
+  // GLTF requires an image, so let Three.js read back an RGBA canvas
+  // instead of throwing setTextureUtils() during Pokémon ZIP export.
+  const exporter = new GLTFExporter().setTextureUtils(WebGLTextureUtils);
   const result = await exporter.parseAsync(root, {
     binary: true,
     onlyVisible: false,
