@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
-import {boundTriangle,visibilityFixture} from '../tests/gfbmdl-visibility.test.mjs';
+import {boundTriangle,visibilityFixture} from '../tests/gfbmdl-visibility-fixture.mjs';
 
 test('Sword/Shield alternate wings render hidden and export as step-scale animation',async({page})=>{
   const zip=new JSZip();
