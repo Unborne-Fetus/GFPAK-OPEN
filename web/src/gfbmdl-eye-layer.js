@@ -6,15 +6,18 @@ export function nearestEyeOpening(pixels, width, height, uvCenter) {
   let best=null,bestDistance=Infinity;
   for(let start=0;start<seen.length;start++){
     if(seen[start] || pixels[start*4+3]>=128)continue;
-    const queue=[start];seen[start]=1;let x=0,y=0;
+    const queue=[start];seen[start]=1;let x=0,y=0,minX=width,maxX=-1;
     for(let at=0;at<queue.length;at++){
       const i=queue[at],px=i%width,py=Math.floor(i/width);x+=px+.5;y+=py+.5;
+      minX=Math.min(minX,px);maxX=Math.max(maxX,px);
       for(const n of [px>0?i-1:-1,px+1<width?i+1:-1,py>0?i-width:-1,py+1<height?i+width:-1]){
         if(n>=0 && !seen[n] && pixels[n*4+3]<128){seen[n]=1;queue.push(n);}
       }
     }
     if(queue.length<4 || queue.length>seen.length/2)continue;
-    const center=[x/queue.length/width,y/queue.length/height];
+    // Slanted eyelids bias the area centroid toward the nose. Move halfway
+    // toward the horizontal span's center for a small, neutral gaze correction.
+    const center=[(x/queue.length+(minX+maxX+1)/2)/(2*width),y/queue.length/height];
     const distance=center.reduce((sum,v,i)=>{
       const a=((uvCenter[i]%1)+1)%1,d=Math.abs(v-a);return sum+Math.min(d,1-d)**2;
     },0);
