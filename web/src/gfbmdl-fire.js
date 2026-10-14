@@ -97,7 +97,7 @@ export async function applyLegacyFire(source, material, item, name, textures, co
     if(surface.length!==1)throw new Error('Missing authored flame outline');
     outline=nativeFlameOutline(decodeBntxTexture(archive,surface[0].index));
   }
-  const texture=new THREE.DataTexture(fireGradientPixels(source,gradient,masks,outline),width,height,THREE.RGBAFormat);
+  const texture=new THREE.DataTexture(fireGradientPixels(source,gradient,masks),width,height,THREE.RGBAFormat);
   texture.name=source.name+' native fire palette';
   texture.colorSpace=THREE.SRGBColorSpace;
   texture.flipY=false;
@@ -106,11 +106,11 @@ export async function applyLegacyFire(source, material, item, name, textures, co
   // Fire is self-lit. Emission preserves its authored colors under scene lights
   // and in GLB exports instead of shading the flame as a solid grey surface.
   material.map=texture;material.color.setRGB(0,0,0);
-  material.alphaTest=outline ? .5 : 0;
+  material.alphaTest=0;
   material.emissive.setRGB(1,1,1);material.emissiveMap=texture;
   material.emissiveIntensity=source.scalars?.OnGameEmissionVal ?? 1;
   material.toneMapped=false;material.needsUpdate=true;
-  return texture;
+  return {texture,outline};
 }
 
 export function fireMaskPixels(source, masks) {
