@@ -7,7 +7,7 @@ import {loadGfbmdl} from '../src/gfbmdl-model.js';
 import {parseGfbmdlVisibility,applyGfbmdlRestVisibility} from '../src/gfbmdl-visibility.js';
 import {makeGfbmdlTriangle} from './native-gfbmdl-sample.mjs';
 
-function visibilityFixture(name='pm0519_00_LWingSkin', type=1, enabled=false) {
+export function visibilityFixture(name='pm0519_00_LWingSkin', type=1, enabled=false) {
   const b = new Builder(512);
   const target = b.createString(name);
   let keys=0, bits=0;
@@ -38,7 +38,7 @@ function visibilityFixture(name='pm0519_00_LWingSkin', type=1, enabled=false) {
 
 // Synthetic geometry plus the real GFBMDL slot-7 mesh/skin-node binding
 // layout. This is not game geometry or a copied Nintendo asset.
-function boundTriangle(name='pm0519_00_LWingSkin') {
+export function boundTriangle(name='pm0519_00_LWingSkin') {
   const src=makeGfbmdlTriangle(), bytes=new ArrayBuffer(1024);
   new Uint8Array(bytes).set(new Uint8Array(src));
   const d=new DataView(bytes);
