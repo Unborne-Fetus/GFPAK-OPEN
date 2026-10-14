@@ -312,7 +312,12 @@ async function readLegacyAnimations(project, selected, rig, root, report) {
       const data = await source.getBytes();
       const binary = data instanceof ArrayBuffer ? data :
         data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      const {channels, frameRate, frameCount} = parseGfbmdlVisibility(binary);
+      let visibility = {channels:[], frameRate:30, frameCount:0};
+      try { visibility = parseGfbmdlVisibility(binary); }
+      catch (error) {
+        report('Shape visibility for ' + source.path + ' skipped: ' + error.message);
+      }
+      const {channels, frameRate, frameCount} = visibility;
       const {tracks:visTracks, covered} = legacyVisibilityTracks(channels, frameRate, meshesByName);
       for (const id of covered) animatedMeshes.add(id);
       let clip = null;
@@ -351,6 +356,10 @@ async function readLegacyAnimations(project, selected, rig, root, report) {
       }
     }
     entry.clip.resetDuration();
+    if (entry.frameCount > 1) {
+      entry.clip.duration = Math.max(entry.clip.duration,
+        (entry.frameCount - 1) / (entry.frameRate || 30));
+    }
     entry.clip.optimize();
   }
   const clips = entries.map(entry => entry.clip);
