@@ -2,7 +2,7 @@ import {
   loadDecodedTexture, matchingLinkedDiffuseTexture
 } from './texture-loader.js';
 import { applyLayerColors } from './trinity-layer-colors.js';
-import { associatedNativeAnimations } from './animation-association.js';
+import { associatedNativeAnimations, speciesToken } from './animation-association.js';
 /**
  * Resolve companion Trinity model files and construct Three.js meshes.
  * This path requires a readable .trmdl/.trmsh with the matching .trmbf.
@@ -537,6 +537,67 @@ async function loadNativeClips(project, selected, skeleton, report, scene) {
   return clips;
 }
 
+/** Native TRACM shape channels describe mutually exclusive geometry (including
+ * alternate wing poses). Apply an authored idle pose before the first frame,
+ * even when a matching skeletal animation is missing or cannot be decoded.
+ */
+export function applyRestVisibility(scene, channels) {
+  const shapes = new Map();
+  scene.traverse(mesh => {
+    if (!mesh.isMesh) return;
+    const name = mesh.name.split(':')[0].trim().toLowerCase();
+    if (!shapes.has(name)) shapes.set(name, []);
+    shapes.get(name).push(mesh);
+  });
+  let matched = 0;
+  for (const channel of channels) {
+    if (channel.frames?.[0] !== 0 || !channel.values?.length) continue;
+    for (const mesh of shapes.get(String(channel.name).trim().toLowerCase()) || []) {
+      mesh.visible = !!channel.values[0];
+      mesh.userData.nativeIdleVisibility = true;
+      matched++;
+    }
+  }
+  return matched;
+}
+
+async function loadRestVisibility(project, selected, scene, report) {
+  const sourceSpecies = speciesToken(selected);
+  const sourceDir = dirname(selected);
+  const candidates = project.items.filter(item => {
+    if (ext(item.path) !== '.tracm' ||
+        !/(?:defaultwait|battlewait|idle|wait)/i.test(stem(item.path))) return false;
+    const species = speciesToken(item.path);
+    if (sourceSpecies && species && sourceSpecies !== species) return false;
+    // Do not apply a different model's visibility channels just because a
+    // large game directory happens to contain a similarly named animation.
+    return dirname(item.path) === sourceDir ||
+      (sourceSpecies && species === sourceSpecies) ||
+      item.linkedKind === 'animation' && (!sourceSpecies || !species || species === sourceSpecies);
+  });
+  const preference = item => {
+    const name = stem(item.path).toLowerCase();
+    const kind = /defaultwait/.test(name) ? 4 : /battlewait/.test(name) ? 3 :
+      /idle/.test(name) ? 2 : 1;
+    return kind * 100 + (dirname(item.path) === sourceDir ? 20 : 0) +
+      (item.linkedKind === 'animation' ? 10 : 0);
+  };
+  candidates.sort((a, b) => preference(b) - preference(a) ||
+    a.path.localeCompare(b.path));
+  for (const item of candidates) {
+    try {
+      const channels = parseMeshVisibility(await bytesFor(item));
+      const matched = applyRestVisibility(scene, channels);
+      if (matched) {
+        report('Applied native idle mesh visibility to ' + matched + ' mesh part(s).');
+        return;
+      }
+    } catch (error) {
+      report('Idle mesh visibility skipped for ' + basename(item.path) + ': ' + error.message);
+    }
+  }
+}
+
 /**
  * Resolve native Trinity .trmdl and companions inside ZIPs or directories,
  * render geometry/decoded textures, and export through regular GLTFExporter.
@@ -600,6 +661,7 @@ export async function loadTrinityModel(project, selected, report = () => {}, opt
     }
     scene.add(makeMesh(part, material, rig));
   }
+  await loadRestVisibility(project, selected, scene, report);
   const animations = [];
   let disposed = false;
   let extrasPromise = null;
