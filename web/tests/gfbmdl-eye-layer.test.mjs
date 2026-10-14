@@ -39,3 +39,21 @@ test('iris centers on the nearest transparent eyelid opening without changing sc
   assert.deepEqual(iris.repeat.toArray(),[-4,4]);
   pixels.fill(255);assert.equal(nearestEyeOpening(pixels,12,12,[.25,.25]),null);
 });
+
+test('painted iris is located off-center and aligned through mirrored texture periods', async () => {
+  const {irisContentCenter,centerEyeIris}=await import('../src/gfbmdl-eye-layer.js');
+  const pixels=new Uint8Array(20*20*4);pixels.fill(240);
+  for(let i=0;i<400;i++)pixels[i*4+3]=255;
+  for(let y=11;y<17;y++)for(let x=10;x<16;x++){
+    const i=(y*20+x)*4;pixels[i]=140;pixels[i+1]=30;pixels[i+2]=45;
+  }
+  const painted=irisContentCenter(pixels,20,20);
+  assert.deepEqual(painted,[.65,.7]);
+  const iris=new THREE.Texture();iris.repeat.set(-4,4);iris.offset.set(0,-3);
+  iris.wrapS=iris.wrapT=THREE.MirroredRepeatWrapping;iris.updateMatrix();
+  centerEyeIris(iris,[.36,.17],painted);
+  const uv=new THREE.Vector2(.36,.17).applyMatrix3(iris.matrix);
+  const wrap=value=>{const p=((value%2)+2)%2;return p>1?2-p:p;};
+  assert.ok(Math.abs(wrap(uv.x)-painted[0])<1e-6);
+  assert.ok(Math.abs(wrap(uv.y)-painted[1])<1e-6);
+});
