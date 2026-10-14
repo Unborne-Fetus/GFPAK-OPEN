@@ -332,8 +332,13 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
           const item=name && findLegacyTexture(name,known);
           try{
             if(!item)throw new Error('Missing native flame gradient '+name);
-            await applyLegacyFire(definition,materials[i],item,name,textureObjects);
-            report('Applied native red/yellow fire palette to '+definition.name+'.');
+            const masks=['Blend0Tex','Blend1Tex'].map(sampler=>{
+              const map=definition.maps.find(map=>map.sampler===sampler);
+              const name=model.textureNames[map?.textureIndex];
+              return {name,item:name && findLegacyTexture(name,known)};
+            }).filter(mask=>mask.item);
+            await applyLegacyFire(definition,materials[i],item,name,textureObjects,masks);
+            report('Applied native fire palette and '+masks.length+' flame edge masks to '+definition.name+'.');
           }catch(error){report('Could not render native fire: '+error.message);}
           continue;
         }
