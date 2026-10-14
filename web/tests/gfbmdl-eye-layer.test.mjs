@@ -57,3 +57,12 @@ test('painted iris is located off-center and aligned through mirrored texture pe
   assert.ok(Math.abs(wrap(uv.x)-painted[0])<1e-6);
   assert.ok(Math.abs(wrap(uv.y)-painted[1])<1e-6);
 });
+
+test('slanted eye openings receive a small horizontal gaze correction', async () => {
+  const {nearestEyeOpening}=await import('../src/gfbmdl-eye-layer.js');
+  const pixels=new Uint8Array(10*10*4);pixels.fill(255);
+  for(const [x,y] of [[2,2],[3,2],[4,2],[2,3],[3,3],[2,4]])pixels[(y*10+x)*4+3]=0;
+  const center=nearestEyeOpening(pixels,10,10,[.3,.3]);
+  assert.ok(Math.abs(center[0]-1/3)<1e-6);
+  assert.ok(Math.abs(center[1]-19/60)<1e-6);
+});
