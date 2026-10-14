@@ -22,7 +22,7 @@ test('Sword/Shield alternate wings render hidden and export as step-scale animat
   expect(data.toString('ascii',0,4)).toBe('glTF');
   const length=data.readUInt32LE(12);
   const json=JSON.parse(data.toString('utf8',20,20+length));
-  const meshNode=json.nodes.find(node=>node.name==='pm0519_00_LWingSkin');
+  const meshNode=json.nodes.find(node=>node.mesh!==undefined && node.name==='pm0519_00_LWingSkin');
   expect(meshNode).toBeTruthy();
   expect(meshNode.scale).toEqual([0,0,0]);
   expect(json.animations?.some(a=>a.channels.some(ch=>ch.target.path==='scale'))).toBe(true);
