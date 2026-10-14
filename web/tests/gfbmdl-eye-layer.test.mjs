@@ -23,3 +23,19 @@ test('materials without an iris keep their existing texture shader', () => {
   applyLegacyEyeLayer(material,null,[]);
   assert.equal(material.onBeforeCompile,original);
 });
+
+test('iris centers on the nearest transparent eyelid opening without changing scale', async () => {
+  const {nearestEyeOpening,centerEyeIris}=await import('../src/gfbmdl-eye-layer.js');
+  const pixels=new Uint8Array(12*12*4);pixels.fill(255);
+  for(let y=2;y<5;y++)for(let x=2;x<5;x++)pixels[(y*12+x)*4+3]=0;
+  for(let y=7;y<10;y++)for(let x=8;x<11;x++)pixels[(y*12+x)*4+3]=0;
+  const opening=nearestEyeOpening(pixels,12,12,[.25,.25]);
+  assert.deepEqual(opening,[3.5/12,3.5/12]);
+  const iris=new THREE.Texture();iris.repeat.set(-4,4);iris.offset.set(0,-3);iris.updateMatrix();
+  centerEyeIris(iris,opening);
+  const uv=new THREE.Vector2(...opening).applyMatrix3(iris.matrix);
+  assert.ok(Math.abs((uv.x-Math.floor(uv.x))-.5)<1e-6);
+  assert.ok(Math.abs((uv.y-Math.floor(uv.y))-.5)<1e-6);
+  assert.deepEqual(iris.repeat.toArray(),[-4,4]);
+  pixels.fill(255);assert.equal(nearestEyeOpening(pixels,12,12,[.25,.25]),null);
+});
