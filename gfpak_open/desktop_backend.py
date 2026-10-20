@@ -562,6 +562,16 @@ class DesktopAPI:
         with self._lock:
             return self._browser.asset_family(node_id)
 
+    def browse_find_pokemon_model_archive(self, node_id: str | None = None):
+        """Jump target for the desktop's Find Pokémon Model Archive button.
+
+        Uses the existing local game scan or checks only same-form neighbors.
+        Returns node metadata, never client-visible absolute paths.
+        """
+        from .model_archive_locator import find_pokemon_model_archive
+        with self._lock:
+            return find_pokemon_model_archive(self._browser, self._catalogs, node_id)
+
     def browse_catalog_item(self, node_id: str):
         """Return only previously verified metadata for a clickable companion."""
         with self._lock:
