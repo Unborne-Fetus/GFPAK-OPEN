@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 from .pokemon_assets import pokemon_id
 
 EFFECT_RULES = {
-    "fire": re.compile(r"(?i)(?:^|[^a-z])(flame|fire|ember|burn)(?:[^a-z]|$)"),
+    "fire": re.compile(r"(?i)(?:^|[^a-z])(flame|firecore|firemask|fire|ember|burn)(?:[^a-z]|$)"),
     "smoke": re.compile(r"(?i)(?:^|[^a-z])(smoke|fog|mist|gas|vapor|vapour|steam)(?:[^a-z]|$)"),
     "electricity": re.compile(r"(?i)(?:^|[^a-z])(electric|spark|lightning|thunder)(?:[^a-z]|$)"),
     "energy": re.compile(r"(?i)(?:^|[^a-z])(aura|glow|energy|pulse|beam)(?:[^a-z]|$)"),
