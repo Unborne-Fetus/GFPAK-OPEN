@@ -1404,7 +1404,7 @@ class AssetBrowser:
         merged = [dict(item) for item in result["items"]]
         used = {row["path"].casefold() for row in merged}
         linked = Counter()
-        allowed = TEXTURE | ANIMATION | SKELETON | MATERIAL
+        allowed = TEXTURE | ANIMATION | SKELETON | MATERIAL | SHADER
         for resource_index, name in sorted(names.items()):
             kind = classify(name)
             resource = archive.resources[resource_index]
@@ -1453,7 +1453,7 @@ class AssetBrowser:
             raise ValueError(self._model_discovery_failure(archive, names))
         selected_idx, selected_name = models[0]
         family = pokemon_id(selected_name)
-        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | SHADER
         entries = []
         used = set()
         for idx, name in [(selected_idx, selected_name)] + sorted(names.items()):
