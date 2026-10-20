@@ -24,15 +24,16 @@ const PRESETS = Object.freeze([
 export function previewEffectKind(material) {
   if (!material || material.colorWrite === false || material.visible === false ||
       !material.map?.isTexture) return '';
-  const description = [
-    material.name || '',
-    material.userData?.gfpakNativeShader || '',
-    material.map.name || '',
-  ].join(' ');
-  // FireMask is a depth/silhouette-only pass; moving it would alter the
-  // authored silhouette, rather than animate the visible flame.
-  if (/PokeFireMaskShader/i.test(description)) return '';
-  return PRESETS.find(preset => preset.test.test(description))?.name || '';
+  const shader = material.userData?.gfpakNativeShader || '';
+  // Native shader metadata is stronger than the shared texture name. A body
+  // atlas can reuse a flame palette without being a flame material itself.
+  // FireMask is a depth/silhouette-only pass and must never be animated.
+  if (/PokeFireMaskShader/i.test(shader)) return '';
+  const labels = [shader, material.name || ''].join(' ');
+  const explicit = PRESETS.find(preset => preset.test.test(labels))?.name;
+  if (explicit) return explicit;
+  if (shader) return '';
+  return PRESETS.find(preset => preset.test.test(material.map.name || ''))?.name || '';
 }
 
 export class DesktopEffectPreview {
