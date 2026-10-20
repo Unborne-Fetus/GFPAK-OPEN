@@ -391,6 +391,9 @@ export async function loadGfbmdl(project, selected, report = () => {}, options =
       side: THREE.DoubleSide,
     });
     material.name = source.name || 'GFBMDL Material ' + i;
+    // Keep the native shader label available to the optional desktop-only
+    // visual-effects inspector without claiming that the shader is decoded.
+    material.userData.gfpakNativeShader = source.shader || '';
     if (isLegacyFireMask(source)) {
       // This is an auxiliary effect mask, not a visible grey flame shell.
       material.transparent=true;material.opacity=0;
