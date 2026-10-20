@@ -937,7 +937,8 @@ class AssetBrowser:
                         'packedMembers': packed_members,
                     }, indent=2))
                 effects = analyze_effect_assets(node['name'], effect_rows)
-                zipped.writestr('gfpak-desktop-effects.json', json.dumps(effects, indent=2))
+                if effects['identifiedEffects'] or effects['companionCounts']['shaders']:
+                    zipped.writestr('gfpak-desktop-effects.json', json.dumps(effects, indent=2))
                 if converted_glb is not None:
                     zipped.writestr('pokedex3d/regular.glb', converted_glb)
                     zipped.writestr('gfpak-pokemon-export.json', json.dumps(metadata, indent=2))
