@@ -136,7 +136,7 @@ def _native_model_type(data):
 
 def content_extension(data):
     """Signatures identify formats, never an original filename or species."""
-    for magic, extension in ((b'BNTX', '.bntx'), (b'DDS ', '.dds'),
+    for magic, extension in ((b'BNTX', '.bntx'), (b'BNSH', '.bnsh'), (b'DDS ', '.dds'),
                              (b'\x89PNG\r\n\x1a\n', '.png')):
         if data.startswith(magic):
             return extension
