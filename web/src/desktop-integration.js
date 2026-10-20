@@ -1,3 +1,4 @@
+import {DesktopEffectPreview} from './desktop-effects.js';
 /** Native desktop integration. The hosted web app does not expose these tools. */
 const byId = name => document.getElementById(name);
 let api;
@@ -7,6 +8,74 @@ let polling = false;
 let lastSettings = null;
 let initialized = false;
 let autoOpened = false;
+let effectPreview = null;
+
+/** Only installed in the Edge WebView desktop application, never hosted web. */
+function initializeEffectPanel() {
+  const toggle = byId('toggleAnimation');
+  const panel = document.createElement('section');
+  panel.id = 'desktopEffectPanel';
+  panel.className = 'desktop-effect-panel';
+  panel.style.cssText = 'margin:16px 0;padding:14px;border:1px solid #456277;border-radius:10px;background:rgba(20,35,51,.55)';
+  panel.innerHTML = `
+    <div class="eyebrow">DESKTOP EFFECT LAB · EXPERIMENTAL</div>
+    <label class="toggle-row" style="margin:12px 0 8px">
+      <input id="desktopEffectMotion" type="checkbox" />
+      <span>Animate identified effect materials</span>
+    </label>
+    <label class="input-label" for="desktopEffectSpeed">Motion speed</label>
+    <select class="field" id="desktopEffectSpeed">
+      <option value="0.25">¼×</option><option value="0.5">½×</option>
+      <option value="1" selected>1×</option><option value="2">2×</option>
+      <option value="3">3×</option>
+    </select>
+    <label class="input-label" for="desktopEffectIntensity" style="margin-top:9px">Motion intensity</label>
+    <input id="desktopEffectIntensity" type="range" min="0" max="100" value="75" style="width:100%" />
+    <p id="desktopEffectStatus" class="helper-copy" role="status">Load a model to identify effect materials.</p>
+    <p id="desktopEffectInventory" class="helper-copy">Native effect companion inventory appears here after a desktop archive preview.</p>
+    <p class="helper-copy">Preview-only approximations, not the original Switch shaders. Original files and exports are preserved.</p>
+  `;
+  toggle.after(panel);
+  effectPreview = new DesktopEffectPreview(({count,types,enabled}) => {
+    byId('desktopEffectStatus').textContent = count
+      ? count + ' identified effect material(s): ' + types.join(', ') +
+        (enabled ? ' · motion active' : ' · motion off')
+      : 'No recognized effect materials on this mesh. Native companions can still be exported.';
+  });
+  byId('desktopEffectMotion').addEventListener('change', event =>
+    effectPreview.setEnabled(event.target.checked));
+  byId('desktopEffectSpeed').addEventListener('change', event =>
+    effectPreview.setSpeed(event.target.value));
+  byId('desktopEffectIntensity').addEventListener('input', event =>
+    effectPreview.setIntensity(Number(event.target.value) / 100));
+  window.addEventListener('gfpak-desktop-model-ready', event => {
+    effectPreview.attach(event.detail?.root);
+    byId('desktopEffectInventory').textContent =
+      'Model loaded. Preview another game archive to inspect its native effect companions.';
+  });
+  window.addEventListener('gfpak-desktop-effect-inventory', event => {
+    const data = event.detail;
+    if (!data) return;
+    const counts = data.companionCounts || {};
+    const summary = [
+      counts.textures || 0, 'texture(s),', counts.animations || 0,
+      'animation(s),', counts.materials || 0, 'material(s),',
+      counts.shaders || 0, 'shader container(s)'
+    ].join(' ');
+    byId('desktopEffectInventory').textContent = 'Native companions: ' + summary +
+      '. Effect filename hints: ' +
+      (data.identifiedEffects?.length ? data.identifiedEffects.join(', ') : 'none identified') +
+      '. Discovery does not guarantee an effect is renderable.';
+  });
+  window.addEventListener('gfpak-desktop-export-begin', event => {
+    if (!effectPreview.enabled) return;
+    // Reset UVs and native material parameters before GLB serialization.
+    // Reapply the optional preview mode when the serializer is finished.
+    effectPreview.setEnabled(false);
+    event.detail.resume = () => effectPreview.setEnabled(true);
+  });
+  window.addEventListener('beforeunload', () => effectPreview?.dispose());
+}
 
 function notice(message, error = false) {
   const status = byId('nativeProgress');
@@ -118,6 +187,7 @@ async function initialize() {
   api = window.pywebview.api;
   window.addEventListener('gfpak-native-conversion-started', beginPolling);
   document.body.classList.add('desktop-app');
+  initializeEffectPanel();
   byId('tabConverter').hidden = false;
   const converter = byId('desktopTools');
   converter.hidden = true;
