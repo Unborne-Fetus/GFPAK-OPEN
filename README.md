@@ -228,3 +228,31 @@ Python unit tests:
 - [ ] Validate native model skeletal skinning, native animation interpolation and all shader/material variations against actual game files.
 
 Only process models and game assets you own or are authorized to use.
+
+
+## Desktop Effect Lab (experimental)
+
+The Windows desktop EXE now includes a **Desktop Effect Lab** below the animation
+selector. It is opt-in: ordinary materials and the hosted browser version keep
+their previous behavior. When a decoded material is identified as a flame,
+smoke/fog, electric, energy, water, or ice effect, the preview can animate its
+existing texture with adjustable speed and intensity. The inspector reports
+the number of effect materials it actually recognizes.
+
+**Scope and accuracy:** These motions are preview-only approximations.
+Native BNSH shaders are *identified and preserved*, not executed or decompiled.
+The original animation/effect data, material files and textures remain in the
+raw Pokémon ZIP when available and readable. A
+`gfpak-desktop-effects.json` sidecar is included for effect-bearing exports;
+it records candidate file-based effect hints, not validated shader execution.
+The GLB exporter automatically suspends optional effect motion before encoding
+and restores the preview afterward. No game files or keys are uploaded.
+
+To investigate a missing effect: open the Pokémon's model archive, use the
+native preview, expand Desktop Effect Lab and inspect its companion counts.
+If the shader or compatible texture was not decoded, the preview deliberately
+does not invent it. Use **Export Raw Asset ZIP** to preserve original assets
+for future shader-reconstruction work. The source [LGPE rendering analysis](
+https://triyan.dev/blog/reverse-engineering-pokemon-sprites-lgpe) informed
+the goal of recognizing material/effect dependencies; its code and proprietary
+game content are not bundled.

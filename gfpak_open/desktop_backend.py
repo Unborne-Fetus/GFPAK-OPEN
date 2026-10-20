@@ -336,6 +336,8 @@ class DesktopAPI:
             manifest = self._browser.fast_preview_items(node_id)
             token = uuid.uuid4().hex
             records = manifest["items"]
+            from .effect_analysis import analyze_effect_assets
+            effects = analyze_effect_assets(manifest["selected"], records)
             # Bound retained manifests; old viewer requests fail closed.
             if len(self._quick_previews) >= 6:
                 self._quick_previews.pop(next(iter(self._quick_previews)))
@@ -344,6 +346,7 @@ class DesktopAPI:
             return {
                 "label": manifest["label"], "selected": manifest["selected"],
                 "matched": manifest.get("matched", {}),
+                "effects": effects,
                 "related_model_archive": manifest.get("related_model_archive"),
                 "items": [{
                     "path": entry["path"], "size": entry["size"],

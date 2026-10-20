@@ -149,6 +149,8 @@ function setModel(result, format, packageName) {
   if (!state.stage) throw new Error('WebGL is not available in this browser');
   const previous = state.loaded;
   state.stage.setModel(result.root, result.animations);
+  if (window.pywebview?.api) window.dispatchEvent(new CustomEvent(
+    'gfpak-desktop-model-ready', {detail:{root:result.root}}));
   previous?.disposeAssets?.();
   state.loaded = result;
   const info = modelStats(result.root, result.animations);
@@ -640,7 +642,11 @@ async function exportModel() {
   busy(true, 'Exporting GLB', 'Packing geometry, textures and available animation data…');
   try {
     const name = (el('outputName').value.trim() || 'converted-model').replace(/[\\/:*?"<>|]/g, '_') + '.glb';
-    const data = await exportGlb(state.loaded.root, state.loaded.animations);
+    const detail = {resume:() => {}};
+    if (window.pywebview?.api) window.dispatchEvent(new CustomEvent('gfpak-desktop-export-begin', {detail}));
+    let data;
+    try { data = await exportGlb(state.loaded.root, state.loaded.animations); }
+    finally { detail.resume(); }
     downloadBlob(name, data, 'model/gltf-binary');
     log('Exported ' + name + ' (' + formatBytes(data.byteLength) + ').', 'success');
   } catch (err) {
@@ -655,7 +661,11 @@ async function preparePokemonExport() {
   if (!loaded) throw new Error('Preview the Pokémon before exporting.');
   await loaded.postLoad?.();
   if (state.loaded !== loaded) throw new Error('Model changed during export; try again.');
-  const glb = await exportGlb(loaded.root, loaded.animations);
+  const detail = {resume:() => {}};
+  if (window.pywebview?.api) window.dispatchEvent(new CustomEvent('gfpak-desktop-export-begin', {detail}));
+  let glb;
+  try { glb = await exportGlb(loaded.root, loaded.animations); }
+  finally { detail.resume(); }
   const metadata = pokemonExportMetadata(loaded.selected,currentGame().id,glb);
   return {glb,metadata};
 }
@@ -848,6 +858,8 @@ async function openFastDesktopPreview(detail) {
       message => log(message), {fastPreview:true});
     state.exportProject = project; state.desktopSource=true;
     setModel(result, extension(manifest.selected), project.label);
+    if (window.pywebview?.api) window.dispatchEvent(new CustomEvent(
+      'gfpak-desktop-effect-inventory', {detail:manifest.effects || null}));
     // The desktop explorer is a separate tab; make the loaded 3D viewport
     // actually visible instead of leaving it obscured behind File Explorer.
     el('assetBrowser').hidden = true;
