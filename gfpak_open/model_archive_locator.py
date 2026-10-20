@@ -178,7 +178,20 @@ def find_pokemon_model_archive(browser, catalogs: dict, node_id: str | None) -> 
                 archive["kind"] == "nca_file" and archive["name"].lower().endswith(".gfpak")):
             try:
                 if archive_has_model(browser, archive):
-                    add(archive, "decoded model in selected GFPAK", key)
+                    # A multi-model archive may have an unrelated form.
+                    if archive["kind"] == "gfpak":
+                        model_names = browser._known_names(Path(archive["path"])).values()
+                    else:
+                        _, names = browser._mounted_gfpak(archive["id"])
+                        model_names = names.values()
+                    model_forms = {
+                        form_key(name) for name in model_names
+                        if Path(name).suffix.lower() in MODEL_SUFFIXES and form_key(name)
+                    }
+                    if (not model_forms or model_forms == {key}) and (
+                            not form_key(archive["name"]) or
+                            form_key(archive["name"]) == key):
+                        add(archive, "decoded model in selected GFPAK", key)
             except (OSError, ValueError, RuntimeError):
                 pass
 
@@ -195,7 +208,11 @@ def find_pokemon_model_archive(browser, catalogs: dict, node_id: str | None) -> 
                 archive = archive_node_for_model(browser, model)
                 if archive is None:
                     continue
-                candidate_key = form_key(archive["name"]) or form_key(model_name)
+                archive_key = form_key(archive["name"])
+                model_key = form_key(model_name)
+                if archive_key and model_key and archive_key != model_key:
+                    continue  # Conflicting species/form labels are not trustworthy.
+                candidate_key = model_key or archive_key
                 if not key and not candidate_key:
                     continue
                 # This row was labeled model by GFPAK resource discovery;
