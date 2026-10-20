@@ -27,6 +27,7 @@ from .nca_sections import LocalNCASections
 from .model_discovery import infer_model_resources
 from .resource_discovery import discover_resource_names
 from .pokemon_assets import group_related, pokemon_id
+from .effect_analysis import analyze_effect_assets
 from .converter import (HashDictionary, discover_dictionary, read_resource_names,
                         fnv1a64, REFERENCE_RE, safe_path, ConversionError)
 
@@ -37,6 +38,7 @@ TEXTURE = {".bntx", ".png", ".dds", ".tga", ".jpg", ".jpeg", ".webp", ".trtex", 
 SKELETON = {".trskl"}
 METADATA = {".tik", ".cert", ".xml", ".json", ".cnmt"}
 MATERIAL = {".trmtr", ".trmmt", ".mtl"}
+SHADER = {".bnsh", ".sharc"}
 ARCHIVE = {".gfpak", ".zip", ".nsp", ".nsz", ".xci", ".xcz"}
 PREVIEW = {".trmdl", ".gfbmdl", ".glb", ".gfpak"}
 MAX_ENTRIES = 2000
@@ -62,6 +64,8 @@ def classify(filename: str) -> str:
         return "metadata"
     if ext in MATERIAL:
         return "material"
+    if ext in SHADER:
+        return "shader"
     if ext in ARCHIVE:
         if ext == ".gfpak":
             # A GFPAK may contain models, animation and/or textures even
@@ -864,6 +868,7 @@ class AssetBrowser:
         fd, temporary = tempfile.mkstemp(prefix='.pokemon-export-', suffix='.zip', dir=destination.parent)
         os.close(fd)
         used = set()
+        effect_rows = []
         packed_members = []
         try:
             with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zipped:
@@ -921,6 +926,8 @@ class AssetBrowser:
                             written += len(chunk)
                     if written != size:
                         raise ValueError('Asset changed during export: ' + name)
+                    if not name.endswith('.packed'):
+                        effect_rows.append({'path': name})
                 if packed_members:
                     zipped.writestr('raw-assets-manifest.json', json.dumps({
                         'format': 'gfpak-raw-assets-v1',
@@ -929,6 +936,8 @@ class AssetBrowser:
                                  'before being used as models, textures, or animations.'),
                         'packedMembers': packed_members,
                     }, indent=2))
+                effects = analyze_effect_assets(node['name'], effect_rows)
+                zipped.writestr('gfpak-desktop-effects.json', json.dumps(effects, indent=2))
                 if converted_glb is not None:
                     zipped.writestr('pokedex3d/regular.glb', converted_glb)
                     zipped.writestr('gfpak-pokemon-export.json', json.dumps(metadata, indent=2))
@@ -1268,7 +1277,7 @@ class AssetBrowser:
         selected_index, selected_name = models[0]
         from .pokemon_assets import pokemon_id
         family = pokemon_id(selected_name)
-        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | {".bin", ".mtl"}
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | SHADER | {".bin", ".mtl"}
         entries = []
         selected_resource = archive.resources[selected_index]
         if selected_resource.size > 450 * 1024 * 1024:
@@ -1553,7 +1562,7 @@ class AssetBrowser:
             ".trmdl", ".trmsh", ".gfbmdl",
         }:
             raise ValueError("This format requires the fallback converter")
-        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | {".bin", ".mtl"}
+        allowed = MODEL | MESH | ANIMATION | TEXTURE | SKELETON | MATERIAL | SHADER | {".bin", ".mtl"}
         from .pokemon_assets import pokemon_id
         token = pokemon_id(model_name)
         parent = model_name.replace("\\", "/").rpartition("/")[0]
