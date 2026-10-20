@@ -32,8 +32,9 @@ export function previewEffectKind(material) {
   const labels = [shader, material.name || ''].join(' ');
   const explicit = PRESETS.find(preset => preset.test.test(labels))?.name;
   if (explicit) return explicit;
-  if (shader) return '';
-  return PRESETS.find(preset => preset.test.test(material.map.name || ''))?.name || '';
+  // A shared texture's label is never sufficient evidence that this
+  // material itself is an effect. Require the material or native shader.
+  return '';
 }
 
 export class DesktopEffectPreview {
