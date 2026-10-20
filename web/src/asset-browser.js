@@ -16,6 +16,8 @@ let catalogSearchTimer = null;
 let catalogBusy = false;
 let catalogRevision = 0;
 let pendingCatalogRequest = null;
+let archiveJumpBusy = false;
+let archiveLookupPending = null;
 let assetClass = 'all';
 const classKinds = {
   models: new Set(['model', 'model archive', 'asset package', 'mesh']),
@@ -94,6 +96,8 @@ function setScanAvailability() {
     (root?.kind === 'nca_file' && /\.gfpak$/i.test(root.name)) ||
     ['directory', 'gfpak', 'nsp', 'xci'].includes(source?.kind);
   id('assetScan').disabled = !searchable || catalogBusy;
+  id('assetFindModelArchive').disabled = !source || archiveJumpBusy ||
+    Boolean(archiveLookupPending);
 }
 
 let activeNSP = null;
@@ -768,7 +772,10 @@ async function nxLoadDetails(row) {
 }
 
 function select(row) {
-  if (selected?.id !== row?.id) previewExportId = null;
+  if (selected?.id !== row?.id) {
+    previewExportId = null;
+    id('assetModelArchiveChoices').hidden = true;
+  }
   selected = row;
   const diagnosticPanel = id('assetNcaAutoReport');
   if (diagnosticPanel) {
@@ -1075,6 +1082,9 @@ async function applyOpenedSource(result) {
     catalogPagesBySource.clear();
     ++catalogPageRevision;
     pendingCatalogRequest = null;
+    archiveLookupPending = null;
+    archiveJumpBusy = false;
+    id('assetModelArchiveChoices').hidden = true;
     scanListing = null;
     catalogBusy = false;
     activeNSP = null;
@@ -1334,6 +1344,157 @@ async function preview(row = selected, forExport = false) {
   }
 }
 
+
+/**
+ * One-click desktop navigation to an actual model-bearing package.
+ * Archive discovery is performed in the read-only Python game browser.
+ * The UI never constructs local filesystem paths or guesses Pokémon forms.
+ */
+async function jumpToModelArchive(archive, evidence = '') {
+  if (!archive?.id || !pathStack.length)
+    throw new Error('The located archive is no longer available.');
+  const resolved = await api.browse_catalog_item(archive.id);
+  if (!resolved.expandable || !/\.gfpak$/i.test(resolved.name))
+    throw new Error('The located entry is not a readable GFPAK archive.');
+  const listing = await api.browse_children(resolved.id);
+  const source = pathStack[0];
+  ++catalogPageRevision;
+  scanListing = null;
+  id('assetSearch').value = '';
+  id('assetCategory').value = 'all';
+  assetClass = 'all';
+  for (const button of document.querySelectorAll('[data-asset-class]')) {
+    const active = button.dataset.assetClass === 'all';
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  // Preserve the actual game source; the destination may be many NCA pages
+  // away and was not necessarily loaded into the visible folder tree.
+  pathStack = source.root.id === resolved.id
+    ? [{root: resolved, listing}]
+    : [source, {root: resolved, listing}];
+  nxTreeListings.set(resolved.id, listing);
+  openTab();
+  renderListing();
+  id('assetBreadcrumb').textContent = source.root.name +
+    '  /  Located Pokémon model archive  /  ' + resolved.name;
+  nxHighlightTree(resolved);
+  select(resolved);
+  id('assetRows').closest('.asset-table-wrap')?.scrollTo({top:0});
+  showNotice('Opened verified model archive: ' + resolved.name +
+    (evidence ? ' · ' + evidence : '') +
+    '. Select a model member to preview its geometry.');
+}
+
+function showAmbiguousModelArchives(result) {
+  const host = id('assetModelArchiveChoices');
+  host.replaceChildren();
+  const label = document.createElement('p');
+  label.className = 'helper-copy';
+  label.textContent = result.message || 'Choose the matching model archive.';
+  const picker = document.createElement('select');
+  picker.className = 'field';
+  picker.setAttribute('aria-label', 'Verified matching model archive');
+  for (const archive of result.archives || []) {
+    const item = document.createElement('option');
+    item.value = archive.id;
+    item.textContent = archive.name;
+    picker.append(item);
+  }
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'button button-primary';
+  open.textContent = 'Open selected model archive →';
+  open.addEventListener('click', async () => {
+    open.disabled = true;
+    try {
+      const archive = result.archives.find(row => row.id === picker.value);
+      if (!archive) throw new Error('Choose one of the verified archives.');
+      await jumpToModelArchive(archive);
+      host.hidden = true;
+    } catch (error) {
+      showNotice(error.message || String(error), true);
+    } finally {
+      open.disabled = false;
+    }
+  });
+  host.append(label, picker, open);
+  if (result.count > (result.archives || []).length) {
+    const note = document.createElement('p');
+    note.className = 'helper-copy';
+    note.textContent = 'More matching archives exist. Browse the model catalog to review the full results.';
+    host.append(note);
+  }
+  host.hidden = false;
+}
+
+async function browsePokemonModelArchives(result) {
+  const root = pathStack[0]?.root;
+  const catalog = catalogsBySource.get(root?.id);
+  if (!catalog) throw new Error('Full-game model index is unavailable; try Locate assets.');
+  assetCatalog = catalog;
+  // Multiple models are expected in a game. Do not jump to an arbitrary
+  // species: present the already-indexed Pokémon GFPAKs instead.
+  id('assetSearch').value = 'pm';
+  id('assetCategory').value = 'model archive';
+  assetClass = 'models';
+  for (const button of document.querySelectorAll('[data-asset-class]')) {
+    const active = button.dataset.assetClass === 'models';
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  openTab();
+  await loadCatalogPage(true);
+  showNotice(result.message || 'Showing Pokémon model archives in the verified game catalog. Select one to open.');
+}
+
+async function findModelArchive(request = null) {
+  const source = pathStack[0]?.root;
+  if (!source || archiveJumpBusy) return;
+  const lookup = request || {
+    rootId: source.id,
+    nodeId: selected?.id || (
+      /pm\d{4}_\d{2}_\d{2}/i.test(pathStack.at(-1)?.root?.name || '')
+        ? pathStack.at(-1).root.id : null)
+  };
+  if (lookup.rootId !== source.id) return;
+  archiveJumpBusy = true;
+  id('assetFindModelArchive').disabled = true;
+  id('assetModelArchiveChoices').hidden = true;
+  try {
+    const result = await api.browse_find_pokemon_model_archive(lookup.nodeId);
+    if (lookup.rootId !== pathStack[0]?.root?.id) return;
+    if (result.status === 'found') {
+      archiveLookupPending = null;
+      await jumpToModelArchive(result.archive, result.evidence);
+    } else if (result.status === 'ambiguous') {
+      archiveLookupPending = null;
+      showAmbiguousModelArchives(result);
+      showNotice(result.message);
+    } else if (result.status === 'browse') {
+      archiveLookupPending = null;
+      await browsePokemonModelArchives(result);
+    } else if (result.status === 'scan_required') {
+      archiveLookupPending = lookup;
+      showNotice('Finding the Pokémon model archive throughout the readable game files. ' +
+        'The archive will open automatically when indexing finishes.');
+      // Existing background scans finish first. Their completion retries the
+      // pending lookup; if they scanned only a nested GFPAK, the retry starts
+      // a full-source scan instead.
+      if (!catalogBusy) void scanFolder(source, true);
+    } else {
+      archiveLookupPending = null;
+      showNotice(result.message || 'No matching model archive was found.', true);
+    }
+  } catch (error) {
+    archiveLookupPending = null;
+    showNotice('Could not locate model archive: ' + (error.message || String(error)), true);
+  } finally {
+    archiveJumpBusy = false;
+    setScanAvailability();
+  }
+}
+
 async function scanFolder(requested = null, automatic = false) {
   const origin = pathStack[0]?.root;
   const target = requested && typeof requested === 'object' ? requested :
@@ -1385,8 +1546,12 @@ async function scanFolder(requested = null, automatic = false) {
         setScanAvailability();
         if (status.error) {
           id('assetScanSummary').textContent = 'Discovery failed: ' + status.error;
-          showNotice(status.error, true);
+          if (archiveLookupPending?.rootId === origin?.id) {
+            archiveLookupPending = null;
+            showNotice('Model archive lookup stopped: ' + status.error, true);
+          } else showNotice(status.error, true);
           summary(null);
+          setScanAvailability();
           return;
         }
         if (!status.result) {
@@ -1419,6 +1584,11 @@ async function scanFolder(requested = null, automatic = false) {
           pendingCatalogRequest = null;
           if (pathStack.some(step => step.root.id === next.id))
             void scanFolder(next, true);
+        }
+        if (archiveLookupPending?.rootId === origin?.id) {
+          const request = archiveLookupPending;
+          archiveLookupPending = null;
+          void findModelArchive(request);
         }
       } catch (error) {
         if (revision !== catalogRevision) return;
@@ -1503,6 +1673,7 @@ function initialize() {
   });
   id('assetPreview').addEventListener('click', () =>
     canInspectTexture(selected) ? inspectTexture() : preview());
+  id('assetFindModelArchive').addEventListener('click', () => void findModelArchive());
   window.addEventListener('gfpak-export-pokemon', async event => {
     const detail = event.detail;
     if (!previewExportId) {

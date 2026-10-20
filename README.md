@@ -256,3 +256,22 @@ for future shader-reconstruction work. The source [LGPE rendering analysis](
 https://triyan.dev/blog/reverse-engineering-pokemon-sprites-lgpe) informed
 the goal of recognizing material/effect dependencies; its code and proprietary
 game content are not bundled.
+
+## Desktop: find the Pokémon model archive
+
+In the Windows Game File Explorer, click **◇ Find Pokémon Model Archive**.
+If you select a Pokémon's animation/texture-only GFPAK or model companion
+first, the tool uses the exact internal `pm####_##_##` species/form ID,
+verifies which neighboring or indexed GFPAK **actually contains a native
+TRMDL/GFBMDL model**, and opens that archive's resources. It will look in
+the game's readable indexed files if the model is not in the same directory.
+A full-source scan is started automatically if necessary; the destination
+opens when that scan completes.
+
+If several model archives match the same form, choose from the verified
+candidates rather than letting the program select an unrelated game
+version. If no Pokémon is selected, the button shows the model archive
+catalog rather than arbitrarily opening a random species. Archives whose
+contents cannot be decoded are *not* marked as verified models. No game
+content is copied or modified merely by using this button.
+
