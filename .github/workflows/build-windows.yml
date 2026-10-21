@@ -9,15 +9,15 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install native NCA reader crypto dependency
         run: python -m pip install --disable-pip-version-check "cryptography>=44,<48" "zstandard>=0.23,<1" "lz4>=4,<5"
       - name: Test archive reader and model converter
         run: python -m unittest discover -s tests -v
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Install viewer test dependencies
@@ -27,7 +27,7 @@ jobs:
       - name: Build portable EXE through run.bat
         shell: cmd
         run: call run.bat --build-only
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: GFPAK-OPEN-Windows
           path: dist/GFPAK-OPEN.exe
