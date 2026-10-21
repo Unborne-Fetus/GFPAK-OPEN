@@ -19,9 +19,9 @@ jobs:
         run: python -m unittest discover -s tests -v
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - name: Install viewer test dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Test desktop effect preview and viewer libraries
         run: npm test
       - name: Build portable EXE through run.bat
