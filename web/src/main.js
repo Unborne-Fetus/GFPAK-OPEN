@@ -490,6 +490,9 @@ async function inspectArchiveTexture() {
   }
   const name = resolvedName(resource,state.dictionary) ||
     'resource_' + String(resource.index).padStart(4,'0') + '.bin';
+  // Capture the selected archive before yielding to the asynchronous extractor.
+  // An unbound sourceArchive prevented anonymous GFPAK textures from opening.
+  const sourceArchive = state.archive;
   await inspectSourceTexture({
     path:name,size:resource.size,
     getBytes:async()=>extractResourceAsync(sourceArchive,resource)
