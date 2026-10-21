@@ -6,6 +6,7 @@ on:
     paths:
       - 'web/**'
       - 'package.json'
+      - 'package-lock.json'
       - 'vite.config.js'
       - 'playwright.config.js'
       - '.github/workflows/test-web.yml'
@@ -23,9 +24,9 @@ jobs:
       - name: Node 22
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Test JavaScript parsers and lazy GFPAK resource extraction
         run: npm test
       - name: Install Playwright browser
