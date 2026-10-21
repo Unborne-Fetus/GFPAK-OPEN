@@ -57,7 +57,7 @@ The workflow .github/workflows/deploy-pages.yml builds and deploys the web app. 
 
 Local development requires Node.js 22+:
 
-    npm install
+    npm ci
     npm test
     npx playwright install chromium
     npx playwright test
