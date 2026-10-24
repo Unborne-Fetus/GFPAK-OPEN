@@ -292,6 +292,68 @@ export async function exportGlb(root, animations = []) {
     }
   };
   const exporter = new GLTFExporter().setTextureUtils(textureUtils);
+  // Three.js GLTFExporter handles DataTexture in processImage(), but its
+  // metalness/roughness combination path calls drawImage() on texture.image
+  // directly. GFPAK's native RGBA textures expose {data,width,height}, not
+  // CanvasImageSource, so that path throws a TypeError for many models.
+  // Give the exporter disposable texture/material clones, leaving the live
+  // preview's shared materials and textures untouched.
+  const exportTextureCopies = new Map();
+  const exportMaterialCopies = new Map();
+  const swappedMaterials = [];
+  const exportCopies = [];
+  function drawableMetalRoughTexture(texture) {
+    const image = texture?.image;
+    if (!image?.data) return texture;
+    if (exportTextureCopies.has(texture)) return exportTextureCopies.get(texture);
+    const { width, height, data } = image;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0 ||
+        texture.format !== THREE.RGBAFormat || texture.type !== THREE.UnsignedByteType ||
+        !(data instanceof Uint8Array) || data.length !== width * height * 4) {
+      throw new Error('Cannot export metallic/roughness texture "' +
+        (texture.name || 'unnamed') + '": expected RGBA8 pixel data');
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Cannot create canvas for GLB material texture');
+    const rgba = context.createImageData(width, height);
+    rgba.data.set(data);
+    context.putImageData(rgba, 0, 0);
+    const copy = texture.clone();
+    copy.source = new THREE.Source(canvas);
+    copy.needsUpdate = true;
+    exportTextureCopies.set(texture, copy);
+    exportCopies.push(copy);
+    return copy;
+  }
+  function exportMaterial(material) {
+    if (!material) return material;
+    if (exportMaterialCopies.has(material)) return exportMaterialCopies.get(material);
+    const maps = ['metalnessMap', 'roughnessMap'];
+    if (!maps.some(key => material[key]?.image?.data)) return material;
+    const copy = material.clone();
+    for (const key of maps) {
+      if (material[key]) copy[key] = drawableMetalRoughTexture(material[key]);
+    }
+    exportMaterialCopies.set(material, copy);
+    exportCopies.push(copy);
+    return copy;
+  }
+  root.traverse(mesh => {
+    if (!mesh.isMesh || !mesh.material) return;
+    const original = mesh.material;
+    const replacement = Array.isArray(original)
+      ? original.map(exportMaterial) : exportMaterial(original);
+    if (Array.isArray(original)
+        ? original.some((material, i) => material !== replacement[i])
+        : original !== replacement) {
+      swappedMaterials.push([mesh, original]);
+      mesh.material = replacement;
+    }
+  });
   // GLTFExporter serializes geometry colors even when vertexColors is off.
   // Native Pokémon colors often hold shader masks (0..255), not an albedo
   // multiplier. Export the attributes actually used by the preview material.
@@ -319,6 +381,8 @@ export async function exportGlb(root, animations = []) {
       mesh.geometry = original;
       temporary.dispose();
     }
+    for (const [mesh, original] of swappedMaterials) mesh.material = original;
+    for (const copy of exportCopies) copy.dispose();
   }
   if (!(result instanceof ArrayBuffer)) throw new Error('GLB exporter did not produce binary data');
   const view = new DataView(result);
