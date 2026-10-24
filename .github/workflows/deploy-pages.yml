@@ -34,6 +34,10 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Test GFLXPACK parser
         run: npm test
+      - name: Install browser for GLB export regression
+        run: npx playwright install --with-deps chromium
+      - name: Test native texture GLB export in browser
+        run: npx playwright test web/e2e/pokemon-export.spec.js --grep "GLB export merges native RGBA8"
       - name: Build GitHub Pages static site
         run: npm run build
       - name: Upload compiled site
