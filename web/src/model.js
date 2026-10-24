@@ -391,8 +391,8 @@ export async function exportGlb(root, animations = []) {
   if (view.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) throw new Error('Invalid GLB header');
   const chunkLength = view.getUint32(12, true);
   if (chunkLength > view.byteLength - 20) throw new Error('Invalid GLB JSON chunk');
-  const document = JSON.parse(new TextDecoder().decode(new Uint8Array(result, 20, chunkLength)));
-  if (!(document.meshes?.length > 0)) throw new Error('GLB export contains no meshes');
+  const gltfDocument = JSON.parse(new TextDecoder().decode(new Uint8Array(result, 20, chunkLength)));
+  if (!(gltfDocument.meshes?.length > 0)) throw new Error('GLB export contains no meshes');
   return result;
 }
 
