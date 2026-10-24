@@ -121,3 +121,57 @@ test('GLB exporter converts a GPU-compressed Pokémon texture into an embedded P
   expect(outcome.pixel[0]).toBeLessThan(35);
   expect(outcome.pixel[2]).toBeLessThan(35);
 });
+
+
+test('GLB export merges native RGBA8 metalness/roughness maps without drawImage errors',async({page})=>{
+  await page.goto('/');
+  const outcome=await page.evaluate(async()=>{
+    const {exportGlb}=await import('/GFPAK-OPEN/src/model.js');
+    const source=await (await fetch('/GFPAK-OPEN/src/model.js')).text();
+    const THREE=await import(source.match(/import \* as THREE from ["']([^"']+)["']/)[1]);
+    const pixels=(r,g,b)=>new Uint8Array(Array.from({length:4},()=>[r,g,b,255]).flat());
+    const metal=new THREE.DataTexture(pixels(0,0,192),2,2,THREE.RGBAFormat);
+    const rough=new THREE.DataTexture(pixels(0,128,0),2,2,THREE.RGBAFormat);
+    metal.needsUpdate=rough.needsUpdate=true;
+    const material=new THREE.MeshStandardMaterial({
+      metalness:1,roughness:1,metalnessMap:metal,roughnessMap:rough
+    });
+    const geometry=new THREE.PlaneGeometry(1,1);
+    const mesh=new THREE.Mesh(geometry,material);
+    const root=new THREE.Group();
+    root.add(mesh);
+    try {
+      const data=await exportGlb(root);
+      const view=new DataView(data),jsonLength=view.getUint32(12,true);
+      const gltf=JSON.parse(new TextDecoder().decode(new Uint8Array(data,20,jsonLength)));
+      const textureId=gltf.materials?.[0]?.pbrMetallicRoughness?.metallicRoughnessTexture?.index;
+      const image=gltf.images?.[gltf.textures?.[textureId]?.source];
+      const bufferView=gltf.bufferViews?.[image?.bufferView];
+      const binaryStart=20+jsonLength+8;
+      const png=new Uint8Array(data,binaryStart+(bufferView?.byteOffset||0),bufferView?.byteLength||0);
+      const bitmap=await createImageBitmap(new Blob([png],{type:'image/png'}));
+      const canvas=document.createElement('canvas');
+      canvas.width=canvas.height=2;
+      const context=canvas.getContext('2d');
+      context.drawImage(bitmap,0,0);
+      const pixel=Array.from(context.getImageData(1,1,1,1).data);
+      bitmap.close();
+      return {
+        meshes:gltf.meshes?.length,
+        mimeType:image?.mimeType,
+        pixel,
+        restored:mesh.material===material &&
+          material.metalnessMap===metal && material.roughnessMap===rough
+      };
+    } finally {
+      geometry.dispose();material.dispose();metal.dispose();rough.dispose();
+    }
+  });
+  expect(outcome.meshes).toBe(1);
+  expect(outcome.mimeType).toBe('image/png');
+  expect(outcome.pixel[1]).toBeGreaterThan(110);
+  expect(outcome.pixel[1]).toBeLessThan(145);
+  expect(outcome.pixel[2]).toBeGreaterThan(180);
+  expect(outcome.pixel[2]).toBeLessThan(205);
+  expect(outcome.restored).toBe(true);
+});
