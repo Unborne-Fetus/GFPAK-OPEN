@@ -263,7 +263,35 @@ export async function exportGlb(root, animations = []) {
   // BNTX/DDS BC7/ASTC resources can remain GPU-compressed in the preview.
   // GLTF requires an image, so let Three.js read back an RGBA canvas
   // instead of throwing setTextureUtils() during Pokémon ZIP export.
-  const exporter = new GLTFExporter().setTextureUtils(WebGLTextureUtils);
+  // GLTFExporter must draw decompressed GPU textures onto a 2D canvas.
+  // Some Three.js decompression paths return an ImageData-like pixel buffer,
+  // which CanvasRenderingContext2D.drawImage() cannot accept directly.
+  // Normalize those buffers to a genuine canvas without changing preview textures.
+  const textureUtils = {
+    ...WebGLTextureUtils,
+    async decompress(texture, maxTextureSize) {
+      const decoded = await WebGLTextureUtils.decompress(texture, maxTextureSize);
+      const image = decoded?.image;
+      if (image?.data && Number.isInteger(image.width) && Number.isInteger(image.height) &&
+          image.width > 0 && image.height > 0 &&
+          image.data.length === image.width * image.height * 4 &&
+          (image.data instanceof Uint8Array || image.data instanceof Uint8ClampedArray)) {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Cannot create canvas for decompressed GLB texture');
+        context.putImageData(new ImageData(
+          new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+        const normalized = decoded.clone();
+        normalized.image = canvas;
+        normalized.needsUpdate = true;
+        return normalized;
+      }
+      return decoded;
+    }
+  };
+  const exporter = new GLTFExporter().setTextureUtils(textureUtils);
   // GLTFExporter serializes geometry colors even when vertexColors is off.
   // Native Pokémon colors often hold shader masks (0..255), not an albedo
   // multiplier. Export the attributes actually used by the preview material.
