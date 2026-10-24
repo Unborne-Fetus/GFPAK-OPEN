@@ -342,7 +342,7 @@ export async function exportGlb(root, animations = []) {
     exportCopies.push(copy);
     return copy;
   }
-  root.traverse(mesh => {
+  const prepareExportMaterials = () => root.traverse(mesh => {
     if (!mesh.isMesh || !mesh.material) return;
     const original = mesh.material;
     const replacement = Array.isArray(original)
@@ -358,7 +358,7 @@ export async function exportGlb(root, animations = []) {
   // Native Pokémon colors often hold shader masks (0..255), not an albedo
   // multiplier. Export the attributes actually used by the preview material.
   const originals = [];
-  root.traverse(mesh => {
+  const prepareExportGeometry = () => root.traverse(mesh => {
     if (!mesh.isMesh || !mesh.geometry?.getAttribute('color')) return;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     if (materials.some(material => material?.vertexColors)) return;
@@ -369,6 +369,8 @@ export async function exportGlb(root, animations = []) {
   });
   let result;
   try {
+    prepareExportMaterials();
+    prepareExportGeometry();
     result = await exporter.parseAsync(root, {
       binary: true,
       onlyVisible: false,
