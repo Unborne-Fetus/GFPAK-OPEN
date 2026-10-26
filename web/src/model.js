@@ -17,6 +17,7 @@ import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
 import { identifyFormat } from './game-support.js';
 import { loadGfbmdl } from './gfbmdl-model.js';
 import { loadTrinityModel } from './trinity-model.js';
+import { prepareRiggedGlbExport } from './segment-scale-export.js';
 
 export const SUPPORTED = ['.glb', '.gltf', '.fbx', '.obj', '.dae', '.stl', '.ply', '.3ds', '.gfbmdl', '.trmdl', '.trmsh'];
 const TEXTURES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga', '.dds', '.ktx2', '.bin']);
@@ -368,17 +369,23 @@ export async function exportGlb(root, animations = []) {
     mesh.geometry = geometry;
   });
   let result;
+  let preparedRig = null;
   try {
     prepareExportMaterials();
     prepareExportGeometry();
+    // glTF does not serialize NativeBone.updateMatrix() custom compensation.
+    // Bake the compensated rest pose and each clip before export; on failure
+    // do not publish a subtly broken tongue/limb mesh.
+    preparedRig = prepareRiggedGlbExport(root, animations);
     result = await exporter.parseAsync(root, {
       binary: true,
       onlyVisible: false,
-      animations,
+      animations: preparedRig.animations,
       trs: true,
       maxTextureSize: 4096
     });
   } finally {
+    preparedRig?.restore();
     for (const [mesh, original, temporary] of originals) {
       mesh.geometry = original;
       temporary.dispose();
