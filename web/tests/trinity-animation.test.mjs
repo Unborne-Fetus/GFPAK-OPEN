@@ -31,6 +31,20 @@ test('packed native quaternion decoder produces normalized XYZW orientation', ()
   assert.ok(Math.abs(Math.hypot(...quat) - 1) < 1e-5);
 });
 
+test('packed quaternion uses smallest-three unit component range, not radians', () => {
+  // On-disk word: omitted W (3), positive sign, X at maximum, Y/Z at center.
+  const packed = 3n | (32767n << 3n) | (16384n << 18n) | (16384n << 33n);
+  const a = Number(packed & 0xffffn);
+  const b = Number((packed >> 16n) & 0xffffn);
+  const c = Number((packed >> 32n) & 0xffffn);
+  const q = unpackQuaternion(a, b, c);
+  assert.ok(Math.abs(q[0] - Math.SQRT1_2) < 1e-4);
+  assert.ok(Math.abs(q[1]) < 1e-4);
+  assert.ok(Math.abs(q[2]) < 1e-4);
+  assert.ok(Math.abs(q[3] - Math.SQRT1_2) < 1e-4);
+  assert.ok(Math.abs(Math.hypot(...q) - 1) < 1e-6);
+});
+
 test('malformed animation refuses fake playback', () => {
   assert.throws(() => parseNativeAnimation(new ArrayBuffer(5)), NativeAnimationError);
 });
