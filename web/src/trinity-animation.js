@@ -40,8 +40,12 @@ function readVec3(reader, pos) {
  */
 export function unpackQuaternion(x, y, z) {
   const word = BigInt(x) | BigInt(y) << 16n | BigInt(z) << 32n;
-  const value = shift => Number(word >> BigInt(shift) & 0x7FFFn) *
-    (Math.PI / 2 / 32767) - Math.PI / 4;
+  // Quaternion components are unitless. Smallest-three compression stores
+  // them over [-1/sqrt(2), +1/sqrt(2)], not angles in radians. The old
+  // +/-PI/4 range distorted distal bones (tongue, vines, and small limbs).
+  const componentLimit = Math.SQRT1_2;
+  const value = shift => (Number(word >> BigInt(shift) & 0x7FFFn) /
+    32767 * 2 - 1) * componentLimit;
   const q1 = value(3), q2 = value(18), q3 = value(33);
   const square = q1*q1 + q2*q2 + q3*q3;
   const omitted = Math.sqrt(Math.max(0, 1 - square));
